@@ -1,0 +1,47 @@
+.page {
+  min-height: 100vh;
+  background: #f6f7f9;
+  padding: 24rpx;
+  color: #20242a;
+}
+
+.section {
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  margin-bottom: 18rpx;
+}
+
+.field,
+.input {
+  min-height: 86rpx;
+  box-sizing: border-box;
+  padding: 0 22rpx;
+  border-bottom: 1rpx solid #edf0f3;
+  font-size: 26rpx;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.input {
+  width: 100%;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 160rpx;
+  box-sizing: border-box;
+  padding: 22rpx;
+  font-size: 26rpx;
+}
+
+.primary {
+  width: 100%;
+  background: #1f2933;
+  color: #ffffff;
+  border-radius: 8rpx;
+}

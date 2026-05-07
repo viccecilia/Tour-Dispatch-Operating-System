@@ -1,0 +1,98 @@
+.page {
+  min-height: 100vh;
+  background: #f6f7f9;
+  padding: 24rpx;
+  color: #20242a;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20rpx;
+}
+
+.primary,
+.secondary,
+.danger {
+  margin: 0;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+}
+
+.primary {
+  background: #1f2933;
+  color: #ffffff;
+}
+
+.secondary {
+  background: #ffffff;
+  color: #20242a;
+}
+
+.danger {
+  width: 120rpx;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-bottom: 20rpx;
+}
+
+.filter-cell {
+  min-height: 72rpx;
+  line-height: 72rpx;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  padding: 0 18rpx;
+  font-size: 24rpx;
+}
+
+.wide {
+  grid-column: span 2;
+}
+
+.state {
+  padding: 40rpx 0;
+  text-align: center;
+  color: #5b6472;
+}
+
+.error {
+  color: #be123c;
+}
+
+.order-row {
+  display: flex;
+  gap: 14rpx;
+  align-items: center;
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  padding: 18rpx;
+  margin-bottom: 14rpx;
+}
+
+.order-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.line {
+  font-size: 24rpx;
+  line-height: 1.55;
+  word-break: break-all;
+}
+
+.strong {
+  font-weight: 700;
+}
+
+.muted {
+  color: #5b6472;
+}

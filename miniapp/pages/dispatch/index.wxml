@@ -1,0 +1,49 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="state">加载中...</view>
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+
+  <view class="section">
+    <view class="section-title">未分配订单</view>
+    <view wx:if="{{orders.length === 0}}" class="state">暂无未分配订单</view>
+    <view wx:for="{{orders}}" wx:key="id" class="order-row {{selectedOrderIds.indexOf(item.id) >= 0 ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="onToggleOrder">
+      <view class="line strong">{{item.order_date}} {{item.start_time || ''}} - {{item.end_time || ''}}</view>
+      <view class="line">{{item.pickup_location}} -> {{item.dropoff_location}}</view>
+      <view class="line muted">{{item.order_type || '未填类型'}} / {{item.vehicle_type || '未填车型'}} / {{item.agency_name || '未填旅行社'}} / {{item.price || '未填价格'}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">司机与车辆</view>
+    <picker range="{{drivers}}" range-key="name" value="{{driverIndex}}" bindchange="onDriverChange">
+      <view class="picker-cell">{{driverIndex >= 0 ? drivers[driverIndex].name : '选择司机'}}</view>
+    </picker>
+    <picker range="{{vehicles}}" range-key="plate_number" value="{{vehicleIndex}}" bindchange="onVehicleChange">
+      <view class="picker-cell">{{vehicleIndex >= 0 ? vehicles[vehicleIndex].plate_number : '选择车辆'}}</view>
+    </picker>
+    <button class="primary" bindtap="onAssign">一键分配</button>
+  </view>
+
+  <view wx:if="{{routeLinks.length}}" class="section">
+    <view class="section-title">接龙建议</view>
+    <view wx:for="{{routeLinks}}" wx:key="to_order_id" class="line">{{item.handoff}}</view>
+  </view>
+
+  <view wx:if="{{conflicts.length}}" class="section warning">
+    <view class="section-title">冲突提示</view>
+    <view wx:for="{{conflicts}}" wx:key="index" class="line">订单 {{item.order_id}} 冲突：{{item.type}}</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">已分配订单</view>
+    <view wx:if="{{assignments.length === 0}}" class="state">暂无已分配订单</view>
+    <view wx:for="{{assignments}}" wx:key="id" class="assigned-row">
+      <view class="assigned-main">
+        <view class="line strong">{{item.order_date}} {{item.start_time || ''}} - {{item.end_time || ''}}</view>
+        <view class="line">{{item.pickup_location}} -> {{item.dropoff_location}}</view>
+        <view class="line muted">司机：{{item.driver_name || '-'}} ｜ 车辆：{{item.plate_number || '-'}} ｜ 派车：{{item.dispatch_status}} ｜ 执行：{{item.execution_status}}</view>
+        <view class="line muted">最新报备：{{item.latest_report_type || '暂无'}} {{item.latest_report_time || ''}}</view>
+      </view>
+      <button class="danger" data-id="{{item.id}}" bindtap="onCancel">取消</button>
+    </view>
+  </view>
+</view>

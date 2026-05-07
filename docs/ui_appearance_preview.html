@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>微信调度平台外观验收预览</title>
+  <style>
+    :root {
+      --ink: #20242a;
+      --muted: #667085;
+      --line: #e5e7eb;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --dark: #1f2933;
+      --green: #16a34a;
+      --blue: #2563eb;
+      --orange: #f97316;
+      --purple: #7c3aed;
+      --red: #dc2626;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+    }
+
+    aside {
+      background: var(--dark);
+      color: #fff;
+      padding: 22px 18px;
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 24px;
+    }
+
+    .nav button {
+      width: 100%;
+      height: 42px;
+      margin-bottom: 8px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: rgba(255,255,255,.78);
+      text-align: left;
+      padding: 0 12px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .nav button.active {
+      background: rgba(255,255,255,.13);
+      color: #fff;
+    }
+
+    main {
+      padding: 24px;
+      overflow: auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .card, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .card {
+      padding: 16px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-top: 8px;
+    }
+
+    .panel {
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: 140px 160px 160px 160px 1fr 90px;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    input, select, .btn {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .btn {
+      border: 0;
+      background: var(--dark);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: #fafafa;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #eef2ff;
+      color: #3730a3;
+    }
+
+    .tag.green { background: #dcfce7; color: #166534; }
+    .tag.orange { background: #ffedd5; color: #9a3412; }
+    .tag.red { background: #fee2e2; color: #991b1b; }
+
+    .dispatch-grid {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 16px;
+    }
+
+    .order-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+
+    .order-item.selected {
+      border-color: var(--dark);
+      background: #f1f5f9;
+    }
+
+    .line {
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .strong { font-weight: 700; }
+    .muted { color: var(--muted); }
+
+    .calendar-tools {
+      display: grid;
+      grid-template-columns: 140px 220px 180px 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .seg {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .seg button {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .seg button.active {
+      background: var(--dark);
+      color: #fff;
+      border-color: var(--dark);
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 5px;
+    }
+
+    .timeline {
+      min-width: 920px;
+      display: grid;
+      grid-template-columns: 150px repeat(8, 1fr);
+      gap: 8px;
+    }
+
+    .cell {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 58px;
+      padding: 10px;
+      background: #fff;
+      font-size: 12px;
+    }
+
+    .vehicle {
+      font-weight: 700;
+      background: #fafafa;
+    }
+
+    .event {
+      border-left: 6px solid var(--orange);
+      padding-left: 10px;
+    }
+
+    .event.blue { border-left-color: var(--blue); }
+    .event.green { border-left-color: var(--green); }
+    .event.purple { border-left-color: var(--purple); }
+
+    .month {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(100px, 1fr));
+      gap: 8px;
+    }
+
+    .month .cell {
+      min-height: 84px;
+    }
+
+    .detail {
+      border-left: 6px solid var(--blue);
+      background: #fff;
+    }
+
+    .hidden { display: none; }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      aside { position: sticky; top: 0; z-index: 2; }
+      .nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .cards, .dispatch-grid { grid-template-columns: 1fr; }
+      .filters, .calendar-tools { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">微信调度平台</div>
+      <div class="nav">
+        <button class="active" data-tab="home">首页</button>
+        <button data-tab="orders">订单大表</button>
+        <button data-tab="dispatch">派车</button>
+        <button data-tab="calendar">日历</button>
+      </div>
+    </aside>
+
+    <main>
+      <section id="home">
+        <div class="topbar">
+          <h1>运营中台</h1>
+          <div class="hint">外观验收预览，不连接真实后端</div>
+        </div>
+        <div class="cards">
+          <div class="card"><div class="label">今日订单数</div><div class="value">18</div></div>
+          <div class="card"><div class="label">今日已派车数</div><div class="value">12</div></div>
+          <div class="card"><div class="label">今日未派车数</div><div class="value">6</div></div>
+          <div class="card"><div class="label">今日未结算数</div><div class="value">9</div></div>
+          <div class="card"><div class="label">今日异常数</div><div class="value">1</div></div>
+          <div class="card"><div class="label">可用司机数</div><div class="value">8</div></div>
+          <div class="card"><div class="label">可用车辆数</div><div class="value">11</div></div>
+          <div class="card"><div class="label">价格缺失</div><div class="value">2</div></div>
+        </div>
+        <div class="panel">
+          <div class="strong">今日关注</div>
+          <p class="muted">上午机场订单集中，2 台商务车有连续派车。建议先处理 09:00-11:00 未分配订单。</p>
+        </div>
+      </section>
+
+      <section id="orders" class="hidden">
+        <div class="topbar">
+          <h1>订单大表</h1>
+          <button class="btn">新增订单</button>
+        </div>
+        <div class="filters">
+          <input value="2026-05-07" />
+          <input placeholder="旅行社" value="东京旅运" />
+          <select><option>全部派车状态</option><option>未分配</option><option>已派车</option></select>
+          <select><option>全部结算状态</option><option>待结算</option><option>已结算</option></select>
+          <input placeholder="地点 / 客人 / 备注" />
+          <button class="btn">查询</button>
+        </div>
+        <div class="panel">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th><th>时间</th><th>路线</th><th>类型</th><th>车型</th><th>旅行社</th><th>价格</th><th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>05-07</td><td>08:30-10:00</td><td>羽田机场 → 银座酒店</td><td>接机</td><td>商务车</td><td>东京旅运</td><td>23000</td><td><span class="tag green">已派车</span></td></tr>
+              <tr><td>05-07</td><td>11:00-13:00</td><td>新宿 → 成田机场</td><td>送机</td><td>阿尔法</td><td>樱花旅行</td><td>28000</td><td><span class="tag orange">未分配</span></td></tr>
+              <tr><td>05-07</td><td>14:00-18:00</td><td>东京市内包车</td><td>包车</td><td>中巴</td><td>富士观光</td><td>52000</td><td><span class="tag red">异常</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="dispatch" class="hidden">
+        <div class="topbar">
+          <h1>派车</h1>
+          <div class="hint">批量选择订单后分配司机和车辆</div>
+        </div>
+        <div class="dispatch-grid">
+          <div class="panel">
+            <div class="strong" style="margin-bottom:12px;">未分配订单</div>
+            <div class="order-item selected">
+              <div class="line strong">05-07 11:00-13:00</div>
+              <div class="line">新宿 → 成田机场</div>
+              <div class="line muted">送机 / 阿尔法 / 樱花旅行 / 28000</div>
+            </div>
+            <div class="order-item selected">
+              <div class="line strong">05-07 13:30-15:00</div>
+              <div class="line">成田机场 → 上野酒店</div>
+              <div class="line muted">接机 / 商务车 / 东京旅运 / 24000</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="strong" style="margin-bottom:12px;">分配资源</div>
+            <select style="width:100%; margin-bottom:10px;"><option>田中司机</option><option>佐藤司机</option></select>
+            <select style="width:100%; margin-bottom:10px;"><option>品川500あ1001 商务车</option><option>品川500あ1002 中巴</option></select>
+            <button class="btn" style="width:100%;">一键分配</button>
+            <div class="panel" style="margin-top:14px; margin-bottom:0;">
+              <div class="strong">接龙建议</div>
+              <div class="line muted">成田机场 → 成田机场，连续行程可接受</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="calendar" class="hidden">
+        <div class="topbar">
+          <h1>派车日历</h1>
+          <div class="hint">车辆纵向，时间横向</div>
+        </div>
+        <div class="calendar-tools">
+          <input value="2026-05-07" />
+          <div class="seg">
+            <button class="active">24h</button><button>7日</button><button>本月</button>
+          </div>
+          <select><option>全部车辆</option><option>品川500あ1001</option></select>
+          <div></div>
+        </div>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--blue)"></i>接机</span>
+          <span><i class="dot" style="background:var(--green)"></i>送机</span>
+          <span><i class="dot" style="background:var(--purple)"></i>包车</span>
+          <span><i class="dot" style="background:var(--orange)"></i>未结算</span>
+          <span><i class="dot" style="background:var(--red)"></i>异常</span>
+        </div>
+        <div class="panel" style="overflow:auto;">
+          <div class="timeline">
+            <div class="cell vehicle">车辆 / 时间</div>
+            <div class="cell">00</div><div class="cell">03</div><div class="cell">06</div><div class="cell">09</div><div class="cell">12</div><div class="cell">15</div><div class="cell">18</div><div class="cell">21</div>
+            <div class="cell vehicle">品川500あ1001</div>
+            <div class="cell"></div><div class="cell"></div><div class="cell event blue" style="grid-column:span 2;">08:30-10:00<br>羽田机场 → 银座酒店<br><span class="muted">田中司机 / 已派车</span></div><div class="cell event green" style="grid-column:span 2;">11:00-13:00<br>新宿 → 成田机场<br><span class="muted">田中司机 / 待结算</span></div><div class="cell"></div><div class="cell"></div>
+            <div class="cell vehicle">品川500あ1002</div>
+            <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell event purple" style="grid-column:span 3;">14:00-18:00<br>东京市内包车<br><span class="muted">佐藤司机 / 异常</span></div><div class="cell"></div><div class="cell"></div>
+          </div>
+        </div>
+        <div class="panel detail">
+          <div class="strong">订单详情</div>
+          <div class="line">05-07 08:30-10:00 ｜ 羽田机场 → 银座酒店</div>
+          <div class="line">接机 / 商务车 / 客人：王先生 / 旅行社：东京旅运 / 价格：23000</div>
+          <div class="line muted">司机：田中司机 ｜ 车辆：品川500あ1001 ｜ 派车：已派车 ｜ 结算：待结算</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll(".nav button");
+    const sections = document.querySelectorAll("main > section");
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        buttons.forEach((item) => item.classList.remove("active"));
+        sections.forEach((section) => section.classList.add("hidden"));
+        button.classList.add("active");
+        document.getElementById(button.dataset.tab).classList.remove("hidden");
+      });
+    });
+  </script>
+</body>
+</html>

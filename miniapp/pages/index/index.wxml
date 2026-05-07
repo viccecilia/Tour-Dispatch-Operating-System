@@ -1,0 +1,56 @@
+<view class="page">
+  <view class="header">
+    <text class="title">运营中台</text>
+    <text class="subtitle">轻量微信小程序调度平台</text>
+  </view>
+
+  <view class="metrics">
+    <view class="metric">
+      <text class="label">今日订单</text>
+      <text class="value">{{summary.today_orders}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">未分配订单</text>
+      <text class="value">{{summary.unassigned_orders}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">已派车订单</text>
+      <text class="value">{{summary.assigned_orders}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">待确认草稿</text>
+      <text class="value">{{summary.pending_drafts}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">解析失败</text>
+      <text class="value">{{summary.failed_drafts}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">今日解析</text>
+      <text class="value">{{summary.today_parsed_drafts}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">今日执行中</text>
+      <text class="value">{{summary.today_in_service_orders}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">今日已完成</text>
+      <text class="value">{{summary.today_completed_orders}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">今日已归库</text>
+      <text class="value">{{summary.today_returned_orders}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">未报备订单</text>
+      <text class="value">{{summary.unreported_assignments}}</text>
+    </view>
+  </view>
+
+  <view class="nav">
+    <view wx:for="{{nav}}" wx:key="label" class="nav-item" data-path="{{item.path}}" bindtap="onNavigate">
+      <text>{{item.label}}</text>
+      <text class="nav-arrow">进入</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,36 @@
+<view class="page">
+  <view class="toolbar">
+    <button class="primary" bindtap="onAdd">新增订单</button>
+  </view>
+
+  <view class="filters">
+    <picker mode="date" value="{{filters.order_date}}" bindchange="onDateChange">
+      <view class="filter-cell">{{filters.order_date || '选择日期'}}</view>
+    </picker>
+    <input class="filter-cell" placeholder="旅行社" value="{{filters.agency_name}}" data-key="agency_name" bindinput="onFilterInput" confirm-type="search" bindconfirm="onSearch" />
+    <picker range="{{dispatchOptions}}" range-key="label" value="{{dispatchIndex}}" bindchange="onDispatchChange">
+      <view class="filter-cell">{{dispatchOptions[dispatchIndex].label}}</view>
+    </picker>
+    <picker range="{{settlementOptions}}" range-key="label" value="{{settlementIndex}}" bindchange="onSettlementChange">
+      <view class="filter-cell">{{settlementOptions[settlementIndex].label}}</view>
+    </picker>
+    <input class="filter-cell wide" placeholder="关键词：地点/客人/备注" value="{{filters.keyword}}" data-key="keyword" bindinput="onFilterInput" confirm-type="search" bindconfirm="onSearch" />
+    <button class="secondary" bindtap="onSearch">查询</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="state">加载中...</view>
+  <view wx:elif="{{loadError}}" class="state error">{{loadError}}</view>
+  <view wx:elif="{{orders.length === 0}}" class="state">暂无订单</view>
+
+  <view wx:else class="order-list">
+    <view wx:for="{{orders}}" wx:key="id" class="order-row">
+      <view class="order-main" bindtap="onEdit" data-id="{{item.id}}">
+        <view class="line strong">{{item.order_date}} {{item.start_time || ''}} - {{item.end_time || ''}}</view>
+        <view class="line">{{item.pickup_location}} → {{item.dropoff_location}}</view>
+        <view class="line muted">{{item.order_type || '未填类型'}} / {{item.vehicle_type || '未填车型'}} / {{item.agency_name || '未填旅行社'}}</view>
+        <view class="line muted">价格：{{item.price || '未填'}} ｜ 派车：{{item.dispatch_status}} ｜ 结算：{{item.settlement_status}}</view>
+      </view>
+      <button class="danger" data-id="{{item.id}}" bindtap="onDelete">删除</button>
+    </view>
+  </view>
+</view>

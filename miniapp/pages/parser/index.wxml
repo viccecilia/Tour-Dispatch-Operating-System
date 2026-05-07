@@ -1,0 +1,47 @@
+<view class="page">
+  <view class="section">
+    <view class="title">粘贴订单文本</view>
+    <textarea class="textarea" placeholder="例如：5/7 10:00 成田->东京站 4人 2箱 ALPHARD 王先生" value="{{text}}" bindinput="onTextInput"></textarea>
+    <view class="actions">
+      <button class="primary" bindtap="onParseText">粘贴生成草稿</button>
+      <button class="secondary" bindtap="onVoiceEntry">语音转文字入口</button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="title">草稿列表</view>
+    <view wx:if="{{drafts.length === 0}}" class="state">暂无草稿</view>
+    <view wx:for="{{drafts}}" wx:key="id" class="draft-row" data-id="{{item.id}}" bindtap="onSelectDraft">
+      <view class="line strong">{{item.raw_text}}</view>
+      <view class="line">{{item.order_date || '未识别日期'}} {{item.start_time || ''}} ｜ {{item.pickup_location || '-'}} -> {{item.dropoff_location || '-'}}</view>
+      <view class="line muted">状态：{{item.parse_status}} ｜ 确认订单：{{item.confirmed_order_id || '未确认'}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{selected}}" class="section detail">
+    <view class="detail-head">
+      <text>草稿详情</text>
+      <text bindtap="clearSelected">关闭</text>
+    </view>
+    <view class="raw">原文：{{selected.raw_text}}</view>
+    <input class="input" placeholder="日期" value="{{selected.order_date}}" data-key="order_date" bindinput="onFieldInput" />
+    <input class="input" placeholder="开始时间" value="{{selected.start_time}}" data-key="start_time" bindinput="onFieldInput" />
+    <input class="input" placeholder="结束时间" value="{{selected.end_time}}" data-key="end_time" bindinput="onFieldInput" />
+    <input class="input" placeholder="起点" value="{{selected.pickup_location}}" data-key="pickup_location" bindinput="onFieldInput" />
+    <input class="input" placeholder="终点" value="{{selected.dropoff_location}}" data-key="dropoff_location" bindinput="onFieldInput" />
+    <input class="input" placeholder="订单类型" value="{{selected.order_type}}" data-key="order_type" bindinput="onFieldInput" />
+    <input class="input" placeholder="车型" value="{{selected.vehicle_type}}" data-key="vehicle_type" bindinput="onFieldInput" />
+    <input class="input" type="number" placeholder="人数" value="{{selected.passenger_count}}" data-key="passenger_count" bindinput="onFieldInput" />
+    <input class="input" type="number" placeholder="行李数" value="{{selected.luggage_count}}" data-key="luggage_count" bindinput="onFieldInput" />
+    <input class="input" placeholder="客人姓名" value="{{selected.guest_name}}" data-key="guest_name" bindinput="onFieldInput" />
+    <input class="input" placeholder="联系方式" value="{{selected.guest_contact}}" data-key="guest_contact" bindinput="onFieldInput" />
+    <input class="input" placeholder="旅行社" value="{{selected.agency_name}}" data-key="agency_name" bindinput="onFieldInput" />
+    <input class="input" type="digit" placeholder="价格" value="{{selected.price}}" data-key="price" bindinput="onFieldInput" />
+    <textarea class="textarea small" placeholder="备注" value="{{selected.remark}}" data-key="remark" bindinput="onFieldInput"></textarea>
+    <view class="actions">
+      <button class="secondary" loading="{{saving}}" bindtap="onSaveDraft">保存草稿</button>
+      <button class="primary" bindtap="onConfirmDraft">确认生成订单</button>
+    </view>
+    <button class="danger" bindtap="onDiscardDraft">作废草稿</button>
+  </view>
+</view>

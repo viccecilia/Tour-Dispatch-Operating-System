@@ -1,0 +1,37 @@
+<view class="page">
+  <view class="section">
+    <view class="title">司机身份</view>
+    <view class="driver-switch">
+      <input class="input" type="number" value="{{driverId}}" bindinput="onDriverInput" />
+      <button class="secondary" bindtap="onSwitchDriver">切换</button>
+    </view>
+    <view class="muted">本轮使用 driver_id 轻量识别，不接微信正式登录。</view>
+  </view>
+
+  <view class="section">
+    <view class="title">我的订单</view>
+    <view wx:if="{{assignments.length === 0}}" class="state">暂无分配订单</view>
+    <view wx:for="{{assignments}}" wx:key="assignment_id" class="order-card" data-id="{{item.assignment_id}}" bindtap="onSelect">
+      <view class="line strong">{{item.order_date}} {{item.start_time}}-{{item.end_time}}</view>
+      <view class="line">{{item.pickup_location}} -> {{item.dropoff_location}}</view>
+      <view class="line muted">{{item.order_type || '-'}} / {{item.vehicle_type || '-'}} / {{item.plate_number || '-'}} / {{item.execution_status}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{selected}}" class="section detail">
+    <view class="title">订单详情</view>
+    <view class="line">时间：{{selected.order_date}} {{selected.start_time}}-{{selected.end_time}}</view>
+    <view class="line">路线：{{selected.pickup_location}} -> {{selected.dropoff_location}}</view>
+    <view class="line">客人：{{selected.guest_name || '-'}} / {{selected.guest_contact || '-'}}</view>
+    <view class="line">车辆：{{selected.plate_number || '-'}} / {{selected.assigned_vehicle_type || '-'}}</view>
+    <view class="line">状态：{{selected.execution_status}}</view>
+    <view class="line muted">备注：{{selected.remark || '-'}}</view>
+    <input class="input" placeholder="位置文字，例如东京站附近" value="{{locationText}}" data-key="locationText" bindinput="onInput" />
+    <view class="coord">
+      <input class="input" placeholder="纬度" value="{{latitude}}" data-key="latitude" bindinput="onInput" />
+      <input class="input" placeholder="经度" value="{{longitude}}" data-key="longitude" bindinput="onInput" />
+    </view>
+    <textarea class="textarea" placeholder="报备备注" value="{{note}}" data-key="note" bindinput="onInput"></textarea>
+    <button class="primary" bindtap="onReport">{{nextActionLabel || '提交下一步报备'}}</button>
+  </view>
+</view>

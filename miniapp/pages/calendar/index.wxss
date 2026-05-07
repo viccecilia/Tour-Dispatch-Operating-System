@@ -1,0 +1,155 @@
+.page {
+  min-height: 100vh;
+  background: #f6f7f9;
+  padding: 24rpx;
+  color: #20242a;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14rpx;
+  margin-bottom: 16rpx;
+}
+
+.control,
+.tab {
+  min-height: 72rpx;
+  line-height: 72rpx;
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  padding: 0 18rpx;
+  font-size: 24rpx;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10rpx;
+}
+
+.tab {
+  text-align: center;
+}
+
+.active {
+  background: #1f2933;
+  color: #ffffff;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-bottom: 16rpx;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+}
+
+.dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+}
+
+.state {
+  padding: 36rpx;
+  text-align: center;
+  color: #5b6472;
+}
+
+.error {
+  color: #be123c;
+}
+
+.day-board {
+  width: 100%;
+}
+
+.day-grid {
+  min-width: 1200rpx;
+  display: grid;
+  grid-template-columns: 180rpx repeat(8, 120rpx);
+  gap: 10rpx;
+}
+
+.time-head,
+.vehicle-name,
+.vehicle-lane {
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  padding: 14rpx;
+  font-size: 22rpx;
+}
+
+.vehicle-lane {
+  grid-column: span 8;
+  min-height: 120rpx;
+}
+
+.event-card {
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-left: 8rpx solid #334155;
+  border-radius: 8rpx;
+  padding: 16rpx;
+  margin-bottom: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.event-title {
+  font-weight: 700;
+}
+
+.muted {
+  color: #5b6472;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.month-day {
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  padding: 18rpx;
+  font-size: 24rpx;
+}
+
+.detail {
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 24rpx;
+  max-height: 55vh;
+  overflow: auto;
+  background: #ffffff;
+  border: 1rpx solid #d1d5db;
+  border-radius: 8rpx;
+  padding: 20rpx;
+  box-shadow: 0 10rpx 30rpx rgba(15, 23, 42, .18);
+}
+
+.detail-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.detail-line {
+  font-size: 24rpx;
+  line-height: 1.6;
+  word-break: break-all;
+}

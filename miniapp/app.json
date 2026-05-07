@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/orders/index",
+    "pages/orders/form",
+    "pages/parser/index",
+    "pages/dispatch/index",
+    "pages/calendar/index",
+    "pages/driver/index",
+    "pages/vehicles/index",
+    "pages/finance/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "调度平台",
+    "navigationBarBackgroundColor": "#1f2933",
+    "navigationBarTextStyle": "white"
+  }
+}

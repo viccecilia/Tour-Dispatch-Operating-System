@@ -1,0 +1,29 @@
+<view class="page">
+  <view class="section">
+    <picker mode="date" value="{{form.order_date}}" bindchange="onDateChange">
+      <view class="field"><text>日期</text><text>{{form.order_date || '请选择'}}</text></view>
+    </picker>
+    <picker mode="time" value="{{form.start_time}}" bindchange="onStartTimeChange">
+      <view class="field"><text>开始时间</text><text>{{form.start_time || '请选择'}}</text></view>
+    </picker>
+    <picker mode="time" value="{{form.end_time}}" bindchange="onEndTimeChange">
+      <view class="field"><text>结束时间</text><text>{{form.end_time || '请选择'}}</text></view>
+    </picker>
+  </view>
+
+  <view class="section">
+    <input class="input" placeholder="起点" value="{{form.pickup_location}}" data-key="pickup_location" bindinput="onInput" />
+    <input class="input" placeholder="终点" value="{{form.dropoff_location}}" data-key="dropoff_location" bindinput="onInput" />
+    <input class="input" placeholder="订单类型" value="{{form.order_type}}" data-key="order_type" bindinput="onInput" />
+    <input class="input" placeholder="车型要求" value="{{form.vehicle_type}}" data-key="vehicle_type" bindinput="onInput" />
+    <input class="input" type="number" placeholder="人数" value="{{form.passenger_count}}" data-key="passenger_count" bindinput="onInput" />
+    <input class="input" type="number" placeholder="行李数" value="{{form.luggage_count}}" data-key="luggage_count" bindinput="onInput" />
+    <input class="input" placeholder="客人姓名" value="{{form.guest_name}}" data-key="guest_name" bindinput="onInput" />
+    <input class="input" placeholder="联系方式" value="{{form.guest_contact}}" data-key="guest_contact" bindinput="onInput" />
+    <input class="input" placeholder="旅行社来源" value="{{form.agency_name}}" data-key="agency_name" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="订单价格" value="{{form.price}}" data-key="price" bindinput="onInput" />
+    <textarea class="textarea" placeholder="订单备注" value="{{form.remark}}" data-key="remark" bindinput="onInput"></textarea>
+  </view>
+
+  <button class="primary" loading="{{saving}}" bindtap="onSave">保存订单</button>
+</view>

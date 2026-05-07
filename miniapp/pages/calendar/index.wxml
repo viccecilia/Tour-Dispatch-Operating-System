@@ -1,0 +1,75 @@
+<view class="page">
+  <view class="toolbar">
+    <picker mode="date" value="{{date}}" bindchange="onDateChange">
+      <view class="control">{{date}}</view>
+    </picker>
+    <view class="tabs">
+      <view wx:for="{{views}}" wx:key="key" class="tab {{view === item.key ? 'active' : ''}}" data-view="{{item.key}}" bindtap="onViewChange">{{item.label}}</view>
+    </view>
+    <picker range="{{vehicles}}" range-key="plate_number" value="{{vehicleIndex}}" bindchange="onVehicleChange">
+      <view class="control">{{vehicles[vehicleIndex].plate_number || '全部车辆'}}</view>
+    </picker>
+  </view>
+
+  <view class="legend">
+    <view wx:for="{{legend}}" wx:key="key" class="legend-item">
+      <view class="dot" style="background: {{item.color}};"></view>
+      <text>{{item.label}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="state">加载中...</view>
+  <view wx:elif="{{error}}" class="state error">{{error}}</view>
+
+  <scroll-view wx:elif="{{view === 'day'}}" scroll-x class="day-board">
+    <view class="day-grid">
+      <view class="time-head">车辆 / 时间</view>
+      <view wx:for="{{['00','03','06','09','12','15','18','21','24']}}" wx:key="item" class="time-head">{{item}}</view>
+      <block wx:for="{{vehicles}}" wx:key="id" wx:for-item="vehicle">
+        <view wx:if="{{vehicle.id}}" class="vehicle-name">{{vehicle.plate_number}}</view>
+        <view wx:if="{{vehicle.id}}" class="vehicle-lane">
+          <view wx:for="{{items}}" wx:key="assignment_id" wx:for-item="event" wx:if="{{event.vehicle_id === vehicle.id}}" class="event-card" style="border-left-color: {{event.calendar_color}};" data-id="{{event.assignment_id}}" bindtap="onItemTap">
+            <view class="event-title">{{event.start_time}}-{{event.end_time}}</view>
+            <view>{{event.pickup_location}} -> {{event.dropoff_location}}</view>
+            <view class="muted">{{event.driver_name}} / {{event.plate_number}} / {{event.dispatch_status}}</view>
+          </view>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:elif="{{view === 'week'}}" class="week-list">
+    <view wx:if="{{items.length === 0}}" class="state">本周暂无派车</view>
+    <view wx:for="{{items}}" wx:key="assignment_id" class="event-card" style="border-left-color: {{item.calendar_color}};" data-id="{{item.assignment_id}}" bindtap="onItemTap">
+      <view class="event-title">{{item.order_date}} {{item.start_time}}-{{item.end_time}}</view>
+      <view>{{item.pickup_location}} -> {{item.dropoff_location}}</view>
+      <view class="muted">{{item.driver_name}} / {{item.plate_number}} / {{item.dispatch_status}}</view>
+    </view>
+  </view>
+
+  <view wx:elif="{{view === 'month'}}" class="month-grid">
+    <view wx:if="{{monthSummary.length === 0}}" class="state">本月暂无派车</view>
+    <view wx:for="{{monthSummary}}" wx:key="date" class="month-day" data-date="{{item.date}}" bindtap="onMonthDayTap">
+      <view class="event-title">{{item.date}}</view>
+      <view>订单 {{item.order_count}}</view>
+      <view class="muted">异常 {{item.exception_count}} / 未结算 {{item.pending_settlement_count}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{detail}}" class="detail">
+    <view class="detail-head">
+      <text>订单详情</text>
+      <text bindtap="closeDetail">关闭</text>
+    </view>
+    <view class="detail-line">日期：{{detail.order_date}} {{detail.start_time}}-{{detail.end_time}}</view>
+    <view class="detail-line">路线：{{detail.pickup_location}} -> {{detail.dropoff_location}}</view>
+    <view class="detail-line">订单类型：{{detail.order_type}} / 车型：{{detail.vehicle_type}}</view>
+    <view class="detail-line">客人：{{detail.guest_name}} / {{detail.guest_contact}}</view>
+    <view class="detail-line">旅行社：{{detail.agency_name}}</view>
+    <view class="detail-line">价格：{{detail.price}}</view>
+    <view class="detail-line">司机：{{detail.driver_name}} / {{detail.driver_phone}}</view>
+    <view class="detail-line">车辆：{{detail.plate_number}} / {{detail.assigned_vehicle_type}}</view>
+    <view class="detail-line">派车：{{detail.dispatch_status}} / 结算：{{detail.settlement_status}}</view>
+    <view class="detail-line">备注：{{detail.remark}}</view>
+  </view>
+</view>

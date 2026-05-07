@@ -1,0 +1,50 @@
+<view class="page">
+  <view class="header">
+    <text class="title">财务概览</text>
+    <text class="subtitle">先做基础应收和待结算，不做复杂账务</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="state">加载中...</view>
+  <view wx:if="{{loadError}}" class="state error">{{loadError}}</view>
+
+  <view class="metrics">
+    <view class="metric">
+      <text class="label">订单数</text>
+      <text class="value">{{summary.order_count}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">总金额</text>
+      <text class="value">¥{{summary.total_amount}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">待结算</text>
+      <text class="value">¥{{summary.pending_amount}}</text>
+    </view>
+    <view class="metric">
+      <text class="label">今日金额</text>
+      <text class="value">¥{{summary.today_amount}}</text>
+    </view>
+  </view>
+
+  <view class="section">
+    <text class="section-title">旅行社应收</text>
+    <view wx:for="{{summary.by_agency}}" wx:key="agency_name" class="row">
+      <view class="main">
+        <text class="strong">{{item.agency_name}}</text>
+        <text class="muted">{{item.order_count}}单 · 待结算 ¥{{item.pending_amount}}</text>
+      </view>
+      <text class="amount">¥{{item.total_amount}}</text>
+    </view>
+  </view>
+
+  <view class="section">
+    <text class="section-title">待结算订单</text>
+    <view wx:for="{{summary.pending_orders}}" wx:key="id" class="row">
+      <view class="main">
+        <text class="strong">{{item.order_date}} {{item.start_time || ''}} {{item.pickup_location}} → {{item.dropoff_location}}</text>
+        <text class="muted">{{item.oid}} · {{item.agency_name || '未填写旅行社'}}</text>
+      </view>
+      <text class="amount">¥{{item.price || 0}}</text>
+    </view>
+  </view>
+</view>

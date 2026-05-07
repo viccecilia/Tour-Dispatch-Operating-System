@@ -1,0 +1,54 @@
+<view class="page">
+  <view class="header">
+    <text class="title">车辆人员</text>
+    <text class="subtitle">维护司机状态和车辆状态，供派车页面选择</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="state">加载中...</view>
+  <view wx:if="{{loadError}}" class="state error">{{loadError}}</view>
+
+  <view class="section">
+    <text class="section-title">司机</text>
+    <view class="form-row">
+      <input class="input" placeholder="司机姓名" value="{{driverForm.name}}" data-key="name" bindinput="onDriverInput" />
+      <input class="input" placeholder="电话" value="{{driverForm.phone}}" data-key="phone" bindinput="onDriverInput" />
+    </view>
+    <view class="form-row">
+      <picker class="picker" range="{{driverStatuses}}" range-key="label" bindchange="onDriverStatusChange">
+        <view>状态：{{driverForm.status}}</view>
+      </picker>
+      <button class="primary" bindtap="addDriver">新增司机</button>
+    </view>
+    <view wx:for="{{drivers}}" wx:key="id" class="row">
+      <view class="main">
+        <text class="strong">{{item.name}}</text>
+        <text class="muted">{{item.phone || '未填写电话'}} · {{item.status}}</text>
+      </view>
+      <button class="secondary" size="mini" data-id="{{item.id}}" data-status="available" bindtap="setDriverStatus">可用</button>
+      <button class="secondary" size="mini" data-id="{{item.id}}" data-status="resting" bindtap="setDriverStatus">休息</button>
+    </view>
+  </view>
+
+  <view class="section">
+    <text class="section-title">车辆</text>
+    <view class="form-row">
+      <input class="input" placeholder="车牌号" value="{{vehicleForm.plate_number}}" data-key="plate_number" bindinput="onVehicleInput" />
+      <input class="input" placeholder="车型" value="{{vehicleForm.vehicle_type}}" data-key="vehicle_type" bindinput="onVehicleInput" />
+    </view>
+    <view class="form-row">
+      <input class="input" type="number" placeholder="座位数" value="{{vehicleForm.seat_count}}" data-key="seat_count" bindinput="onVehicleInput" />
+      <picker class="picker" range="{{vehicleStatuses}}" range-key="label" bindchange="onVehicleStatusChange">
+        <view>状态：{{vehicleForm.status}}</view>
+      </picker>
+    </view>
+    <button class="primary full" bindtap="addVehicle">新增车辆</button>
+    <view wx:for="{{vehicles}}" wx:key="id" class="row">
+      <view class="main">
+        <text class="strong">{{item.plate_number}}</text>
+        <text class="muted">{{item.vehicle_type || '未填写车型'}} · {{item.seat_count || 0}}座 · {{item.status}}</text>
+      </view>
+      <button class="secondary" size="mini" data-id="{{item.id}}" data-status="available" bindtap="setVehicleStatus">可用</button>
+      <button class="secondary" size="mini" data-id="{{item.id}}" data-status="maintenance" bindtap="setVehicleStatus">保养</button>
+    </view>
+  </view>
+</view>
