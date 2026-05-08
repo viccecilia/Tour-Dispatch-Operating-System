@@ -182,9 +182,13 @@ def _build_order_oid(conn, order_id: int, order_date: Any) -> str:
         FROM orders
         WHERE order_date = ?
           AND id <= ?
-          AND COALESCE(is_deleted, 0) = 0
         """,
         (str(order_date), order_id),
     ).fetchone()
     serial = int(row["count"] if row else 0) or order_id
-    return f"{date_text}-{serial:03d}"
+    while True:
+        oid = f"{date_text}-{serial:03d}"
+        exists = conn.execute("SELECT 1 FROM orders WHERE oid = ? LIMIT 1", (oid,)).fetchone()
+        if not exists:
+            return oid
+        serial += 1

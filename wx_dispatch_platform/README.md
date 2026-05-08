@@ -1,14 +1,36 @@
 # wx_dispatch_platform
 
-本仓库当前采用根级 `backend/`、`miniapp/`、`docs/`、`scripts/`、`runtime/` 目录承载最小可运行框架。
+轻量微信小程序调度平台 MVP。
 
-保留该目录作为项目命名入口，避免复制两套后端和小程序代码。
+当前项目已经具备：
 
-## 当前能力
+- 后端 API：登录、订单、草稿解析、派车、日历、司机报备、dashboard。
+- 本地数据库：SQLite，默认文件 `runtime/wx_dispatch.sqlite3`。
+- 调度台：`/dashboard`，用于电脑端演示和运营验收。
+- 小程序端：`miniapp/`，用于微信开发者工具预览。
+- 演示数据：通过 `scripts/reset_demo_db.py` 一键重置为稳定演示库。
 
-- R001：基础 API、SQLite 初始化、admin 登录、运营中台首页骨架。
-- R002：订单新增、订单列表筛选、订单编辑、订单软删除、dashboard 订单统计。
-- R003：未分配订单派车、司机车辆选择、assignments 历史、取消/重新分配、时间冲突检测、接龙建议。
-- R004：派车日历 API、小程序 24h/7日/本月视图、订单详情区、今日派车 dashboard 摘要。
-- R005：文本/Excel/语音入口生成订单草稿、人工修正、确认入库、解析统计。
-- R006：司机端我的订单、执行报备、driver_reports、execution_status 回写、调度端和 dashboard 执行状态可见。
+快速启动：
+
+```bash
+python scripts/reset_demo_db.py
+python backend/main.py
+```
+
+默认地址：
+
+- 后端 API：`http://127.0.0.1:8000`
+- 调度台：`http://127.0.0.1:8000/dashboard`
+
+如果 8000 端口被占用：
+
+```bash
+$env:WX_DISPATCH_PORT='18765'
+python backend/main.py
+```
+
+更多步骤见：
+
+- `docs/STARTUP_GUIDE.md`
+- `docs/BOSS_DEMO_SCRIPT.md`
+- `docs/MINIAPP_MANUAL_CHECKLIST.md`

@@ -1,8 +1,10 @@
+@import "../../styles/theme.wxss";
+
 .page {
   min-height: 100vh;
-  background: #f6f7f9;
+  background: var(--c-bg);
   padding: 32rpx;
-  color: #20242a;
+  color: var(--c-text);
 }
 
 .header {
@@ -29,9 +31,6 @@
 }
 
 .metric {
-  background: #ffffff;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 8rpx;
   padding: 24rpx;
 }
 
@@ -50,9 +49,6 @@
 
 .nav {
   margin-top: 30rpx;
-  background: #ffffff;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 8rpx;
 }
 
 .nav-item {

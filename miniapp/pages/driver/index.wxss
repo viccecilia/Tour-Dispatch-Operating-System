@@ -1,14 +1,13 @@
+@import "../../styles/theme.wxss";
+
 .page {
   min-height: 100vh;
-  background: #f6f7f9;
+  background: var(--c-bg);
   padding: 24rpx;
-  color: #20242a;
+  color: var(--c-text);
 }
 
 .section {
-  background: #ffffff;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 8rpx;
   padding: 18rpx;
   margin-bottom: 18rpx;
 }
@@ -32,15 +31,13 @@
 
 .input {
   min-height: 76rpx;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 8rpx;
+  border: 1rpx solid var(--c-border);
+  border-radius: var(--r-control);
   padding: 0 16rpx;
   box-sizing: border-box;
 }
 
 .order-card {
-  border: 1rpx solid #edf0f3;
-  border-radius: 8rpx;
   padding: 16rpx;
   margin-top: 12rpx;
 }
@@ -59,8 +56,8 @@
 .textarea {
   width: 100%;
   min-height: 130rpx;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 8rpx;
+  border: 1rpx solid var(--c-border);
+  border-radius: var(--r-control);
   padding: 16rpx;
   box-sizing: border-box;
   margin: 14rpx 0;
@@ -68,13 +65,13 @@
 
 .primary,
 .secondary {
-  border-radius: 8rpx;
+  border-radius: var(--r-control);
   font-size: 26rpx;
 }
 
 .primary {
   width: 100%;
-  background: #1f2933;
+  background: var(--c-success);
   color: #ffffff;
 }
 

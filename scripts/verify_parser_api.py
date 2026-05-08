@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 from backend.db.database import init_db
 
 
-BASE_URL = os.environ.get("WX_DISPATCH_BASE_URL", "http://127.0.0.1:8000")
+BASE_URL = os.environ.get("WX_DISPATCH_BASE_URL", "http://127.0.0.1:18765")
 
 
 def request(method: str, path: str, payload: dict | None = None) -> dict:

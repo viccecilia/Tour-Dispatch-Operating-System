@@ -11,8 +11,9 @@
     "pages/finance/index"
   ],
   "window": {
-    "navigationBarTitleText": "调度平台",
-    "navigationBarBackgroundColor": "#1f2933",
-    "navigationBarTextStyle": "white"
+    "navigationBarTitleText": "调度派单台",
+    "navigationBarBackgroundColor": "#0f172a",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f6f8fb"
   }
 }

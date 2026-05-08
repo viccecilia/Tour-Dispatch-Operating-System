@@ -1,0 +1,39 @@
+{
+  "name": "wx-dispatch-admin-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc -b && vite build",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.90.7",
+    "@vitejs/plugin-react": "latest",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.468.0",
+    "tailwind-merge": "2.5.5",
+    "tailwindcss-animate": "1.0.7",
+    "vite": "latest",
+    "zustand": "5.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "autoprefixer": "10.4.20",
+    "@types/node": "22.12.0",
+    "eslint": "9.39.1",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "eslint-plugin-react-refresh": "0.4.14",
+    "globals": "15.12.0",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.15",
+    "typescript": "5.6.3",
+    "typescript-eslint": "8.15.0"
+  }
+}

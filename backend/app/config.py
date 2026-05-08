@@ -1,13 +1,15 @@
-from pathlib import Path
-
-
-BASE_DIR = Path(__file__).resolve().parents[2]
-RUNTIME_DIR = BASE_DIR / "runtime"
-DB_PATH = RUNTIME_DIR / "wx_dispatch.sqlite3"
-
-DEFAULT_ADMIN = {
-    "username": "admin",
-    "password": "admin123",
-    "role": "admin",
-    "display_name": "系统管理员",
-}
+from backend.config import (  # noqa: F401
+    BACKUP_DIR,
+    BASE_DIR,
+    BASE_URL,
+    DB_PATH,
+    DEFAULT_ADMIN,
+    DEMO_MODE,
+    HOST,
+    LOG_DIR,
+    LOG_LEVEL,
+    PORT,
+    RESET_DEMO_ON_START,
+    RUNTIME_DIR,
+    ensure_runtime_dirs,
+)

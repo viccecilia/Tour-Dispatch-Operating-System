@@ -297,6 +297,11 @@ def refresh_order_oids(conn: sqlite3.Connection) -> None:
         ORDER BY order_date ASC, id ASC
         """
     ).fetchall()
+    for row in rows:
+        conn.execute(
+            "UPDATE orders SET oid = ? WHERE id = ?",
+            (f"__OID_REFRESH_{row['id']}__", row["id"]),
+        )
     serials: dict[str, int] = {}
     assignments = {
         row["order_id"]: dict(row)

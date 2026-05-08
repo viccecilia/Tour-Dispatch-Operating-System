@@ -1,9 +1,22 @@
-const BASE_URL = 'http://127.0.0.1:8000';
+const API_CONFIG = {
+  // 微信开发者工具本机预览默认使用 127.0.0.1。
+  // 真机预览时请改成电脑局域网 IP，例如 http://192.168.1.23:8000。
+  // 如果后端端口被占用，可配合 WX_DISPATCH_PORT 切换为 18765。
+  baseUrl: 'http://127.0.0.1:8000'
+};
+
+function setBaseUrl(baseUrl) {
+  API_CONFIG.baseUrl = String(baseUrl || '').replace(/\/$/, '');
+}
+
+function getBaseUrl() {
+  return API_CONFIG.baseUrl;
+}
 
 function request(path, options = {}) {
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${BASE_URL}${path}`,
+      url: `${API_CONFIG.baseUrl}${path}`,
       method: options.method || 'GET',
       data: options.data || {},
       header: {
@@ -17,6 +30,9 @@ function request(path, options = {}) {
 }
 
 module.exports = {
+  API_CONFIG,
+  setBaseUrl,
+  getBaseUrl,
   request,
   login: (username, password) => request('/api/auth/login', {
     method: 'POST',
