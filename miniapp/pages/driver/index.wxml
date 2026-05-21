@@ -1,37 +1,106 @@
 <view class="page">
-  <view class="section">
-    <view class="title">司机身份</view>
-    <view class="driver-switch">
-      <input class="input" type="number" value="{{driverId}}" bindinput="onDriverInput" />
-      <button class="secondary" bindtap="onSwitchDriver">切换</button>
+  <view class="top-status status-{{statusMode}}">
+    <view class="top-line">
+      <view class="driver">{{driverName}}</view>
+      <view class="state-pill">{{statusText}}</view>
     </view>
-    <view class="muted">本轮使用 driver_id 轻量识别，不接微信正式登录。</view>
+    <view class="meta">{{today}} {{nowText}} · 司机ID {{driverId}}</view>
+    <view wx:if="{{offlineText}}" class="offline">{{offlineText}}</view>
   </view>
 
-  <view class="section">
-    <view class="title">我的订单</view>
-    <view wx:if="{{assignments.length === 0}}" class="state">暂无分配订单</view>
-    <view wx:for="{{assignments}}" wx:key="assignment_id" class="order-card" data-id="{{item.assignment_id}}" bindtap="onSelect">
-      <view class="line strong">{{item.order_date}} {{item.start_time}}-{{item.end_time}}</view>
-      <view class="line">{{item.pickup_location}} -> {{item.dropoff_location}}</view>
-      <view class="line muted">{{item.order_type || '-'}} / {{item.vehicle_type || '-'}} / {{item.plate_number || '-'}} / {{item.execution_status}}</view>
+  <view class="month-kpi">
+    <view class="kpi-item"><text>本月送迎</text><strong>{{workbench.month_airport_count || 0}}</strong></view>
+    <view class="kpi-item"><text>本月包车</text><strong>{{workbench.month_charter_count || 0}}</strong></view>
+    <view class="kpi-item"><text>本月事故</text><strong>{{workbench.month_incident_count || 0}}</strong></view>
+  </view>
+
+  <view class="driver-switch">
+    <input class="input" type="number" value="{{driverId}}" bindinput="onDriverInput" />
+    <button class="btn light" bindtap="onSwitchDriver">切换司机</button>
+    <button class="btn light" bindtap="retryPendingTasks">补发 {{pendingCount}}</button>
+  </view>
+
+  <view wx:if="{{nextAction && nextAction.kind === 'preflight'}}" class="card checklist">
+    <view class="card-title">出库检查</view>
+    <view class="hint">确认车灯、刹车、车身、证件、酒精和睡眠后，再点呼出库。</view>
+    <view wx:for="{{preflightItems}}" wx:key="key" class="check-item" data-key="{{item.key}}" bindtap="onTogglePreflight">
+      <view class="check-dot {{preflightChecked[item.key] ? 'on' : ''}}"></view>
+      <view class="check-label">{{item.label}}</view>
     </view>
   </view>
 
-  <view wx:if="{{selected}}" class="section detail">
-    <view class="title">订单详情</view>
-    <view class="line">时间：{{selected.order_date}} {{selected.start_time}}-{{selected.end_time}}</view>
-    <view class="line">路线：{{selected.pickup_location}} -> {{selected.dropoff_location}}</view>
-    <view class="line">客人：{{selected.guest_name || '-'}} / {{selected.guest_contact || '-'}}</view>
-    <view class="line">车辆：{{selected.plate_number || '-'}} / {{selected.assigned_vehicle_type || '-'}}</view>
-    <view class="line">状态：{{selected.execution_status}}</view>
-    <view class="line muted">备注：{{selected.remark || '-'}}</view>
-    <input class="input" placeholder="位置文字，例如东京站附近" value="{{locationText}}" data-key="locationText" bindinput="onInput" />
-    <view class="coord">
-      <input class="input" placeholder="纬度" value="{{latitude}}" data-key="latitude" bindinput="onInput" />
-      <input class="input" placeholder="经度" value="{{longitude}}" data-key="longitude" bindinput="onInput" />
+  <view class="card next-action">
+    <view class="card-title">下一步动作</view>
+    <view class="next-label">{{nextActionLabel}}</view>
+    <view class="hint">{{nextActionHint}}</view>
+    <button class="btn primary big" disabled="{{submitting || uploadingEvidence || !selected}}" bindtap="onPrimaryAction">
+      {{submitting || uploadingEvidence ? '提交中...' : nextActionLabel}}
+    </button>
+  </view>
+
+  <view class="tabs">
+    <button class="tab {{activeTab==='orders'?'on':''}}" data-tab="orders" bindtap="onTabChange">订单</button>
+    <button class="tab {{activeTab==='map'?'on':''}}" data-tab="map" bindtap="onTabChange">地图</button>
+    <button class="tab {{activeTab==='photos'?'on':''}}" data-tab="photos" bindtap="onTabChange">拍照</button>
+  </view>
+
+  <view wx:if="{{activeTab === 'orders'}}">
+    <view wx:if="{{pendingConfirm.length > 0}}" class="card">
+      <view class="card-title">待确认接单（今日）</view>
+      <view wx:for="{{pendingConfirm}}" wx:key="assignment_id" class="order-row {{selected && selected.assignment_id===item.assignment_id ? 'active' : ''}}" data-id="{{item.assignment_id}}" bindtap="onSelectOrder">
+        <view>{{item.start_time}} · {{item.pickup_location}} → {{item.dropoff_location}}</view>
+        <view class="muted">{{item.status_label}} · {{item.guest_name || '-'}}</view>
+      </view>
     </view>
-    <textarea class="textarea" placeholder="报备备注" value="{{note}}" data-key="note" bindinput="onInput"></textarea>
-    <button class="primary" bindtap="onReport">{{nextActionLabel || '提交下一步报备'}}</button>
+
+    <view wx:if="{{selected}}" class="card">
+      <view class="card-title">当前订单</view>
+      <view class="order-id">{{selected.oid || selected.order_id}} · {{selected.status_label}}</view>
+      <view class="route">{{selected.pickup_location}} → {{selected.dropoff_location}}</view>
+      <view class="row-meta">{{selected.order_date}} {{selected.start_time}} - {{selected.end_time || '-'}}</view>
+      <view class="row-meta">客人：{{selected.guest_name || '-'}} · {{selected.guest_contact || '-'}}</view>
+      <view class="order-actions">
+        <button class="btn light" bindtap="onCallGuest">电话</button>
+        <button class="btn light" bindtap="onNavigatePickup">上车点导航</button>
+        <button class="btn light" bindtap="onNavigateDropoff">终点导航</button>
+      </view>
+    </view>
+
+    <view wx:if="{{nextOrder}}" class="card folded">
+      <view class="card-title">下一单（折叠待开启）</view>
+      <view class="route">{{nextOrder.pickup_location}} → {{nextOrder.dropoff_location}}</view>
+      <view class="row-meta">{{nextOrder.start_time}} · {{nextOrder.status_label}}</view>
+      <button class="btn light" data-id="{{nextOrder.assignment_id}}" bindtap="onSelectOrder">开启下一单</button>
+    </view>
+
+    <view wx:if="{{!selected && !loading}}" class="card"><view class="muted">今日暂无订单</view></view>
+  </view>
+
+  <view wx:if="{{activeTab === 'map' && selected}}" class="card">
+    <view class="card-title">地图与导航</view>
+    <map class="map-preview" latitude="{{latitude || 35.6812}}" longitude="{{longitude || 139.7671}}" scale="12"></map>
+    <view class="order-actions">
+      <button class="btn light" bindtap="onUploadLocation">上报当前位置</button>
+      <button class="btn light" bindtap="onNavigatePickup">导航上车点</button>
+      <button class="btn light" bindtap="onNavigateDropoff">导航终点</button>
+    </view>
+    <input class="input" placeholder="位置文字（可选）" value="{{locationText}}" data-key="locationText" bindinput="onInput" />
+    <textarea class="textarea" placeholder="备注（可选）" value="{{note}}" data-key="note" bindinput="onInput"></textarea>
+  </view>
+
+  <view wx:if="{{activeTab === 'photos' && selected}}" class="card">
+    <view class="card-title">订单拍照流程</view>
+    <view wx:for="{{photoSteps}}" wx:key="event" class="photo-step">
+      <view class="step-left">
+        <view class="step-title">{{index + 1}}. {{item.title}}</view>
+        <view class="muted">{{item.hint}}</view>
+      </view>
+      <button class="btn light" data-event="{{item.event}}" bindtap="onPhotoUploadTap">上传</button>
+    </view>
+    <view wx:if="{{evidenceUploads.length === 0}}" class="muted">暂无照片</view>
+    <view wx:for="{{evidenceUploads}}" wx:key="id" class="photo-row">
+      <text>{{item.evidence_type}}</text>
+      <text>{{item.uploaded_at}}</text>
+    </view>
   </view>
 </view>

@@ -133,6 +133,10 @@ Backend log:
 runtime/logs/backend.log
 ```
 
+Unhandled API exceptions are logged by the backend and returned to clients as a JSON
+`internal_server_error` response. The response is intentionally generic; use backend
+logs and audit records for investigation.
+
 ## Backup and Restore
 
 Backup:
@@ -173,3 +177,15 @@ python scripts/reset_demo_db.py
 ```
 
 This restores a fixed demo data set and prevents smoke data from accumulating.
+
+## Production Runtime Boundaries
+
+Production mode keeps the same lightweight runtime shape:
+
+- Python backend
+- React Admin Console
+- SQLite database
+- file-based logs and backups
+
+It still does not include Redis, PostgreSQL, WebSocket, maps, real payment, or
+third-party messaging. Those belong to later production expansion rounds.

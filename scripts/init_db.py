@@ -12,7 +12,7 @@ from backend.db.database import init_db, table_counts
 
 def main() -> None:
     init_db(seed=True)
-    counts = table_counts(["users", "drivers", "vehicles", "agencies", "orders", "assignments", "order_drafts", "driver_reports"])
+    counts = table_counts(["users", "drivers", "vehicles", "agencies", "locations", "orders", "assignments", "order_drafts", "driver_reports"])
     print(f"database={DB_PATH}")
     print(counts)
 

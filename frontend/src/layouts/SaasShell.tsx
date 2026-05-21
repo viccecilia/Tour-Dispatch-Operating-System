@@ -1,8 +1,15 @@
 import {
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  Bot,
+  Building2,
   CalendarDays,
   CarFront,
   ClipboardList,
+  FileClock,
   FileText,
+  MapPinned,
   LayoutDashboard,
   LucideIcon,
   MonitorCog,
@@ -12,38 +19,69 @@ import {
   Truck,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/apiClient";
 import { PageKey, useNavigationStore } from "@/stores/navigationStore";
+import { useLanguageStore } from "@/stores/languageStore";
 import { cn } from "@/lib/utils";
+import type { AuthUser } from "@/types/api";
+import type { Locale } from "@/i18n/dictionaries";
 
-const navItems: Array<{ key: PageKey; label: string; icon: LucideIcon }> = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "parser", label: "Parser", icon: FileText },
-  { key: "orders", label: "Orders", icon: ClipboardList },
-  { key: "dispatch", label: "Dispatch", icon: Route },
-  { key: "calendar", label: "Calendar", icon: CalendarDays },
-  { key: "driver-monitor", label: "Driver Monitor", icon: MonitorCog },
-  { key: "vehicles", label: "Vehicles", icon: Truck },
-  { key: "finance", label: "Finance", icon: Receipt },
-  { key: "settings", label: "Settings", icon: Settings },
+const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
+  { key: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { key: "parser", labelKey: "nav.parser", icon: FileText },
+  { key: "orders", labelKey: "nav.orders", icon: ClipboardList },
+  { key: "dispatch", labelKey: "nav.dispatch", icon: Route },
+  { key: "calendar", labelKey: "nav.calendar", icon: CalendarDays },
+  { key: "driver-monitor", labelKey: "nav.driver-monitor", icon: MonitorCog },
+  { key: "map", labelKey: "nav.map", icon: MapPinned },
+  { key: "vehicles", labelKey: "nav.vehicles", icon: Truck },
+  { key: "agencies", labelKey: "nav.agencies", icon: Building2 },
+  { key: "incidents", labelKey: "nav.incidents", icon: AlertTriangle },
+  { key: "finance", labelKey: "nav.finance", icon: Receipt },
+  { key: "analytics", labelKey: "nav.analytics", icon: BarChart3 },
+  { key: "automation", labelKey: "nav.automation", icon: Bot },
+  { key: "copilot", labelKey: "nav.copilot", icon: Bot },
+  { key: "audit", labelKey: "nav.audit", icon: FileClock },
+  { key: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
-const titles: Record<PageKey, string> = {
-  dashboard: "运营总览",
-  parser: "订单解析",
-  orders: "订单中心",
-  dispatch: "派车工作台",
-  calendar: "日历排程",
-  "driver-monitor": "司机执行监控",
-  vehicles: "车辆资源",
-  finance: "财务概览",
-  settings: "系统设置",
+const titleKeys: Record<PageKey, string> = {
+  dashboard: "page.dashboard",
+  parser: "page.parser",
+  orders: "page.orders",
+  dispatch: "page.dispatch",
+  calendar: "page.calendar",
+  "driver-monitor": "page.driver-monitor",
+  map: "page.map",
+  vehicles: "page.vehicles",
+  agencies: "page.agencies",
+  incidents: "page.incidents",
+  finance: "page.finance",
+  analytics: "page.analytics",
+  automation: "page.automation",
+  copilot: "page.copilot",
+  audit: "page.audit",
+  settings: "page.settings",
 };
 
-export function SaasShell({ children }: { children: ReactNode }) {
+const localeLabels: Record<Locale, string> = {
+  "zh-CN": "中文",
+  "ja-JP": "日本語",
+  "en-US": "English",
+};
+
+export function SaasShell({ children, user, onLogout }: { children: ReactNode; user: AuthUser; onLogout: () => void }) {
   const { activePage, setActivePage } = useNavigationStore();
+  const { locale, setLocale, t } = useLanguageStore();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const ping = useQuery({ queryKey: ["ping"], queryFn: api.ping, refetchInterval: 30_000 });
+  const notifications = useQuery({
+    queryKey: ["notification-summary"],
+    queryFn: api.notificationSummary,
+    refetchInterval: 20_000,
+  });
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -53,8 +91,8 @@ export function SaasShell({ children }: { children: ReactNode }) {
             <CarFront size={20} />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">WX Dispatch</p>
-            <p className="text-xs text-slate-400">Admin Console</p>
+            <p className="text-sm font-semibold text-white">{t("app.brand")}</p>
+            <p className="text-xs text-slate-400">{t("app.subtitle")}</p>
           </div>
         </div>
 
@@ -72,14 +110,16 @@ export function SaasShell({ children }: { children: ReactNode }) {
                 onClick={() => setActivePage(item.key)}
               >
                 <Icon size={18} />
-                {item.label}
+                {t(item.labelKey)}
               </button>
             );
           })}
         </nav>
 
         <div className="border-t border-white/10 p-4 text-xs text-slate-400">
-          <p>Demo Runtime</p>
+          <p className="font-semibold text-slate-200">{user.display_name || user.username}</p>
+          <p className="mt-1">{user.tenant?.name || `租户 ${user.tenant_id}`}</p>
+          <p>{t("topbar.demo")}</p>
           <p className="mt-1 truncate">{api.baseUrl}</p>
         </div>
       </aside>
@@ -87,19 +127,95 @@ export function SaasShell({ children }: { children: ReactNode }) {
       <div className="pl-64">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-white/90 px-8 backdrop-blur">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">SaaS Operations</p>
-            <h1 className="text-xl font-bold text-slate-950">{titles[activePage]}</h1>
+            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">{t("topbar.section")}</p>
+            <h1 className="text-xl font-bold text-slate-950">{t(titleKeys[activePage])}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Demo Mode</span>
+            <select
+              className="h-9 rounded-full border border-border bg-white px-3 text-xs font-semibold text-slate-700"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as Locale)}
+              title="语言"
+            >
+              {(Object.keys(localeLabels) as Locale[]).map((item) => (
+                <option key={item} value={item}>
+                  {localeLabels[item]}
+                </option>
+              ))}
+            </select>
+            <div className="relative">
+              <button
+                className="relative flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setNotificationsOpen((value) => !value)}
+                title={t("notifications.title")}
+              >
+                <Bell size={17} />
+                {(notifications.data?.unread || 0) > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {notifications.data?.unread}
+                  </span>
+                ) : null}
+              </button>
+              {notificationsOpen ? (
+                <div className="absolute right-0 top-11 z-50 w-96 overflow-hidden rounded-xl border border-border bg-white shadow-xl">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <div>
+                      <div className="text-sm font-bold text-slate-950">{t("notifications.title")}</div>
+                      <div className="text-xs text-slate-500">
+                        {notifications.data?.unread || 0} {t("notifications.unread")} · {notifications.data?.urgent || 0} {t("notifications.urgent")}
+                      </div>
+                    </div>
+                    <button
+                      className="text-xs font-semibold text-blue-600"
+                      onClick={() => api.markAllNotificationsRead().then(() => notifications.refetch())}
+                    >
+                      {t("notifications.markAllRead")}
+                    </button>
+                  </div>
+                  <div className="max-h-96 overflow-auto">
+                    {(notifications.data?.latest || []).length ? (
+                      notifications.data?.latest.map((item) => (
+                        <button
+                          key={item.id}
+                          className="block w-full border-b border-border px-4 py-3 text-left hover:bg-slate-50"
+                          onClick={() => {
+                            api.markNotificationRead(item.id).then(() => notifications.refetch());
+                            if (item.link) window.location.hash = item.link.replace("#", "");
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate text-sm font-bold text-slate-950">{item.title}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${item.priority === "critical" || item.priority === "high" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>
+                              {priorityLabel(item.priority)}
+                            </span>
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">{item.body || notificationTypeLabel(item.notification_type)}</div>
+                          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                            <span>{notificationTypeLabel(item.notification_type)}</span>
+                            <span>{item.status === "read" ? "已读" : "未读"}</span>
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-4 py-8 text-center text-sm text-slate-500">{t("notifications.empty")}</div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{t("topbar.demo")}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{roleLabel(user.role)}</span>
             <span
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-semibold",
                 ping.isError ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700",
               )}
             >
-              API {ping.isError ? "offline" : "online"}
+              {ping.isError ? t("topbar.apiOffline") : t("topbar.apiOnline")}
             </span>
+            <button className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white" onClick={onLogout}>
+              {t("topbar.logout")}
+            </button>
           </div>
         </header>
 
@@ -107,4 +223,23 @@ export function SaasShell({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
+}
+
+function roleLabel(role: string) {
+  return { admin: "管理员", dispatcher: "调度员", driver: "司机" }[role] || role;
+}
+
+function priorityLabel(priority?: string) {
+  return { critical: "严重", high: "高", normal: "普通", low: "低" }[priority || ""] || "普通";
+}
+
+function notificationTypeLabel(type?: string) {
+  return {
+    resource_reminder: "资源提醒",
+    dispatch_assigned: "派车通知",
+    driver_report: "司机报备",
+    incident: "异常通知",
+    workflow_reminder: "规则提醒",
+    workflow_suggestion: "规则建议",
+  }[type || ""] || type || "系统通知";
 }

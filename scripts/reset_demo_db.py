@@ -19,10 +19,16 @@ TABLES = [
     "drivers",
     "vehicles",
     "agencies",
+    "locations",
     "orders",
     "assignments",
     "order_drafts",
     "driver_reports",
+    "driver_evidence_uploads",
+    "driver_workflow_events",
+    "driver_expense_reports",
+    "location_logs",
+    "notifications",
 ]
 
 

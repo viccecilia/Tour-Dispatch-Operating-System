@@ -6,6 +6,8 @@ from backend.config import (  # noqa: F401
     DEFAULT_ADMIN,
     DEMO_MODE,
     HOST,
+    JWT_EXPIRES_SECONDS,
+    JWT_SECRET,
     LOG_DIR,
     LOG_LEVEL,
     PORT,

@@ -1,8 +1,8 @@
 const API_CONFIG = {
-  // 微信开发者工具本机预览默认使用 127.0.0.1。
-  // 真机预览时请改成电脑局域网 IP，例如 http://192.168.1.23:8000。
-  // 如果后端端口被占用，可配合 WX_DISPATCH_PORT 切换为 18765。
-  baseUrl: 'http://127.0.0.1:8000'
+  // 微信开发者工具本机预览默认使用本机地址。
+  // 真机预览时请改成电脑局域网地址。
+  // 如果后端端口被占用，可切换为 18765。
+  baseUrl: 'http://127.0.0.1:18765'
 };
 
 function setBaseUrl(baseUrl) {
@@ -73,6 +73,9 @@ module.exports = {
   listVehicles: () => request('/api/resources/vehicles'),
   createVehicle: (data) => request('/api/resources/vehicles', { method: 'POST', data }),
   updateVehicle: (id, data) => request(`/api/resources/vehicles/${id}`, { method: 'PUT', data }),
+  resourceReminders: () => request('/api/resources/reminders'),
+  reminderSettings: () => request('/api/settings/reminders'),
+  updateReminderSettings: (data) => request('/api/settings/reminders', { method: 'PUT', data }),
   parseText: (text) => request('/api/parser/text', { method: 'POST', data: { text } }),
   parseExcel: (data) => request('/api/parser/excel', { method: 'POST', data }),
   parseVoice: (data) => request('/api/parser/voice', { method: 'POST', data }),
@@ -85,5 +88,25 @@ module.exports = {
   driverAssignmentDetail: (driverId, assignmentId) => request(`/api/driver/assignments/${assignmentId}?driver_id=${driverId}`),
   driverReports: (driverId) => request(`/api/driver/reports?driver_id=${driverId}`),
   driverDashboard: (driverId) => request(`/api/driver/dashboard?driver_id=${driverId}`),
-  submitDriverReport: (data) => request('/api/driver/report', { method: 'POST', data })
+  driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
+  driverWorkflowEvents: (driverId) => request(`/api/driver/workflow-events?driver_id=${driverId}`),
+  submitDriverWorkflowEvent: (data) => request('/api/driver/workflow-event', { method: 'POST', data }),
+  driverExpenses: (driverId) => request(`/api/driver/expenses?driver_id=${driverId}`),
+  submitDriverExpense: (data) => request('/api/driver/expense', { method: 'POST', data }),
+  driverHistory: (driverId, filters = {}) => {
+    const query = Object.keys(filters)
+      .filter((key) => filters[key] !== undefined && filters[key] !== '')
+      .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(filters[key])}`)
+      .join('&');
+    return request(`/api/driver/history?driver_id=${driverId}${query ? `&${query}` : ''}`);
+  },
+  driverIncome: (driverId) => request(`/api/driver/income?driver_id=${driverId}`),
+  driverNotifications: (driverId) => request(`/api/driver/notifications?driver_id=${driverId}`),
+  markDriverNotificationRead: (driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: { driver_id: driverId } }),
+  submitDriverReport: (data) => request('/api/driver/report', { method: 'POST', data }),
+  submitDriverIncident: (data) => request('/api/driver/incident', { method: 'POST', data }),
+  uploadDriverEvidence: (data) => request('/api/driver/evidence', { method: 'POST', data }),
+  driverEvidence: (driverId, assignmentId = '') => request(`/api/driver/evidence?driver_id=${driverId}${assignmentId ? `&assignment_id=${assignmentId}` : ''}`),
+  submitDriverLocation: (data) => request('/api/driver/location', { method: 'POST', data }),
+  driverLocations: (driverId) => request(`/api/driver/locations?driver_id=${driverId}`)
 };

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Runtime data
+runtime/logs/
+runtime/backups/
+runtime/archives/
+runtime/uploads/
+runtime/trial/
+runtime/*.sqlite3
+runtime/*.sqlite3-*
+runtime/*.db
+runtime/*.log
+runtime/prod_startup_test_*.sqlite3*
+
+# Local/private tool config
+miniapp/project.private.config.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
+Desktop.ini

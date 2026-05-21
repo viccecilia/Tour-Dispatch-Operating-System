@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from backend.db.database import get_connection
+from backend.services.tenant_context import get_current_tenant_id
 
 
 LEGEND = [
@@ -75,10 +76,12 @@ def get_dispatch_detail(assignment_id: str) -> dict[str, Any] | None:
             LEFT JOIN drivers d ON d.id = a.driver_id
             LEFT JOIN vehicles v ON v.id = a.vehicle_id
             WHERE a.id = ?
+              AND a.tenant_id = ?
+              AND o.tenant_id = ?
               AND a.status = 'active'
               AND COALESCE(o.is_deleted, 0) = 0
             """,
-            (_to_int(assignment_id),),
+            (_to_int(assignment_id), get_current_tenant_id(), get_current_tenant_id()),
         ).fetchone()
     if not row:
         return None
@@ -118,12 +121,14 @@ def _query_calendar_items(filters: dict[str, str], start_date: date_cls, end_dat
         LEFT JOIN drivers d ON d.id = a.driver_id
         LEFT JOIN vehicles v ON v.id = a.vehicle_id
         WHERE a.status = 'active'
+          AND a.tenant_id = ?
+          AND o.tenant_id = ?
           AND COALESCE(o.is_deleted, 0) = 0
           AND o.order_date <= ?
           AND COALESCE(o.end_date, o.order_date) >= ?
         """
     ]
-    params: list[Any] = [end_date.isoformat(), start_date.isoformat()]
+    params: list[Any] = [get_current_tenant_id(), get_current_tenant_id(), end_date.isoformat(), start_date.isoformat()]
     for field, column in (
         ("vehicle_id", "a.vehicle_id"),
         ("driver_id", "a.driver_id"),
@@ -158,8 +163,11 @@ def _list_vehicles() -> list[dict[str, Any]]:
                 """
                 SELECT id, plate_number, vehicle_type, seat_count, status
                 FROM vehicles
+                WHERE tenant_id = ?
                 ORDER BY plate_number ASC, id ASC
                 """
+                ,
+                (get_current_tenant_id(),),
             ).fetchall()
         ]
 
@@ -172,8 +180,11 @@ def _list_drivers() -> list[dict[str, Any]]:
                 """
                 SELECT id, name, phone, status
                 FROM drivers
+                WHERE tenant_id = ?
                 ORDER BY id ASC
                 """
+                ,
+                (get_current_tenant_id(),),
             ).fetchall()
         ]
 

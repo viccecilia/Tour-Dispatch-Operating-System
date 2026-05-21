@@ -36,6 +36,8 @@ RESET_DEMO_ON_START = _bool_env("WX_DISPATCH_RESET_DEMO_ON_START", False)
 LOG_LEVEL = os.environ.get("WX_DISPATCH_LOG_LEVEL", "INFO").upper()
 LOG_DIR = Path(os.environ.get("WX_DISPATCH_LOG_DIR", str(RUNTIME_DIR / "logs"))).resolve()
 BACKUP_DIR = Path(os.environ.get("WX_DISPATCH_BACKUP_DIR", str(RUNTIME_DIR / "backups"))).resolve()
+JWT_SECRET = os.environ.get("WX_DISPATCH_JWT_SECRET", "wx-dispatch-demo-secret-change-me")
+JWT_EXPIRES_SECONDS = int(os.environ.get("WX_DISPATCH_JWT_EXPIRES_SECONDS", "86400"))
 
 DEFAULT_ADMIN = {
     "username": os.environ.get("WX_DISPATCH_ADMIN_USERNAME", "admin"),

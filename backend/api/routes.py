@@ -1,10 +1,37 @@
 import json
+import logging
+import mimetypes
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from backend.services.auth_service import authenticate, get_user_by_token
+from backend.services.agency_portal_service import (
+    agency_portal_login,
+    create_agency_order,
+    list_agency_orders,
+    list_public_agencies,
+)
+from backend.services.agency_service import create_agency, list_agencies, update_agency
+from backend.services.analytics_service import get_analytics_summary
+from backend.services.audit_service import (
+    get_entity_history,
+    list_anomaly_scans,
+    list_audit_logs,
+    record_audit,
+    scan_data_anomalies,
+)
+from backend.services.billing_service import (
+    get_billing_overview,
+    get_feature_flags,
+    get_subscription,
+    get_usage,
+    is_feature_enabled,
+    list_plans,
+    update_subscription,
+)
 from backend.services.calendar_service import get_dispatch_calendar, get_dispatch_detail
 from backend.services.dashboard_service import get_summary
 from backend.services.dispatch_service import (
@@ -17,21 +44,66 @@ from backend.services.dispatch_service import (
     reassign_orders,
     route_suggestion,
 )
+from backend.services.dispatch_brain_service import recommend_dispatch
 from backend.services.driver_service import (
     get_driver_assignment,
     get_driver_dashboard,
+    get_driver_workbench,
+    list_driver_evidence,
     list_driver_assignments,
+    list_driver_expenses,
+    list_driver_history,
     list_driver_reports,
+    list_driver_safety_alerts,
+    list_driver_workflow_events,
+    submit_driver_expense,
+    submit_driver_incident,
+    submit_driver_location,
     submit_driver_report,
+    submit_driver_workflow_event,
+    upload_driver_evidence,
 )
-from backend.services.finance_service import get_finance_summary
+from backend.services.finance_service import (
+    export_finance_csv,
+    get_driver_income_summary,
+    get_driver_settlement_stats,
+    get_finance_ledger,
+    get_finance_summary,
+    update_settlement,
+)
+from backend.services.incident_service import close_incident, create_incident, get_incident_summary, list_incidents
+from backend.services.location_service import get_fleet_location_summary, get_latest_locations, list_location_logs
 from backend.services.order_service import create_order, get_order, list_orders, soft_delete_order, update_order
+from backend.services.operation_log_service import log_operation
+from backend.services.notification_service import (
+    create_notification,
+    get_notification_summary,
+    list_driver_notifications,
+    list_notifications,
+    mark_all_notifications_read,
+    mark_driver_notification_read,
+    mark_notification_read,
+)
+from backend.services.org_service import (
+    create_department,
+    create_team,
+    disable_member,
+    get_org_overview,
+    get_role_permissions,
+    invite_member,
+    list_departments,
+    list_members,
+    list_teams,
+    update_member,
+)
+from backend.services.operations_copilot_service import get_copilot_summary
 from backend.services.parser_service import (
     confirm_draft,
     discard_draft,
     get_draft,
     list_drafts,
     parse_excel_to_drafts,
+    parse_batch_text_to_drafts,
     parse_text_to_draft,
     parse_voice_to_draft,
     update_draft,
@@ -39,15 +111,41 @@ from backend.services.parser_service import (
 from backend.services.resource_service import (
     create_driver,
     create_vehicle,
+    get_resource_reminders,
     list_drivers,
     list_vehicles,
     update_driver,
     update_vehicle,
 )
+from backend.services.settings_service import get_reminder_settings, update_reminder_settings
+from backend.services.tenant_context import set_current_tenant_id
+from backend.services.workflow_service import create_rule, list_rules, list_runs, run_workflows, update_rule
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
+UPLOAD_DIR = ROOT_DIR / "runtime" / "uploads"
 
 
 class ApiHandler(BaseHTTPRequestHandler):
     server_version = "WXDispatchAPI/0.6"
+
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        except BrokenPipeError:
+            logging.warning("client disconnected while handling request")
+        except Exception as exc:  # noqa: BLE001 - production runtime must log uncaught API failures.
+            logging.exception("unhandled_api_error path=%s error=%s", getattr(self, "path", "-"), exc)
+            try:
+                self.send_json(
+                    {"error": "internal_server_error", "message": "Request failed. Check backend logs."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+            except Exception:
+                pass
+
+    def log_message(self, format: str, *args) -> None:
+        logging.info("http %s - %s", self.address_string(), format % args)
 
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT.value)
@@ -56,7 +154,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Driver-Id")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Driver-Id, X-Agency-Token")
         super().end_headers()
 
     def do_GET(self) -> None:
@@ -66,21 +164,134 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/ping":
             self.send_json({"ok": True, "message": "pong"})
             return
+        if path == "/api/agency-portal/agencies":
+            self.send_json({"agencies": list_public_agencies()})
+            return
+        if path == "/api/agency-portal/orders":
+            self.safe_agency(lambda: {"orders": list_agency_orders(self.agency_token())})
+            return
+        if path.startswith("/api/") and path != "/api/auth/me" and not path.startswith("/api/driver/"):
+            user = self.require_api_user()
+            if not user:
+                return
         if path == "/api/auth/me":
-            user = get_user_by_token(self.bearer_token())
+            user = self.require_api_user()
+            if not user:
+                return
             self.send_json({"user": user} if user else {"error": "unauthorized"}, HTTPStatus.OK if user else HTTPStatus.UNAUTHORIZED)
             return
         if path == "/api/dashboard/summary":
             self.send_json(get_summary())
             return
+        if path == "/api/analytics/summary":
+            self.send_json(get_analytics_summary(params))
+            return
+        if path == "/api/audit/logs":
+            self.send_json({"logs": list_audit_logs(params)})
+            return
+        if path == "/api/audit/history":
+            entity_type = params.get("entity_type", "")
+            entity_id = params.get("entity_id", "")
+            if not entity_type or not entity_id:
+                self.send_json({"error": "missing_entity_type_or_id"}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"history": get_entity_history(entity_type, entity_id, int(params.get("limit") or 100))})
+            return
+        if path == "/api/audit/anomalies":
+            self.send_json(scan_data_anomalies())
+            return
+        if path == "/api/audit/scans":
+            self.send_json({"scans": list_anomaly_scans(int(params.get("limit") or 20))})
+            return
+        if path == "/api/workflows/rules":
+            self.send_json({"rules": list_rules()})
+            return
+        if path == "/api/workflows/runs":
+            self.send_json({"runs": list_runs(int(params.get("limit") or 50))})
+            return
+        if path == "/api/copilot/summary":
+            self.send_json(get_copilot_summary(params))
+            return
+        if path == "/api/notifications":
+            self.send_json({"notifications": list_notifications(params)})
+            return
+        if path == "/api/notifications/summary":
+            self.send_json(get_notification_summary())
+            return
+        if path == "/api/incidents":
+            self.send_json({"incidents": list_incidents(params)})
+            return
+        if path == "/api/incidents/summary":
+            self.send_json(get_incident_summary())
+            return
+        if path == "/api/billing/plans":
+            self.send_json({"plans": list_plans()})
+            return
+        if path == "/api/billing/subscription":
+            self.send_json({"subscription": get_subscription()})
+            return
+        if path == "/api/billing/usage":
+            self.send_json(get_usage())
+            return
+        if path == "/api/billing/features":
+            self.send_json({"feature_flags": get_feature_flags()})
+            return
+        if path == "/api/billing/overview":
+            self.send_json(get_billing_overview())
+            return
+        if path == "/api/org/overview":
+            self.send_json(get_org_overview())
+            return
+        if path == "/api/org/departments":
+            self.send_json({"departments": list_departments()})
+            return
+        if path == "/api/org/teams":
+            self.send_json({"teams": list_teams()})
+            return
+        if path == "/api/org/members":
+            self.send_json({"members": list_members()})
+            return
+        if path == "/api/org/roles":
+            self.send_json({"role_permissions": get_role_permissions()})
+            return
+        if path == "/api/agencies":
+            self.send_json({"agencies": list_agencies(params)})
+            return
         if path == "/api/finance/summary":
-            self.send_json(get_finance_summary())
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_json(get_finance_summary(params))
+            return
+        if path == "/api/finance/ledger":
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_json(get_finance_ledger(params))
+            return
+        if path == "/api/finance/driver-stats":
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_json(get_driver_settlement_stats(params))
+            return
+        if path == "/api/finance/export":
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_csv(export_finance_csv(params), "finance_export.csv")
             return
         if path == "/api/resources/drivers":
             self.send_json({"drivers": list_drivers(params.get("status"))})
             return
         if path == "/api/resources/vehicles":
             self.send_json({"vehicles": list_vehicles(params.get("status"))})
+            return
+        if path == "/api/resources/reminders":
+            self.send_json(get_resource_reminders())
+            return
+        if path == "/api/settings/reminders":
+            self.send_json({"settings": get_reminder_settings()})
             return
         if path == "/api/orders":
             self.send_json({"orders": list_orders(params)})
@@ -122,8 +333,47 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/driver/reports":
             self.send_json({"reports": list_driver_reports(self.driver_id(params))})
             return
+        if path == "/api/driver/locations":
+            self.send_json({"locations": list_location_logs(self.driver_id(params), int(params.get("limit") or 100))})
+            return
+        if path == "/api/fleet/latest-locations":
+            self.send_json({
+                "locations": get_latest_locations(
+                    params.get("driver_id"),
+                    int(params.get("limit") or 50),
+                    params.get("online_status"),
+                )
+            })
+            return
+        if path == "/api/fleet/location-summary":
+            self.send_json(get_fleet_location_summary())
+            return
         if path == "/api/driver/dashboard":
             self.send_json(get_driver_dashboard(self.driver_id(params)))
+            return
+        if path == "/api/driver/workbench":
+            self.send_json(get_driver_workbench(self.driver_id(params)))
+            return
+        if path == "/api/driver/workflow-events":
+            self.send_json({"events": list_driver_workflow_events(self.driver_id(params), params.get("date"))})
+            return
+        if path == "/api/driver/expenses":
+            self.send_json({"expenses": list_driver_expenses(self.driver_id(params), params)})
+            return
+        if path == "/api/driver/history":
+            self.send_json({"history": list_driver_history(self.driver_id(params), params)})
+            return
+        if path == "/api/driver/income":
+            self.send_json(get_driver_income_summary(self.driver_id(params), params))
+            return
+        if path == "/api/driver/notifications":
+            self.send_json({"notifications": list_driver_notifications(self.driver_id(params), params)})
+            return
+        if path == "/api/driver/safety-alerts":
+            self.send_json({"alerts": list_driver_safety_alerts()})
+            return
+        if path == "/api/driver/evidence":
+            self.send_json({"evidence": list_driver_evidence(self.driver_id(params), params.get("assignment_id"))})
             return
         draft_id = self.match_parser_draft_path(path)
         if draft_id:
@@ -135,20 +385,83 @@ class ApiHandler(BaseHTTPRequestHandler):
             order = get_order(order_id)
             self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
-        if path == "/" or path == "/dashboard":
-            self.send_dashboard_page()
+        if self.serve_upload_asset(path) or self.serve_frontend_asset(path):
             return
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         payload = self.read_json()
+        if path == "/api/agency-portal/login":
+            result = agency_portal_login(payload)
+            self.send_json(result if result else {"error": "invalid_agency_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
+            return
+        if path == "/api/agency-portal/orders":
+            self.safe_agency(lambda: {"order": create_agency_order(self.agency_token(), payload)}, HTTPStatus.CREATED)
+            return
+        if path.startswith("/api/") and path != "/api/auth/login" and not path.startswith("/api/driver/"):
+            user = self.require_api_user()
+            if not user:
+                return
+        if path != "/api/auth/login":
+            log_operation("POST", path, payload, self.actor_label())
         if path == "/api/auth/login":
             result = authenticate(payload.get("username", ""), payload.get("password", ""))
+            log_operation("LOGIN_OK" if result else "LOGIN_FAIL", path, {"username": payload.get("username", "")}, payload.get("username", ""))
             self.send_json(result if result else {"error": "invalid_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
             return
         if path == "/api/orders":
-            self.safe_create(lambda: {"order": create_order(payload)}, HTTPStatus.CREATED)
+            self.create_order_with_audit(payload, path)
+            return
+        if path == "/api/incidents":
+            self.safe_create(lambda: {"incident": create_incident(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/billing/subscription":
+            self.safe_create(lambda: {"subscription": update_subscription(payload)})
+            return
+        if path == "/api/org/departments":
+            if not self.require_role({"admin"}):
+                return
+            self.safe_create(lambda: {"department": create_department(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/org/teams":
+            if not self.require_role({"admin"}):
+                return
+            self.safe_create(lambda: {"team": create_team(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/org/members/invite":
+            if not self.require_role({"admin"}):
+                return
+            self.safe_create(lambda: {"member": invite_member(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/agencies":
+            self.safe_create(lambda: {"agency": create_agency(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/notifications":
+            self.safe_create(lambda: {"notification": create_notification(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/workflows/rules":
+            self.safe_create(lambda: {"rule": create_rule(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/workflows/run":
+            self.safe_create(lambda: run_workflows(payload))
+            return
+        if path == "/api/notifications/read-all":
+            self.send_json(mark_all_notifications_read())
+            return
+        notification_read_id = self.match_notification_read_path(path)
+        if notification_read_id:
+            self.safe_update(lambda: mark_notification_read(notification_read_id), "notification", "notification_not_found")
+            return
+        org_disable_id = self.match_org_disable_path(path)
+        if org_disable_id:
+            if not self.require_role({"admin"}):
+                return
+            self.safe_update(lambda: disable_member(org_disable_id), "member", "member_not_found")
+            return
+        incident_close_id = self.match_incident_close_path(path)
+        if incident_close_id:
+            self.safe_update(lambda: close_incident(incident_close_id, payload), "incident", "incident_not_found")
             return
         if path == "/api/resources/drivers":
             self.safe_create(lambda: {"driver": create_driver(payload)}, HTTPStatus.CREATED)
@@ -156,16 +469,26 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/resources/vehicles":
             self.safe_create(lambda: {"vehicle": create_vehicle(payload)}, HTTPStatus.CREATED)
             return
+        if path == "/api/settings/reminders":
+            self.safe_create(lambda: {"settings": update_reminder_settings(payload)})
+            return
         if path == "/api/dispatch/assign":
-            self.safe_create(lambda: assign_orders(payload.get("order_ids", []), payload.get("driver_id"), payload.get("vehicle_id")))
+            self.dispatch_assign_with_audit(payload, path)
+            return
+        if path == "/api/dispatch/recommend":
+            self.safe_create(lambda: recommend_dispatch(payload.get("order_ids", [])))
             return
         if path == "/api/dispatch/cancel":
-            self.send_json(cancel_assignment(payload.get("assignment_id"), payload.get("order_id")))
+            self.dispatch_cancel_with_audit(payload, path)
             return
         if path == "/api/dispatch/reassign":
-            self.safe_create(lambda: reassign_orders(payload.get("order_ids", []), payload.get("new_driver_id"), payload.get("new_vehicle_id")))
+            self.dispatch_reassign_with_audit(payload, path)
             return
         if path == "/api/parser/text":
+            if payload.get("batch"):
+                drafts = parse_batch_text_to_drafts(payload.get("text", ""), "text")
+                self.send_json({"drafts": drafts, "count": len(drafts)}, HTTPStatus.CREATED)
+                return
             draft = parse_text_to_draft(payload.get("text", ""), "text")
             self.send_json({"draft": draft, "parse_result": draft.get("parse_result"), "parse_status": draft["parse_status"]}, HTTPStatus.CREATED)
             return
@@ -178,7 +501,40 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"draft": draft, "parse_result": draft.get("parse_result"), "parse_status": draft["parse_status"]}, HTTPStatus.CREATED)
             return
         if path == "/api/driver/report":
-            self.send_json(submit_driver_report(payload))
+            result = submit_driver_report(payload)
+            record_audit(
+                "driver_report",
+                "assignment",
+                payload.get("assignment_id"),
+                after=result,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Driver report {payload.get('report_type')} for assignment {payload.get('assignment_id')}",
+            )
+            self.send_json(result)
+            return
+        if path == "/api/audit/scan":
+            self.send_json(scan_data_anomalies())
+            return
+        if path == "/api/driver/location":
+            self.send_json(submit_driver_location(payload))
+            return
+        if path == "/api/driver/workflow-event":
+            self.send_json(submit_driver_workflow_event(payload), HTTPStatus.CREATED)
+            return
+        if path == "/api/driver/expense":
+            self.send_json(submit_driver_expense(payload), HTTPStatus.CREATED)
+            return
+        if path == "/api/driver/incident":
+            self.send_json(submit_driver_incident(payload), HTTPStatus.CREATED)
+            return
+        if path == "/api/driver/evidence":
+            self.send_json(upload_driver_evidence(payload), HTTPStatus.CREATED)
+            return
+        driver_notification_read_id = self.match_driver_notification_read_path(path)
+        if driver_notification_read_id:
+            notification = mark_driver_notification_read(payload.get("driver_id") or self.driver_id({}), driver_notification_read_id)
+            self.send_json({"notification": notification} if notification else {"error": "notification_not_found"}, HTTPStatus.OK if notification else HTTPStatus.NOT_FOUND)
             return
         confirm_id = self.match_parser_confirm_path(path)
         if confirm_id:
@@ -190,6 +546,20 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         path = urlparse(self.path).path
         payload = self.read_json()
+        user = self.require_api_user()
+        if not user:
+            return
+        log_operation("PUT", path, payload, self.actor_label())
+        workflow_rule_id = self.match_workflow_rule_path(path)
+        if workflow_rule_id:
+            self.safe_update(lambda: update_rule(workflow_rule_id, payload), "rule", "rule_not_found")
+            return
+        org_member_id = self.match_org_member_path(path)
+        if org_member_id:
+            if not self.require_role({"admin"}):
+                return
+            self.safe_update(lambda: update_member(org_member_id, payload), "member", "member_not_found")
+            return
         driver_id = self.match_resource_path(path, "drivers")
         if driver_id:
             self.safe_update(lambda: update_driver(driver_id, payload), "driver", "driver_not_found")
@@ -198,18 +568,36 @@ class ApiHandler(BaseHTTPRequestHandler):
         if vehicle_id:
             self.safe_update(lambda: update_vehicle(vehicle_id, payload), "vehicle", "vehicle_not_found")
             return
+        agency_id = self.match_agency_path(path)
+        if agency_id:
+            self.safe_update(lambda: update_agency(agency_id, payload), "agency", "agency_not_found")
+            return
+        if path == "/api/settings/reminders":
+            self.send_json({"settings": update_reminder_settings(payload)})
+            return
         draft_id = self.match_parser_draft_path(path)
         if draft_id:
             self.safe_update(lambda: update_draft(draft_id, payload), "draft", "draft_not_found")
             return
         order_id = self.match_order_path(path)
         if order_id:
-            self.safe_update(lambda: update_order(order_id, payload), "order", "order_not_found")
+            self.update_order_with_audit(order_id, payload, path)
+            return
+        finance_order_id = self._match_prefixed_id(path, "/api/finance/orders/")
+        if finance_order_id:
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.update_finance_with_audit(finance_order_id, payload, path)
             return
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def do_DELETE(self) -> None:
         path = urlparse(self.path).path
+        user = self.require_api_user()
+        if not user:
+            return
+        log_operation("DELETE", path, {}, self.actor_label())
         draft_id = self.match_parser_draft_path(path)
         if draft_id:
             draft = discard_draft(draft_id)
@@ -217,13 +605,163 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         order_id = self.match_order_path(path)
         if order_id:
+            before = get_order(order_id)
             deleted = soft_delete_order(order_id)
+            if deleted:
+                record_audit(
+                    "order_soft_delete",
+                    "order",
+                    order_id,
+                    before=before,
+                    after={**(before or {}), "is_deleted": 1},
+                    actor=self.actor_label(),
+                    source_path=path,
+                    summary=f"Soft deleted order {order_id}",
+                )
             self.send_json({"deleted": True} if deleted else {"error": "order_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
             return
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def driver_id(self, params: dict) -> int:
         return int(params.get("driver_id") or self.headers.get("X-Driver-Id") or 0)
+
+    def actor_label(self) -> str:
+        user = get_user_by_token(self.bearer_token())
+        if user:
+            return f"{user.get('role')}:{user.get('username')}"
+        driver_id = self.headers.get("X-Driver-Id")
+        return f"driver:{driver_id}" if driver_id else "anonymous"
+
+    def require_api_user(self) -> dict | None:
+        user = get_user_by_token(self.bearer_token())
+        if not user:
+            self.send_json({"error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
+            return None
+        set_current_tenant_id(user.get("tenant_id"))
+        return user
+
+    def require_role(self, allowed_roles: set[str]) -> dict | None:
+        user = self.require_api_user()
+        if not user:
+            return None
+        if user.get("role") not in allowed_roles:
+            self.send_json({"error": "forbidden", "required_roles": sorted(allowed_roles)}, HTTPStatus.FORBIDDEN)
+            return None
+        return user
+
+    def create_order_with_audit(self, payload: dict, path: str) -> None:
+        try:
+            order = create_order(payload)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        record_audit(
+            "order_create",
+            "order",
+            order.get("id") or order.get("oid"),
+            after=order,
+            actor=self.actor_label(),
+            source_path=path,
+            summary=f"Created order {order.get('oid') or order.get('id')}",
+        )
+        self.send_json({"order": order}, HTTPStatus.CREATED)
+
+    def update_order_with_audit(self, order_id: str, payload: dict, path: str) -> None:
+        before = get_order(order_id)
+        if not before:
+            self.send_json({"error": "order_not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        try:
+            order = update_order(order_id, payload)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if order:
+            record_audit(
+                "order_update",
+                "order",
+                order.get("id") or order_id,
+                before=before,
+                after=order,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Updated order {order.get('oid') or order_id}",
+            )
+        self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
+
+    def update_finance_with_audit(self, order_id: str, payload: dict, path: str) -> None:
+        before = get_order(order_id)
+        if not before:
+            self.send_json({"error": "order_not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        try:
+            order = update_settlement(order_id, payload)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if order:
+            after = get_order(order_id) or order
+            record_audit(
+                "finance_update",
+                "order",
+                order.get("id") or order_id,
+                before=before,
+                after=after,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Updated finance fields for order {order.get('oid') or order_id}",
+            )
+        self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
+
+    def dispatch_assign_with_audit(self, payload: dict, path: str) -> None:
+        try:
+            result = assign_orders(payload.get("order_ids", []), payload.get("driver_id"), payload.get("vehicle_id"))
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        entity_id = ",".join(str(item) for item in result.get("assignment_ids", [])) or ",".join(str(item) for item in payload.get("order_ids", []))
+        record_audit(
+            "dispatch_assign",
+            "assignment",
+            entity_id,
+            after={"payload": payload, "result": result},
+            actor=self.actor_label(),
+            source_path=path,
+            summary=f"Assigned {len(result.get('updated_order_ids', []))} order(s)",
+        )
+        self.send_json(result)
+
+    def dispatch_cancel_with_audit(self, payload: dict, path: str) -> None:
+        result = cancel_assignment(payload.get("assignment_id"), payload.get("order_id"))
+        if result.get("success"):
+            record_audit(
+                "dispatch_cancel",
+                "assignment",
+                result.get("cancelled_assignment_id") or payload.get("assignment_id") or payload.get("order_id"),
+                after={"payload": payload, "result": result},
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Cancelled assignment {result.get('cancelled_assignment_id')}",
+            )
+        self.send_json(result)
+
+    def dispatch_reassign_with_audit(self, payload: dict, path: str) -> None:
+        try:
+            result = reassign_orders(payload.get("order_ids", []), payload.get("new_driver_id"), payload.get("new_vehicle_id"))
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        entity_id = ",".join(str(item) for item in result.get("new_assignment_ids", [])) or ",".join(str(item) for item in payload.get("order_ids", []))
+        record_audit(
+            "dispatch_reassign",
+            "assignment",
+            entity_id,
+            after={"payload": payload, "result": result},
+            actor=self.actor_label(),
+            source_path=path,
+            summary=f"Reassigned {len(result.get('updated_order_ids', []))} order(s)",
+        )
+        self.send_json(result)
 
     def safe_create(self, func, status: HTTPStatus = HTTPStatus.OK) -> None:
         try:
@@ -239,6 +777,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         self.send_json({key: result} if result else {"error": error}, HTTPStatus.OK if result else HTTPStatus.NOT_FOUND)
 
+    def safe_agency(self, func, status: HTTPStatus = HTTPStatus.OK) -> None:
+        try:
+            self.send_json(func(), status)
+        except ValueError as exc:
+            code = HTTPStatus.UNAUTHORIZED if str(exc) == "agency_unauthorized" else HTTPStatus.BAD_REQUEST
+            self.send_json({"error": str(exc)}, code)
+
     def read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
         if length == 0:
@@ -251,6 +796,10 @@ class ApiHandler(BaseHTTPRequestHandler):
     def bearer_token(self) -> str:
         auth = self.headers.get("Authorization", "")
         return auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+
+    def agency_token(self) -> str:
+        token = self.headers.get("X-Agency-Token", "")
+        return token.strip() if token else self.bearer_token()
 
     def query_params(self, query: str) -> dict:
         parsed = parse_qs(query, keep_blank_values=False)
@@ -276,11 +825,44 @@ class ApiHandler(BaseHTTPRequestHandler):
             return ""
         return path.removeprefix(prefix).removesuffix(suffix).strip("/")
 
+    def match_incident_close_path(self, path: str) -> str:
+        prefix, suffix = "/api/incidents/", "/close"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
     def match_resource_path(self, path: str, resource: str) -> str:
         return self._match_prefixed_id(path, f"/api/resources/{resource}/")
 
+    def match_agency_path(self, path: str) -> str:
+        return self._match_prefixed_id(path, "/api/agencies/")
+
+    def match_org_member_path(self, path: str) -> str:
+        return self._match_prefixed_id(path, "/api/org/members/")
+
+    def match_org_disable_path(self, path: str) -> str:
+        prefix, suffix = "/api/org/members/", "/disable"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
+    def match_notification_read_path(self, path: str) -> str:
+        prefix, suffix = "/api/notifications/", "/read"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
+    def match_workflow_rule_path(self, path: str) -> str:
+        return self._match_prefixed_id(path, "/api/workflows/rules/")
+
     def match_driver_assignment_path(self, path: str) -> str:
         return self._match_prefixed_id(path, "/api/driver/assignments/")
+
+    def match_driver_notification_read_path(self, path: str) -> str:
+        prefix, suffix = "/api/driver/notifications/", "/read"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        return path.removeprefix(prefix).removesuffix(suffix).strip("/")
 
     def _match_prefixed_id(self, path: str, prefix: str) -> str:
         if not path.startswith(prefix):
@@ -295,6 +877,77 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_csv(self, text: str, filename: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = text.encode("utf-8-sig")
+        self.send_response(status.value)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_frontend_asset(self, path: str) -> bool:
+        if path.startswith("/api/"):
+            return False
+        if not FRONTEND_DIST_DIR.exists():
+            if path in {"/", "/dashboard"}:
+                self.send_dashboard_page()
+                return True
+            return False
+
+        relative = path.lstrip("/")
+        if not relative or relative == "dashboard":
+            target = FRONTEND_DIST_DIR / "index.html"
+        else:
+            target = FRONTEND_DIST_DIR / relative
+            if not target.exists() and "." not in Path(relative).name:
+                target = FRONTEND_DIST_DIR / "index.html"
+
+        try:
+            resolved = target.resolve()
+            dist_root = FRONTEND_DIST_DIR.resolve()
+            if not str(resolved).startswith(str(dist_root)) or not resolved.is_file():
+                return False
+            body = resolved.read_bytes()
+        except OSError:
+            return False
+
+        content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        if resolved.name == "index.html":
+            content_type = "text/html; charset=utf-8"
+        elif content_type.startswith("text/") or content_type in {"application/javascript", "application/json"}:
+            content_type = f"{content_type}; charset=utf-8"
+
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
+    def serve_upload_asset(self, path: str) -> bool:
+        if not path.startswith("/uploads/"):
+            return False
+        relative = path.removeprefix("/uploads/").strip("/")
+        if not relative:
+            return False
+        target = UPLOAD_DIR / relative
+        try:
+            resolved = target.resolve()
+            upload_root = UPLOAD_DIR.resolve()
+            if not str(resolved).startswith(str(upload_root)) or not resolved.is_file():
+                return False
+            body = resolved.read_bytes()
+        except OSError:
+            return False
+        content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
 
     def send_dashboard_page(self) -> None:
         summary = get_summary()

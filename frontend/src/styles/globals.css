@@ -49,6 +49,26 @@
     @apply border-b border-border px-3 py-3 align-middle text-slate-700;
   }
 
+  .date-alert-cell {
+    @apply flex min-w-28 flex-col items-start gap-1 leading-tight;
+  }
+
+  .date-alert-value {
+    @apply block whitespace-nowrap font-semibold text-slate-800;
+  }
+
+  .date-alert-message {
+    @apply block whitespace-nowrap text-xs font-semibold;
+  }
+
+  .date-alert-expired {
+    @apply text-red-600;
+  }
+
+  .date-alert-upcoming {
+    @apply text-amber-600;
+  }
+
   .panel {
     @apply rounded-lg border border-border bg-card shadow-panel;
   }

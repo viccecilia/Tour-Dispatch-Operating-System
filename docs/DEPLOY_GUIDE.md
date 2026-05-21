@@ -55,6 +55,19 @@ Key variables:
 - `WX_DISPATCH_LOG_DIR`
 - `WX_DISPATCH_BACKUP_DIR`
 
+Production baseline:
+
+```powershell
+$env:WX_DISPATCH_DEMO_MODE='false'
+$env:WX_DISPATCH_RESET_DEMO_ON_START='false'
+$env:WX_DISPATCH_JWT_SECRET='<replace-with-long-random-secret>'
+$env:WX_DISPATCH_ADMIN_PASSWORD='<replace-default-password>'
+python scripts/check_production_config.py --strict
+python backend/main.py
+```
+
+Do not run `scripts/reset_demo_db.py` against a trial or production database.
+
 ## Docker Start
 
 ```bash
@@ -117,6 +130,7 @@ Expected output:
 [OK] dispatch
 [OK] calendar
 [OK] driver
+[OK] audit
 ```
 
 ## Backup
@@ -138,6 +152,14 @@ python scripts/restore_db.py runtime/backups/<backup_file>.sqlite3
 ```
 
 Stop the backend before restore when possible, then restart it.
+
+## Production Readiness Docs
+
+- `docs/PRODUCTION_READINESS.md`
+- `docs/SECURITY_CHECKLIST.md`
+- `docs/DB_MIGRATION_POLICY.md`
+- `docs/BACKUP_RESTORE_RUNBOOK.md`
+- `docs/ROLLBACK_PLAN.md`
 
 ## WeChat MiniApp Preview
 

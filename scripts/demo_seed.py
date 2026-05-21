@@ -8,7 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from backend.db.database import get_connection, init_db
+from backend.db.database import get_connection, init_db, refresh_order_oids
 
 
 AGENCIES = [
@@ -20,27 +20,39 @@ AGENCIES = [
 ]
 
 DRIVERS = [
-    ("张师傅", "139-0000-1111", "available"),
-    ("李师傅", "138-0000-2222", "available"),
-    ("王师傅", "137-0000-3333", "available"),
-    ("赵师傅", "136-0000-4444", "available"),
-    ("刘师傅", "135-0000-5555", "available"),
-    ("田中司机", "090-1000-0001", "available"),
-    ("佐藤司机", "090-1000-0002", "available"),
-    ("高桥司机", "090-1000-0003", "available"),
-    ("演示司机A", "090-1000-0004", "available"),
-    ("演示司机B", "090-1000-0005", "available"),
+    ("姚博", "YB", "英语可", "本社", "090-6058-7891", "available"),
+    ("李力", "LL", "", "本社", "080-4238-1388", "available"),
+    ("万強", "WQ", "英语可", "本社", "070-2303-6669", "available"),
+    ("夏天忻", "XTX", "", "本社", "080-4034-1775", "available"),
+    ("周伝波", "ZCB", "", "本社", "090-9613-8613", "available"),
+    ("姜小涛", "JXT", "", "本社", "070-8508-9919", "available"),
+    ("高弘强", "GHQ", "", "京都営業所", "080-4867-0502", "available"),
+    ("李成志", "LCZ", "韩语可", "本社", "080-4647-9188", "available"),
+    ("王啓超", "WQC", "英语可", "本社", "090-4273-9895", "available"),
+    ("胡東鍇", "HDK", "英语可", "本社", "090-3660-0829", "available"),
+    ("呂雲龍", "LYL", "", "本社", "080-2952-0888", "available"),
+    ("先山武志", "SKYM", "英语可", "本社", "090-7486-8828", "available"),
+    ("白石賢志", "SRIS", "", "京都営業所", "070-2015-1485", "available"),
+    ("富塚紀子", "TOYO", "", "京都営業所", "080-3142-8725", "available"),
+    ("山下洋子／李洋", "LY", "", "京都営業所", "080-5328-6390", "available"),
 ]
 
 VEHICLES = [
-    ("京A12345", "丰田埃尔法", 7, "available"),
-    ("京A23456", "别克GL8", 7, "available"),
-    ("京A34567", "大众威然", 7, "available"),
-    ("京A45678", "考斯特", 23, "available"),
-    ("京A56789", "奔驰V级", 7, "available"),
-    ("京B1001", "海狮", 10, "available"),
-    ("京B1002", "中巴", 18, "available"),
-    ("京C9001", "商务车", 6, "available"),
+    ("なにわ330を1001", "1001", "H", "ハイエース", 10, "白", "雪", "available"),
+    ("なにわ330う1021", "1021", "H", "ハイエース", 10, "白", "", "available"),
+    ("なにわ330い1027", "1027", "H", "ハイエース", 10, "黒", "雪", "available"),
+    ("なにわ300あ7886", "7886", "H", "ハイエース", 10, "白", "雪", "available"),
+    ("なにわ330う710", "710", "A", "ヴェルファHV", 7, "黒", "", "available"),
+    ("なにわ300あ6637", "6637", "A", "30系アルファード", 7, "黒", "雪", "available"),
+    ("なにわ300あ6644", "6644", "A", "30系アルファード", 7, "黒", "雪", "available"),
+    ("なにわ300あ6781", "6781", "A", "ヴェルファHV", 7, "黒", "", "available"),
+    ("なにわ300あ7007", "7007", "A", "30系アルファード", 7, "黒", "雪", "available"),
+    ("なにわ300あ7011", "7011", "A", "ヴェルファHV", 7, "黒", "", "available"),
+    ("なにわ300あ7012", "7012", "A", "30系アルファード", 7, "黒", "", "available"),
+    ("なにわ300あ7025", "7025", "A", "30系アルファード", 7, "白", "", "available"),
+    ("なにわ300あ7026", "7026", "A", "30系アルファード", 7, "黒", "", "available"),
+    ("なにわ300あ6832", "6832", "A", "30系アルファードHV", 7, "黒", "", "available"),
+    ("なにわ300あ7495", "7495", "A", "30系アルファード", 7, "黒", "", "available"),
 ]
 
 ROUTES = [
@@ -73,6 +85,8 @@ def main() -> None:
         assignment_ids = _seed_assignments(conn, order_ids, driver_ids, vehicle_ids)
         _seed_reports(conn, assignment_ids, driver_ids)
         _seed_drafts(conn, today)
+        _normalize_business_fields(conn)
+        refresh_order_oids(conn)
         conn.commit()
 
     result = {
@@ -80,8 +94,8 @@ def main() -> None:
         "orders_today": 40,
         "unassigned_orders": 10,
         "active_assignments": len(assignment_ids),
-        "drivers": 10,
-        "vehicles": 8,
+        "drivers": 15,
+        "vehicles": 15,
         "agencies": 5,
         "pending_drafts": 3,
         "failed_drafts": 2,
@@ -98,13 +112,30 @@ def _clear_demo_data(conn) -> None:
 
 def _seed_agencies(conn) -> list[int]:
     ids = []
-    for name, contact_name, contact_phone in AGENCIES:
+    codes = ["D", "X", "K", "S", "N"]
+    for index, (name, contact_name, contact_phone) in enumerate(AGENCIES):
         cursor = conn.execute(
             """
-            INSERT INTO agencies (name, contact_name, contact_phone)
-            VALUES (?, ?, ?)
+            INSERT INTO agencies (
+                agency_code, company_name, name, address, contact_name, contact_phone,
+                responsible_person, contact_email, fax, status, remark, portal_code,
+                is_portal_enabled, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 1, CURRENT_TIMESTAMP)
             """,
-            (name, contact_name, contact_phone),
+            (
+                codes[index % len(codes)],
+                name,
+                name,
+                f"大阪市中央区演示町 {index + 1}-1",
+                contact_name,
+                contact_phone,
+                f"担当{index + 1}",
+                f"agency{index + 1}@demo.local",
+                f"06-0000-00{index + 1:02d}",
+                "演示旅行社资料，可在旅行社维护页编辑。",
+                f"{codes[index % len(codes)]}100{index + 1}",
+            ),
         )
         ids.append(cursor.lastrowid)
     return ids
@@ -112,13 +143,31 @@ def _seed_agencies(conn) -> list[int]:
 
 def _seed_drivers(conn) -> list[int]:
     ids = []
-    for name, phone, status in DRIVERS:
+    today = date.today()
+    for index, (name, driver_code, driver_language, office, phone, status) in enumerate(DRIVERS):
+        license_due = today + timedelta(days=15 + index * 7)
+        health_due = today + timedelta(days=20 + index * 6)
         cursor = conn.execute(
             """
-            INSERT INTO drivers (name, phone, status, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO drivers (
+                name, driver_code, driver_language, office, phone, status, driver_status,
+                license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
-            (name, phone, status),
+            (
+                name,
+                driver_code,
+                driver_language,
+                office,
+                phone,
+                status,
+                status,
+                license_due.isoformat(),
+                health_due.isoformat(),
+                license_due.isoformat(),
+                health_due.isoformat(),
+            ),
         )
         ids.append(cursor.lastrowid)
     return ids
@@ -126,13 +175,40 @@ def _seed_drivers(conn) -> list[int]:
 
 def _seed_vehicles(conn) -> list[int]:
     ids = []
-    for plate_number, vehicle_type, seat_count, status in VEHICLES:
+    today = date.today()
+    for index, (plate_number, plate_short_code, vehicle_type_code, vehicle_type, seat_count, color, snow_tire, status) in enumerate(VEHICLES):
+        last_inspection = today - timedelta(days=65 - (index % 6))
+        next_inspection = today + timedelta(days=10 + index * 4)
+        shaken_due = today + timedelta(days=12 + index * 9)
+        insurance_due = today + timedelta(days=45 + index * 11)
         cursor = conn.execute(
             """
-            INSERT INTO vehicles (plate_no, plate_number, vehicle_type, seats, seat_count, status, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO vehicles (
+                plate_no, plate_number, plate_short_code, vehicle_type_code,
+                vehicle_type, seats, seat_count, vehicle_color, snow_tire, status,
+                last_inspection_date, next_inspection_due_date, shaken_due_date, insurance_due_date,
+                inspection_expires_at, insurance_expires_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
-            (plate_number, plate_number, vehicle_type, seat_count, seat_count, status),
+            (
+                plate_number,
+                plate_number,
+                plate_short_code,
+                vehicle_type_code,
+                vehicle_type,
+                seat_count,
+                seat_count,
+                color,
+                snow_tire,
+                status,
+                last_inspection.isoformat(),
+                next_inspection.isoformat(),
+                shaken_due.isoformat(),
+                insurance_due.isoformat(),
+                next_inspection.isoformat(),
+                insurance_due.isoformat(),
+            ),
         )
         ids.append(cursor.lastrowid)
     return ids
@@ -320,6 +396,41 @@ def _seed_drafts(conn, today: date) -> None:
                 created_at,
             ),
         )
+
+
+def _normalize_business_fields(conn) -> None:
+    conn.execute(
+        """
+        UPDATE orders
+        SET order_note_code = COALESCE(NULLIF(order_note_code, ''), 'D'),
+            order_source = COALESCE(NULLIF(order_source, ''), agency_name),
+            price_rmb = COALESCE(price_rmb, price),
+            vehicle_type_code = COALESCE(
+                NULLIF(vehicle_type_code, ''),
+                CASE
+                    WHEN vehicle_type LIKE '%10%' OR vehicle_type LIKE '%海%' THEN 'H'
+                    WHEN vehicle_type LIKE '%18%' OR vehicle_type LIKE '%中%' THEN 'C'
+                    ELSE 'A'
+                END
+            )
+        """
+    )
+    conn.execute(
+        """
+        UPDATE order_drafts
+        SET order_note_code = COALESCE(NULLIF(order_note_code, ''), 'D'),
+            order_source = COALESCE(NULLIF(order_source, ''), agency_name),
+            price_rmb = COALESCE(price_rmb, price),
+            vehicle_type_code = COALESCE(
+                NULLIF(vehicle_type_code, ''),
+                CASE
+                    WHEN vehicle_type LIKE '%10%' OR vehicle_type LIKE '%海%' THEN 'H'
+                    WHEN vehicle_type LIKE '%18%' OR vehicle_type LIKE '%中%' THEN 'C'
+                    ELSE 'A'
+                END
+            )
+        """
+    )
 
 
 if __name__ == "__main__":

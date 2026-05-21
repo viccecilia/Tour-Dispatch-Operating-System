@@ -16,11 +16,14 @@ from backend.db.database import init_db
 
 
 BASE_URL = os.environ.get("WX_DISPATCH_BASE_URL", "http://127.0.0.1:18765")
+TOKEN = ""
 
 
 def request(method: str, path: str, payload: dict | None = None) -> dict:
     data = None
     headers = {"Content-Type": "application/json"}
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(f"{BASE_URL}{path}", data=data, headers=headers, method=method)
@@ -63,10 +66,12 @@ def create_order() -> dict:
 
 
 def main() -> None:
+    global TOKEN
     init_db(seed=True)
 
     ping = request("GET", "/api/ping")
     login = request("POST", "/api/auth/login", {"username": "admin", "password": "admin123"})
+    TOKEN = login["token"]
     orders_before = request("GET", "/api/orders")
     order = create_order()
     suffix = str(int(datetime.now().timestamp()))

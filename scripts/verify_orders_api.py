@@ -7,11 +7,14 @@ from datetime import date
 
 
 BASE_URL = os.environ.get("WX_DISPATCH_BASE_URL", "http://127.0.0.1:18765")
+TOKEN = ""
 
 
 def request(method: str, path: str, payload: dict | None = None) -> dict:
     data = None
     headers = {"Content-Type": "application/json"}
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
@@ -34,9 +37,11 @@ def request(method: str, path: str, payload: dict | None = None) -> dict:
 
 
 def main() -> None:
+    global TOKEN
     today = date.today().isoformat()
     ping = request("GET", "/api/ping")
     login = request("POST", "/api/auth/login", {"username": "admin", "password": "admin123"})
+    TOKEN = login["token"]
 
     created = request(
         "POST",

@@ -17,11 +17,14 @@ from backend.db.database import init_db
 
 
 BASE_URL = os.environ.get("WX_DISPATCH_BASE_URL", "http://127.0.0.1:18765")
+TOKEN = ""
 
 
 def request(method: str, path: str, payload: dict | None = None) -> dict:
     data = None
     headers = {"Content-Type": "application/json"}
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
@@ -68,10 +71,12 @@ def create_order(start_time: str, end_time: str, suffix: str) -> dict:
 
 
 def main() -> None:
+    global TOKEN
     init_db(seed=True)
 
     ping = request("GET", "/api/ping")
     login = request("POST", "/api/auth/login", {"username": "admin", "password": "admin123"})
+    TOKEN = login["token"]
     base_minute = 360 + (int(datetime.now().timestamp()) % 480)
     start_a = _format_time(base_minute)
     end_a = _format_time(base_minute + 60)
@@ -89,6 +94,9 @@ def main() -> None:
     vehicle_two = request("POST", "/api/resources/vehicles", {"plate_number": f"R003B{suffix}", "vehicle_type": "商务车", "seat_count": 6, "status": "available"})["vehicle"]
     drivers = [driver_one, driver_two]
     vehicles = [vehicle_one, vehicle_two]
+
+    recommend_single = request("POST", "/api/dispatch/recommend", {"order_ids": [order_a["id"]]})
+    recommend_multi = request("POST", "/api/dispatch/recommend", {"order_ids": [order_a["id"], order_b["id"]]})
 
     assign_a = request(
         "POST",
@@ -111,6 +119,7 @@ def main() -> None:
             "vehicle_id": vehicles[0]["id"],
         },
     )
+    recommend_after_conflict = request("POST", "/api/dispatch/recommend", {"order_ids": [order_b["id"]]})
     route_order_ids = f"{order_a['id']},{order_b['id']}"
     route = request(
         "GET",
@@ -147,6 +156,13 @@ def main() -> None:
         "unassigned_count": len(unassigned.get("orders", [])),
         "drivers_count": len(drivers),
         "vehicles_count": len(vehicles),
+        "recommend_single_success": recommend_single.get("success") is True,
+        "recommend_single_count": len(recommend_single.get("recommendations", [])),
+        "recommend_single_has_reason": bool((recommend_single.get("recommendations") or [{}])[0].get("reasons")),
+        "recommend_multi_success": recommend_multi.get("success") is True,
+        "recommend_multi_count": len(recommend_multi.get("recommendations", [])),
+        "recommend_after_conflict_success": recommend_after_conflict.get("success") is True,
+        "recommend_after_conflict_has_reason": bool((recommend_after_conflict.get("recommendations") or [{}])[0].get("reasons")),
         "assign_success": assign_a.get("success") is True,
         "assigned_order_status": assigned_order.get("dispatch_status"),
         "active_assignment_exists": any(item["id"] == assign_a["assignment_ids"][0] for item in active_assignments),

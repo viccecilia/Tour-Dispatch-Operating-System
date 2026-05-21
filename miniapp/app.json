@@ -11,7 +11,7 @@
     "pages/finance/index"
   ],
   "window": {
-    "navigationBarTitleText": "调度派单台",
+    "navigationBarTitleText": "微旅调度",
     "navigationBarBackgroundColor": "#0f172a",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#f6f8fb"
