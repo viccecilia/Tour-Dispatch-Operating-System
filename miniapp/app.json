@@ -1,12 +1,13 @@
 {
   "pages": [
+    "pages/driver/index",
+    "pages/driver/google_map/index",
     "pages/index/index",
     "pages/orders/index",
     "pages/orders/form",
     "pages/parser/index",
     "pages/dispatch/index",
     "pages/calendar/index",
-    "pages/driver/index",
     "pages/vehicles/index",
     "pages/finance/index"
   ],
@@ -15,5 +16,13 @@
     "navigationBarBackgroundColor": "#0f172a",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#f6f8fb"
-  }
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "司机执行订单时用于上报当前位置、到达上车点和终点校验。"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ]
 }

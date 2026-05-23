@@ -2,7 +2,7 @@ const API_CONFIG = {
   // 微信开发者工具本机预览默认使用本机地址。
   // 真机预览时请改成电脑局域网地址。
   // 如果后端端口被占用，可切换为 18765。
-  baseUrl: 'http://127.0.0.1:18765'
+  baseUrl: 'http://192.168.31.241:18765'
 };
 
 function setBaseUrl(baseUrl) {

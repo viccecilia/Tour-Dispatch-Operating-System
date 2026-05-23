@@ -2,7 +2,7 @@
   "description": "WX Dispatch Miniapp",
   "miniprogramRoot": "./",
   "projectname": "wx-dispatch-miniapp",
-  "appid": "touristappid",
+  "appid": "wxb67c477b5ad50f64",
   "setting": {
     "urlCheck": false,
     "es6": true,
@@ -20,7 +20,7 @@
     "localPlugins": false,
     "disableUseStrict": false,
     "useCompilerPlugins": false,
-    "condition": false,
+    "condition": true,
     "swc": false,
     "disableSWC": true,
     "babelSetting": {
