@@ -16,6 +16,7 @@ import { FinancePage } from "@/pages/FinancePage";
 import { IncidentsPage } from "@/pages/IncidentsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MapPage } from "@/pages/MapPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
 import { OrdersPage } from "@/pages/OrdersPage";
 import { ParserPage } from "@/pages/ParserPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -73,6 +74,7 @@ export function App() {
 
   const page = {
     dashboard: <DashboardPage />,
+    notifications: <NotificationsPage />,
     parser: <ParserPage />,
     orders: <OrdersPage />,
     dispatch: <DispatchPage />,

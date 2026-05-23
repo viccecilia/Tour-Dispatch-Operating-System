@@ -2,6 +2,7 @@ import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, RotateCcw, Save, Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { PilotFeedbackNote } from "@/components/PilotFeedbackNote";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -268,6 +269,11 @@ export function ParserPage() {
 
   return (
     <div className="space-y-5">
+      <PilotFeedbackNote
+        title="试运营反馈记录点"
+        tone="amber"
+        items={["解析失败先保留原文", "低置信度必须人工确认", "把经常改的字段记下来", "确认后再进订单池"]}
+      />
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -293,6 +299,7 @@ export function ParserPage() {
         </CardHeader>
         <CardContent>
           <textarea
+            data-testid="parser-input"
             className="min-h-40 w-full resize-y rounded-lg border border-border bg-white p-4 text-sm leading-6 outline-none ring-primary/20 focus:ring-4"
             placeholder="把微信或 Excel 中复制出来的大段订单文本粘贴到这里。每条订单可以一行；客户名可以单独一行。"
             value={text}
@@ -306,7 +313,7 @@ export function ParserPage() {
               <Button variant="secondary" onClick={() => setText("")}>
                 清空输入
               </Button>
-              <Button disabled={!text.trim() || parseMutation.isPending} onClick={() => parseMutation.mutate(text)}>
+              <Button data-testid="parser-parse-button" disabled={!text.trim() || parseMutation.isPending} onClick={() => parseMutation.mutate(text)}>
                 {parseMutation.isPending ? <Loader2 className="animate-spin" size={15} /> : <FileText size={15} />}
                 批量解析为草稿
               </Button>
@@ -348,7 +355,7 @@ export function ParserPage() {
               <Button variant="secondary" onClick={chainSelected}>
                 一键排单（智能接龙）
               </Button>
-              <Button onClick={confirmSelected} disabled={!selectedDrafts.length || confirmMutation.isPending}>
+              <Button data-testid="parser-confirm-selected-button" onClick={confirmSelected} disabled={!selectedDrafts.length || confirmMutation.isPending}>
                 <CheckCircle2 size={15} />
                 原地确认
               </Button>
@@ -395,6 +402,8 @@ export function ParserPage() {
                       return (
                         <Fragment key={draft.id}>
                           <tr
+                            data-testid="parser-draft-row"
+                            data-draft-id={draft.id}
                             className={`h-12 border-t border-border bg-white align-middle hover:bg-slate-50 ${isCurrentBatch ? "bg-blue-50/40" : ""}`}
                           >
                             <td className="px-3 py-2">
@@ -434,7 +443,7 @@ export function ParserPage() {
                                 <button className="text-sm font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => confirmOne(draft.id)}>
                                   确认
                                 </button>
-                                <button className="text-sm font-semibold text-slate-700 hover:text-slate-950" onClick={() => startEdit(draft)}>
+                                <button data-testid="parser-edit-draft-button" className="text-sm font-semibold text-slate-700 hover:text-slate-950" onClick={() => startEdit(draft)}>
                                   编辑
                                 </button>
                               </div>
@@ -450,12 +459,14 @@ export function ParserPage() {
                                         <span className="mb-1 block text-xs font-semibold text-slate-500">{field.label}</span>
                                         {field.key === "remark" || field.key === "fee_remark" ? (
                                           <textarea
+                                            data-testid={`parser-edit-${field.key}`}
                                             className="min-h-20 w-full rounded-md border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-100"
                                             value={String(editDraft[field.key] ?? "")}
                                             onChange={(event) => setEditValue(field.key, event.target.value)}
                                           />
                                         ) : (
                                           <input
+                                            data-testid={`parser-edit-${field.key}`}
                                             className="h-9 w-full rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
                                             type={field.type || "text"}
                                             value={String(editDraft[field.key] ?? "")}
@@ -465,7 +476,7 @@ export function ParserPage() {
                                       </label>
                                     ))}
                                     <div className="flex items-end gap-2 md:col-span-4">
-                                      <Button onClick={() => updateMutation.mutate({ id: draft.id, payload: editDraft })} disabled={updateMutation.isPending}>
+                                      <Button data-testid="parser-save-draft-button" onClick={() => updateMutation.mutate({ id: draft.id, payload: editDraft })} disabled={updateMutation.isPending}>
                                         <Save size={15} />
                                         保存修改
                                       </Button>

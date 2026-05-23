@@ -30,6 +30,7 @@ import type { Locale } from "@/i18n/dictionaries";
 
 const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
   { key: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { key: "notifications", labelKey: "notifications.title", icon: Bell },
   { key: "parser", labelKey: "nav.parser", icon: FileText },
   { key: "orders", labelKey: "nav.orders", icon: ClipboardList },
   { key: "dispatch", labelKey: "nav.dispatch", icon: Route },
@@ -49,6 +50,7 @@ const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
 
 const titleKeys: Record<PageKey, string> = {
   dashboard: "page.dashboard",
+  notifications: "notifications.title",
   parser: "page.parser",
   orders: "page.orders",
   dispatch: "page.dispatch",
@@ -84,15 +86,15 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
   });
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-slate-900 bg-slate-950 text-white">
+    <div className="min-h-screen bg-[#eef3f8]">
+      <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-slate-200 bg-white text-slate-900 shadow-sm">
         <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
             <CarFront size={20} />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">{t("app.brand")}</p>
-            <p className="text-xs text-slate-400">{t("app.subtitle")}</p>
+            <p className="text-sm font-black text-slate-950">{t("app.brand")}</p>
+            <p className="text-xs font-semibold text-slate-500">{t("app.subtitle")}</p>
           </div>
         </div>
 
@@ -104,8 +106,8 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
               <button
                 key={item.key}
                 className={cn(
-                  "flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-slate-300 transition",
-                  active ? "bg-white/10 text-white" : "hover:bg-white/5 hover:text-white",
+                  "focus-runtime flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-bold text-slate-600 transition",
+                  active ? "bg-blue-50 text-blue-700 shadow-sm" : "micro-press hover:bg-slate-50 hover:text-slate-950",
                 )}
                 onClick={() => setActivePage(item.key)}
               >
@@ -116,8 +118,8 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
           })}
         </nav>
 
-        <div className="border-t border-white/10 p-4 text-xs text-slate-400">
-          <p className="font-semibold text-slate-200">{user.display_name || user.username}</p>
+        <div className="border-t border-slate-200 p-4 text-xs text-slate-500">
+          <p className="font-bold text-slate-950">{user.display_name || user.username}</p>
           <p className="mt-1">{user.tenant?.name || `租户 ${user.tenant_id}`}</p>
           <p>{t("topbar.demo")}</p>
           <p className="mt-1 truncate">{api.baseUrl}</p>
@@ -125,7 +127,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
       </aside>
 
       <div className="pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-white/90 px-8 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-8 backdrop-blur-xl">
           <div>
             <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">{t("topbar.section")}</p>
             <h1 className="text-xl font-bold text-slate-950">{t(titleKeys[activePage])}</h1>
@@ -145,13 +147,13 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
             </select>
             <div className="relative">
               <button
-                className="relative flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-slate-700 hover:bg-slate-50"
+                className="micro-press focus-runtime relative flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-slate-700 hover:bg-slate-50"
                 onClick={() => setNotificationsOpen((value) => !value)}
                 title={t("notifications.title")}
               >
                 <Bell size={17} />
                 {(notifications.data?.unread || 0) > 0 ? (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  <span className="runtime-pulse-dot absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
                     {notifications.data?.unread}
                   </span>
                 ) : null}
@@ -177,7 +179,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
                       notifications.data?.latest.map((item) => (
                         <button
                           key={item.id}
-                          className="block w-full border-b border-border px-4 py-3 text-left hover:bg-slate-50"
+                          className="micro-press block w-full border-b border-border px-4 py-3 text-left hover:bg-slate-50"
                           onClick={() => {
                             api.markNotificationRead(item.id).then(() => notifications.refetch());
                             if (item.link) window.location.hash = item.link.replace("#", "");
@@ -213,13 +215,13 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
             >
               {ping.isError ? t("topbar.apiOffline") : t("topbar.apiOnline")}
             </span>
-            <button className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white" onClick={onLogout}>
+            <button className="micro-press focus-runtime rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white" onClick={onLogout}>
               {t("topbar.logout")}
             </button>
           </div>
         </header>
 
-        <main className="p-8">{children}</main>
+        <main className="runtime-page p-6 2xl:p-8">{children}</main>
       </div>
     </div>
   );

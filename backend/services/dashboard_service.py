@@ -105,6 +105,9 @@ def get_summary() -> dict:
         )
         available_drivers = _count(conn, "SELECT COUNT(*) AS total FROM drivers WHERE tenant_id = ? AND status = 'available'", (tenant_id,))
         available_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'available'", (tenant_id,))
+        outbound_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'outbound'", (tenant_id,))
+        in_service_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'in_service'", (tenant_id,))
+        returned_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'returned'", (tenant_id,))
         pending_drafts = _count(
             conn,
             """
@@ -166,6 +169,36 @@ def get_summary() -> dict:
             """,
             (tenant_id, tenant_id, today),
         )
+        assigned_unconfirmed_orders = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS total
+            FROM assignments a
+            JOIN orders o ON o.id = a.order_id
+            WHERE a.status = 'active'
+              AND a.tenant_id = ?
+              AND o.tenant_id = ?
+              AND o.order_date >= ?
+              AND COALESCE(a.execution_status, 'assigned') = 'assigned'
+              AND COALESCE(o.is_deleted, 0) = 0
+            """,
+            (tenant_id, tenant_id, today),
+        )
+        confirmed_driver_count = _count(
+            conn,
+            """
+            SELECT COUNT(DISTINCT a.driver_id) AS total
+            FROM assignments a
+            JOIN orders o ON o.id = a.order_id
+            WHERE a.status = 'active'
+              AND a.tenant_id = ?
+              AND o.tenant_id = ?
+              AND o.order_date >= ?
+              AND COALESCE(a.execution_status, 'assigned') IN ('confirmed', 'departed', 'arrived', 'in_service', 'completed', 'returned')
+              AND COALESCE(o.is_deleted, 0) = 0
+            """,
+            (tenant_id, tenant_id, today),
+        )
 
     resource_reminders = get_resource_reminders()
     incident_summary = get_incident_summary()
@@ -183,6 +216,15 @@ def get_summary() -> dict:
         "missing_price_orders": missing_price_orders,
         "available_drivers": available_drivers,
         "available_vehicles": available_vehicles,
+        "outbound_vehicles": outbound_vehicles,
+        "in_service_vehicles": in_service_vehicles,
+        "returned_vehicles": returned_vehicles,
+        "vehicle_status": {
+            "available": available_vehicles,
+            "outbound": outbound_vehicles,
+            "in_service": in_service_vehicles,
+            "returned": returned_vehicles,
+        },
         "pending_drafts": pending_drafts,
         "today_parsed_drafts": today_parsed_drafts,
         "failed_drafts": failed_drafts,
@@ -193,6 +235,8 @@ def get_summary() -> dict:
         "today_completed_orders": execution_counts["completed"],
         "today_returned_orders": execution_counts["returned"],
         "unreported_assignments": unreported_assignments,
+        "assigned_unconfirmed_orders": assigned_unconfirmed_orders,
+        "confirmed_driver_count": confirmed_driver_count,
         "resource_alerts": resource_reminders["total"],
         "resource_expired_alerts": resource_reminders["expired"],
         "resource_upcoming_alerts": resource_reminders["upcoming"],

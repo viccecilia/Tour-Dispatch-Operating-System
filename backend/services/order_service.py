@@ -41,6 +41,13 @@ ORDER_FIELDS = [
     "remark",
     "dispatch_status",
     "settlement_status",
+    "source_channel",
+    "created_by_dispatcher",
+    "created_by_dispatcher_id",
+    "created_by_dispatcher_code",
+    "updated_by_dispatcher",
+    "updated_by_dispatcher_id",
+    "updated_by_dispatcher_code",
 ]
 
 REQUIRED_FIELDS = ["order_date", "pickup_location", "dropoff_location"]
@@ -177,7 +184,7 @@ def _normalize_payload(payload: dict[str, Any], partial: bool) -> dict[str, Any]
         data.setdefault("order_source", data.get("order_source") or data.get("agency_name"))
         data.setdefault("vehicle_type_code", normalize_vehicle_type_code(data.get("vehicle_type_code"), data.get("vehicle_type"), data.get("vehicle_class")))
 
-    for count_field in ("passenger_count", "luggage_count", "agency_id"):
+    for count_field in ("passenger_count", "luggage_count", "agency_id", "created_by_dispatcher_id", "updated_by_dispatcher_id"):
         if count_field in data and data[count_field] in ("", None):
             data[count_field] = None if count_field == "agency_id" else 0
         elif count_field in data:

@@ -17,6 +17,10 @@ ORDER_COLUMNS: dict[str, str] = {
     "end_time": "TEXT",
     "pickup_location": "TEXT",
     "dropoff_location": "TEXT",
+    "pickup_latitude": "REAL",
+    "pickup_longitude": "REAL",
+    "dropoff_latitude": "REAL",
+    "dropoff_longitude": "REAL",
     "order_type": "TEXT",
     "vehicle_type": "TEXT",
     "order_note_code": "TEXT",
@@ -51,6 +55,13 @@ ORDER_COLUMNS: dict[str, str] = {
     "dispatch_status": "TEXT NOT NULL DEFAULT 'unassigned'",
     "execution_status": "TEXT NOT NULL DEFAULT 'assigned'",
     "settlement_status": "TEXT NOT NULL DEFAULT 'pending'",
+    "source_channel": "TEXT",
+    "created_by_dispatcher": "TEXT",
+    "created_by_dispatcher_id": "INTEGER",
+    "created_by_dispatcher_code": "TEXT",
+    "updated_by_dispatcher": "TEXT",
+    "updated_by_dispatcher_id": "INTEGER",
+    "updated_by_dispatcher_code": "TEXT",
     "is_deleted": "INTEGER NOT NULL DEFAULT 0",
     "updated_at": "TEXT",
 }
@@ -240,6 +251,13 @@ ORDER_DRAFT_COLUMNS: dict[str, str] = {
     "remark": "TEXT",
     "parse_result_json": "TEXT",
     "confirmed_order_id": "INTEGER",
+    "source_channel": "TEXT",
+    "created_by_dispatcher": "TEXT",
+    "created_by_dispatcher_id": "INTEGER",
+    "created_by_dispatcher_code": "TEXT",
+    "updated_by_dispatcher": "TEXT",
+    "updated_by_dispatcher_id": "INTEGER",
+    "updated_by_dispatcher_code": "TEXT",
     "updated_at": "TEXT",
 }
 
@@ -330,6 +348,21 @@ ORG_TABLE_COLUMNS: dict[str, dict[str, str]] = {
     },
 }
 
+DISPATCH_MOBILE_AUDIT_COLUMNS: dict[str, str] = {
+    "tenant_id": "INTEGER NOT NULL DEFAULT 1",
+    "dispatcher_id": "INTEGER",
+    "dispatcher_code": "TEXT",
+    "dispatcher_name": "TEXT",
+    "action": "TEXT",
+    "entity_type": "TEXT",
+    "entity_id": "TEXT",
+    "before_json": "TEXT",
+    "after_json": "TEXT",
+    "summary": "TEXT",
+    "source_path": "TEXT",
+    "created_at": "TEXT",
+}
+
 TENANT_TABLE_COLUMNS: dict[str, dict[str, str]] = {
     "users": {"tenant_id": "INTEGER NOT NULL DEFAULT 1"},
     "departments": {"tenant_id": "INTEGER NOT NULL DEFAULT 1"},
@@ -379,6 +412,7 @@ def init_db(seed: bool = True) -> None:
         ensure_notification_schema(conn)
         ensure_billing_schema(conn)
         ensure_org_schema(conn)
+        ensure_dispatch_mobile_audit_schema(conn)
         ensure_agency_schema(conn)
         ensure_location_schema(conn)
         ensure_tenant_schema(conn)
@@ -964,6 +998,29 @@ def ensure_org_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_dispatch_mobile_audit_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dispatch_mobile_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL DEFAULT 1,
+            dispatcher_id INTEGER,
+            dispatcher_code TEXT,
+            dispatcher_name TEXT,
+            action TEXT,
+            entity_type TEXT,
+            entity_id TEXT,
+            before_json TEXT,
+            after_json TEXT,
+            summary TEXT,
+            source_path TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    _ensure_columns(conn, "dispatch_mobile_audit_logs", DISPATCH_MOBILE_AUDIT_COLUMNS)
+
+
 def ensure_tenant_schema(conn: sqlite3.Connection) -> None:
     for table, columns in TENANT_TABLE_COLUMNS.items():
         _ensure_columns(conn, table, columns)
@@ -1321,12 +1378,34 @@ def seed_agency_portals(conn: sqlite3.Connection) -> None:
 
 
 def seed_dispatch_resources(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        UPDATE drivers
+        SET status = 'inactive',
+            driver_status = 'inactive',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE tenant_id = 1
+          AND phone IN ('090-1000-0001', '090-1000-0002', '090-1000-0003')
+        """
+    )
     drivers = [
-        ("田中司机", "090-1000-0001", "available"),
-        ("佐藤司机", "090-1000-0002", "available"),
-        ("高桥司机", "090-1000-0003", "inactive"),
+        ("姚博", "YB", "英语可", "本社", "090-6058-7891", "available"),
+        ("李力", "LL", "", "本社", "080-4238-1388", "available"),
+        ("万強", "WQ", "英语可", "本社", "070-2303-6669", "available"),
+        ("夏天忻", "XTX", "", "本社", "080-4034-1775", "available"),
+        ("周伝波", "ZCB", "", "本社", "090-9613-8613", "available"),
+        ("姜小涛", "JXT", "", "本社", "070-8508-9919", "available"),
+        ("高弘强", "GHQ", "", "京都営業所", "080-4867-0502", "available"),
+        ("李成志", "LCZ", "韩语可", "本社", "080-4647-9188", "available"),
+        ("王啓超", "WQC", "英语可", "本社", "090-4273-9895", "available"),
+        ("胡東鍇", "HDK", "英语可", "本社", "090-3660-0829", "available"),
+        ("呂雲龍", "LYL", "", "本社", "080-2952-0888", "available"),
+        ("先山武志", "SKYM", "英语可", "本社", "090-7486-8828", "available"),
+        ("白石賢志", "SRIS", "", "京都営業所", "070-2015-1485", "available"),
+        ("富塚紀子", "TOYO", "", "京都営業所", "080-3142-8725", "available"),
+        ("山下洋子／李洋", "LY", "", "京都営業所", "080-5328-6390", "available"),
     ]
-    for name, phone, status in drivers:
+    for name, driver_code, driver_language, office, phone, status in drivers:
         exists = conn.execute(
             "SELECT 1 FROM drivers WHERE tenant_id = 1 AND phone = ? LIMIT 1",
             (phone,),
@@ -1334,10 +1413,27 @@ def seed_dispatch_resources(conn: sqlite3.Connection) -> None:
         if not exists:
             conn.execute(
                 """
-                INSERT INTO drivers (tenant_id, name, phone, status)
-                VALUES (1, ?, ?, ?)
+                INSERT INTO drivers (
+                    tenant_id, name, driver_code, driver_language, office, phone, status, driver_status
+                )
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, phone, status),
+                (name, driver_code, driver_language, office, phone, status, status),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE drivers
+                SET name = ?,
+                    driver_code = ?,
+                    driver_language = ?,
+                    office = ?,
+                    status = ?,
+                    driver_status = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = 1 AND phone = ?
+                """,
+                (name, driver_code, driver_language, office, status, status, phone),
             )
         conn.execute(
             """

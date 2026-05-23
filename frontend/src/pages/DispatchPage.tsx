@@ -75,6 +75,38 @@ function assignmentId(item: Assignment) {
   return Number(item.assignment_id || item.id || 0);
 }
 
+function driverConfirmLabel(status?: string) {
+  const value = status || "assigned";
+  if (value === "assigned") return "未确认";
+  if (["confirmed", "departed", "arrived", "in_service", "completed", "returned"].includes(value)) return "已确认";
+  return "待确认";
+}
+
+function driverReportLabel(type?: string) {
+  const labels: Record<string, string> = {
+    confirm_order: "接单回执",
+    depart_yard: "点呼出库",
+    arrive_pickup: "到达上车点",
+    start_service: "开始服务",
+    complete_order: "完成订单",
+    return_yard: "点呼入库",
+  };
+  return type ? labels[type] || type : "-";
+}
+
+function driverReceiptText(item: Assignment) {
+  const status = item.execution_status || "assigned";
+  if (status === "assigned") return "等待司机确认";
+  if (item.latest_report_type === "confirm_order" || status === "confirmed") return "司机已确认接单";
+  return driverConfirmLabel(status);
+}
+
+function driverReceiptClass(item: Assignment) {
+  const status = item.execution_status || "assigned";
+  if (status === "assigned") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-emerald-200 bg-emerald-50 text-emerald-800";
+}
+
 export function DispatchPage() {
   const queryClient = useQueryClient();
   const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
@@ -151,6 +183,25 @@ export function DispatchPage() {
         .includes(keyword);
     });
   }, [assignmentKeyword, assignments.data]);
+
+  const dispatchLinkSummary = useMemo(() => {
+    const rows = assignments.data || [];
+    const unconfirmed = rows.filter((item) => (item.execution_status || "assigned") === "assigned").length;
+    const confirmedDrivers = new Set(
+      rows
+        .filter((item) => ["confirmed", "departed", "arrived", "in_service", "completed", "returned"].includes(item.execution_status || ""))
+        .map((item) => item.driver_id)
+        .filter(Boolean),
+    ).size;
+    return { unconfirmed, confirmedDrivers };
+  }, [assignments.data]);
+
+  const runtimeStats = {
+    unassigned: visibleOrders.length,
+    selected: selectedOrders.length,
+    active: (assignments.data || []).length,
+    unconfirmed: dispatchLinkSummary.unconfirmed,
+  };
 
   async function refreshDispatch() {
     await Promise.all([
@@ -276,6 +327,21 @@ export function DispatchPage() {
 
   return (
     <div className="space-y-5">
+      <section className="runtime-strip">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="runtime-eyebrow">LIVE DISPATCH</p>
+            <h2 className="runtime-title">派车工作台</h2>
+            <p className="runtime-subtitle">订单池、司机池、车辆池和司机回执保持自动刷新。</p>
+          </div>
+          <div className="grid min-w-[520px] grid-cols-4 gap-2">
+            <RuntimeMiniMetric label="未派车" value={runtimeStats.unassigned} tone="red" />
+            <RuntimeMiniMetric label="已选择" value={runtimeStats.selected} tone="blue" />
+            <RuntimeMiniMetric label="已派车" value={runtimeStats.active} tone="green" />
+            <RuntimeMiniMetric label="未确认" value={runtimeStats.unconfirmed} tone="amber" />
+          </div>
+        </div>
+      </section>
       <section className="grid gap-5 2xl:grid-cols-[minmax(760px,1.55fr)_360px_360px]">
         <Card className="min-h-[640px]">
           <CardHeader>
@@ -339,6 +405,8 @@ export function DispatchPage() {
                         const match = vehicleMatches(order, vehicle);
                         return (
                           <tr
+                            data-testid="dispatch-order-row"
+                            data-order-id={order.id}
                             key={order.id}
                             onClick={() => toggleOrder(order.id)}
                             className={`h-12 cursor-pointer border-t border-border ${selected ? "bg-blue-50" : "bg-white hover:bg-slate-50"}`}
@@ -395,6 +463,8 @@ export function DispatchPage() {
         >
           {filteredDrivers.map((item) => (
             <button
+              data-testid="dispatch-driver-card"
+              data-driver-id={item.id}
               key={item.id}
               className={`w-full rounded-lg border p-3 text-left transition ${driverId === item.id ? "border-blue-500 bg-blue-50" : "border-border bg-white hover:border-blue-200"}`}
               onClick={() => setDriverId(item.id)}
@@ -420,6 +490,8 @@ export function DispatchPage() {
             const tags = vehicleTags(item);
             return (
               <button
+                data-testid="dispatch-vehicle-card"
+                data-vehicle-id={item.id}
                 key={item.id}
                 className={`w-full rounded-lg border p-3 text-left transition ${vehicleId === item.id ? "border-blue-500 bg-blue-50" : "border-border bg-white hover:border-blue-200"}`}
                 onClick={() => setVehicleId(item.id)}
@@ -535,7 +607,7 @@ export function DispatchPage() {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button disabled={!canAssign} onClick={() => assignMutation.mutate()}>
+            <Button data-testid="dispatch-assign-button" disabled={!canAssign} onClick={() => assignMutation.mutate()}>
               <CheckCircle2 size={16} />
               批量派车
             </Button>
@@ -576,10 +648,14 @@ export function DispatchPage() {
               <h2 className="text-base font-bold text-slate-950">已派车订单池</h2>
               <p className="mt-1 text-sm text-slate-500">取消分配会保留历史 assignment，订单回到未派车池。</p>
             </div>
-            <label className="flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm">
-              <Search size={15} className="text-slate-400" />
-              <input className="w-56 outline-none" value={assignmentKeyword} onChange={(event) => setAssignmentKeyword(event.target.value)} placeholder="订单/司机/车辆/状态" />
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">已派未确认 {dispatchLinkSummary.unconfirmed}</span>
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">已确认司机 {dispatchLinkSummary.confirmedDrivers}</span>
+              <label className="flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm">
+                <Search size={15} className="text-slate-400" />
+                <input className="w-56 outline-none" value={assignmentKeyword} onChange={(event) => setAssignmentKeyword(event.target.value)} placeholder="订单/司机/车辆/状态" />
+              </label>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="overflow-x-auto p-0">
@@ -593,8 +669,10 @@ export function DispatchPage() {
                 <th>路线</th>
                 <th>司机</th>
                 <th>车辆</th>
+                <th>车辆状态</th>
                 <th>价格</th>
                 <th>执行状态</th>
+                <th>司机回执</th>
                 <th>最新报备</th>
                 <th>操作</th>
               </tr>
@@ -619,10 +697,19 @@ export function DispatchPage() {
                     <td>{shortRoute(item.pickup_location, item.dropoff_location)}</td>
                     <td>{item.driver_name || "-"}</td>
                     <td>{item.plate_number || "-"}</td>
+                    <td><StatusBadge status={item.vehicle_status || "available"} /></td>
                     <td>{formatCurrency(item.price)}</td>
                     <td><StatusBadge status={item.execution_status || item.status} /></td>
                     <td>
-                      <span className="text-xs text-slate-600">{item.latest_report_type || "-"}</span>
+                      <div className={`inline-flex min-w-32 flex-col rounded-xl border px-3 py-2 ${driverReceiptClass(item)}`}>
+                        <span className="text-xs font-bold">{driverReceiptText(item)}</span>
+                        <span className="mt-1 text-[11px] opacity-80">
+                          {item.latest_report_type === "confirm_order" ? item.latest_report_time || item.report_time || "已收到回执" : "司机端确认后自动刷新"}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="text-xs font-semibold text-slate-700">{driverReportLabel(item.latest_report_type)}</span>
                       <br />
                       <span className="text-xs text-slate-400">{item.latest_report_time || item.report_time || "-"}</span>
                     </td>
@@ -703,6 +790,21 @@ function ResourcePanel({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function RuntimeMiniMetric({ label, value, tone }: { label: string; value: number; tone: "blue" | "green" | "amber" | "red" }) {
+  const toneClass = {
+    blue: "bg-blue-50 text-blue-700",
+    green: "bg-emerald-50 text-emerald-700",
+    amber: "bg-amber-50 text-amber-700",
+    red: "bg-red-50 text-red-700",
+  }[tone];
+  return (
+    <div className={`rounded-2xl px-4 py-3 ${toneClass}`}>
+      <div className="text-xs font-black">{label}</div>
+      <div className="mt-1 text-2xl font-black">{value}</div>
+    </div>
   );
 }
 

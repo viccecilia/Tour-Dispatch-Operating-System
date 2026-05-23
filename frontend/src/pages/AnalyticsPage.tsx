@@ -11,8 +11,10 @@ import {
   UserCheck,
 } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
+import { EmptyPanel, ErrorPanel, SkeletonCard } from "@/components/OperationalState";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
+import type { AnalyticsSummary } from "@/types/api";
 
 function isoDate(offsetDays: number) {
   const date = new Date();
@@ -34,6 +36,30 @@ function metricTone(value: number, good = 90) {
   return "text-red-700 bg-red-50 ring-red-200";
 }
 
+function emptyAnalytics(dateFrom: string, dateTo: string): AnalyticsSummary {
+  return {
+    date_from: dateFrom,
+    date_to: dateTo,
+    kpis: {
+      order_count: 0,
+      revenue: 0,
+      assigned_count: 0,
+      completed_count: 0,
+      completion_rate: 0,
+      incident_count: 0,
+      open_incident_count: 0,
+      incident_rate: 0,
+      avg_driver_ontime_rate: 0,
+      unsettled_count: 0,
+      missing_price_count: 0,
+    },
+    trend: [],
+    agency_revenue: [],
+    driver_performance: [],
+    vehicle_utilization: [],
+  };
+}
+
 export function AnalyticsPage() {
   const [dateFrom, setDateFrom] = useState(isoDate(-29));
   const [dateTo, setDateTo] = useState(isoDate(0));
@@ -42,43 +68,50 @@ export function AnalyticsPage() {
     queryFn: () => api.analyticsSummary({ date_from: dateFrom, date_to: dateTo }),
   });
 
-  const maxOrders = useMemo(() => {
-    return Math.max(...(analytics.data?.trend || []).map((item) => item.order_count), 1);
-  }, [analytics.data?.trend]);
-
-  if (analytics.isLoading) {
-    return <div className="panel p-8 text-sm text-slate-500">正在加载经营分析...</div>;
-  }
-  if (analytics.isError || !analytics.data) {
-    return <div className="panel p-8 text-sm text-red-600">经营分析接口加载失败，请检查后端运行状态。</div>;
-  }
-
-  const data = analytics.data;
+  const data = analytics.data ?? emptyAnalytics(dateFrom, dateTo);
+  const maxOrders = useMemo(() => Math.max(...data.trend.map((item) => item.order_count), 1), [data.trend]);
   const topIncomeDriver = data.driver_performance[0];
   const avgOnTime = data.kpis.avg_driver_ontime_rate || 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <section className="runtime-strip">
+        <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-500">SaaS 经营分析</p>
-          <h2 className="mt-1 text-2xl font-bold text-slate-950">司机绩效与运营 BI</h2>
-          <p className="mt-1 text-sm text-slate-500">以订单、派车、执行报备和异常记录为基础，不做复杂 HR 绩效。</p>
+          <p className="runtime-eyebrow">OPERATIONS INSIGHT</p>
+          <h2 className="runtime-title">经营分析</h2>
+          <p className="runtime-subtitle">只保留运营判断需要的订单趋势、司机绩效、车辆利用和旅行社收入。</p>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-white p-2">
           <input className="h-9 rounded-md border border-border px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
           <span className="text-xs text-slate-400">至</span>
           <input className="h-9 rounded-md border border-border px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
         </div>
-      </div>
+        </div>
+      </section>
+
+      {analytics.isError ? (
+        <ErrorPanel
+          title="经营分析接口暂时不可用"
+          description="页面结构仍可查看，司机绩效、车辆利用率和旅行社收入会在后端恢复后自动加载。"
+          requestPath="/api/analytics/summary"
+          onRetry={() => analytics.refetch()}
+        />
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="订单数" value={data.kpis.order_count} icon={BarChart3} tone="blue" caption={`${data.date_from} - ${data.date_to}`} />
-        <KpiCard title="总收入" value={money(data.kpis.revenue)} icon={CircleDollarSign} tone="green" />
-        <KpiCard title="已派车" value={data.kpis.assigned_count} icon={Route} tone="violet" />
-        <KpiCard title="整体完成率" value={rate(data.kpis.completion_rate)} icon={CheckCircle2} tone={data.kpis.completion_rate >= 80 ? "green" : "amber"} />
-        <KpiCard title="司机准时率" value={rate(avgOnTime)} icon={Clock3} tone={avgOnTime >= 80 ? "green" : "amber"} />
-        <KpiCard title="客诉率" value={rate(data.kpis.incident_rate)} icon={AlertTriangle} tone={data.kpis.incident_rate > 5 ? "red" : "slate"} />
+        {analytics.isLoading ? (
+          Array.from({ length: 6 }).map((_, index) => <SkeletonCard key={index} rows={2} />)
+        ) : (
+          <>
+            <KpiCard title="订单数" value={data.kpis.order_count} icon={BarChart3} tone="blue" caption={`${data.date_from} - ${data.date_to}`} />
+            <KpiCard title="总收入" value={money(data.kpis.revenue)} icon={CircleDollarSign} tone="green" />
+            <KpiCard title="已派车" value={data.kpis.assigned_count} icon={Route} tone="violet" />
+            <KpiCard title="整体完成率" value={rate(data.kpis.completion_rate)} icon={CheckCircle2} tone={data.kpis.completion_rate >= 80 ? "green" : "amber"} />
+            <KpiCard title="司机准时率" value={rate(avgOnTime)} icon={Clock3} tone={avgOnTime >= 80 ? "green" : "amber"} />
+            <KpiCard title="客诉率" value={rate(data.kpis.incident_rate)} icon={AlertTriangle} tone={data.kpis.incident_rate > 5 ? "red" : "slate"} />
+          </>
+        )}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -136,6 +169,9 @@ export function AnalyticsPage() {
                   ))}
                 </tbody>
               </table>
+              {!analytics.isLoading && !data.driver_performance.length ? (
+                <EmptyPanel title="暂无司机绩效数据" description="有完成订单和司机报备后，这里会显示司机绩效排行。" requestPath="/api/analytics/summary" />
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -146,7 +182,7 @@ export function AnalyticsPage() {
             <p className="mt-1 text-sm text-slate-500">优先显示司机结算收入；没有工资字段时会显示 0。</p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.driver_performance.slice(0, 8).map((driver) => (
+            {data.driver_performance.length ? data.driver_performance.slice(0, 8).map((driver) => (
               <div key={`income-${driver.driver_id}-${driver.driver_name}`} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -171,7 +207,7 @@ export function AnalyticsPage() {
                   />
                 </div>
               </div>
-            ))}
+            )) : <EmptyPanel title="暂无收入排行" description="后端恢复或产生司机结算数据后显示。" />}
           </CardContent>
         </Card>
       </section>
@@ -183,16 +219,18 @@ export function AnalyticsPage() {
             <p className="mt-1 text-sm text-slate-500">按日期展示订单数量和完成占比。</p>
           </CardHeader>
           <CardContent>
-            <div className="flex h-72 items-end gap-2 overflow-x-auto border-b border-slate-200 pb-3">
-              {data.trend.map((item) => (
+            {data.trend.length ? (
+              <div className="flex h-72 items-end gap-2 overflow-x-auto border-b border-slate-200 pb-3">
+                {data.trend.map((item) => (
                 <div key={item.date} className="flex min-w-9 flex-1 flex-col items-center justify-end gap-2">
                   <div className="flex w-full flex-col justify-end rounded-t-md bg-blue-100" style={{ height: `${Math.max((item.order_count / maxOrders) * 220, item.order_count ? 18 : 4)}px` }}>
                     <div className="rounded-t-md bg-blue-500" style={{ height: `${Math.max((item.completed_count / Math.max(item.order_count, 1)) * 100, 8)}%` }} />
                   </div>
                   <span className="text-[10px] font-semibold text-slate-400">{item.date.slice(5)}</span>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : <SkeletonCard title="订单趋势图表占位" rows={6} />}
           </CardContent>
         </Card>
 
@@ -202,7 +240,7 @@ export function AnalyticsPage() {
             <p className="mt-1 text-sm text-slate-500">按收入和待结算金额查看主要来源。</p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.agency_revenue.slice(0, 8).map((agency) => (
+            {data.agency_revenue.length ? data.agency_revenue.slice(0, 8).map((agency) => (
               <div key={agency.agency_name} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -215,7 +253,7 @@ export function AnalyticsPage() {
                   </div>
                 </div>
               </div>
-            ))}
+            )) : <EmptyPanel title="暂无旅行社收入数据" description="订单价格和旅行社来源完善后显示收入结构。" />}
           </CardContent>
         </Card>
       </section>
@@ -227,7 +265,7 @@ export function AnalyticsPage() {
             <p className="mt-1 text-sm text-slate-500">按服务时间估算车辆占用，不接地图和排班系统。</p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.vehicle_utilization.map((vehicle) => (
+            {data.vehicle_utilization.length ? data.vehicle_utilization.map((vehicle) => (
               <div key={`${vehicle.vehicle_id}-${vehicle.plate_number}`} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -240,7 +278,7 @@ export function AnalyticsPage() {
                   <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(vehicle.utilization_rate, 100)}%` }} />
                 </div>
               </div>
-            ))}
+            )) : <EmptyPanel title="暂无车辆利用率数据" description="派车和执行记录产生后显示车辆占用情况。" />}
           </CardContent>
         </Card>
 

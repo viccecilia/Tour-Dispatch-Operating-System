@@ -31,6 +31,20 @@ export function CalendarPage() {
 
   return (
     <div className="space-y-6">
+      <section className="runtime-strip">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="runtime-eyebrow">FLEET TIMELINE</p>
+            <h2 className="runtime-title">车辆矩阵日历</h2>
+            <p className="runtime-subtitle">按车辆占用、订单状态和结算颜色查看运行窗口。</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="runtime-pill runtime-pill-blue">{viewMeta[view].label}</span>
+            <span className="runtime-pill runtime-pill-green">{calendar.data?.items?.length || 0} 条派车</span>
+            <span className="runtime-pill runtime-pill-amber">{calendar.data?.vehicles?.length || 0} 台车</span>
+          </div>
+        </div>
+      </section>
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-4">

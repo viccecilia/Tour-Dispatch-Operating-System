@@ -32,6 +32,61 @@
   line-height: 1;
 }
 
+.ops-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 150rpx;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.ops-chip,
+.route-button {
+  min-width: 0;
+  box-sizing: border-box;
+  border-radius: 20rpx;
+  border: 1rpx solid #dbe4f0;
+  background: #ffffff;
+  box-shadow: 0 8rpx 20rpx rgba(15, 23, 42, 0.045);
+}
+
+.ops-chip {
+  padding: 12rpx 14rpx;
+}
+
+.ops-chip text {
+  display: block;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.ops-chip strong {
+  display: block;
+  margin-top: 4rpx;
+  color: #0f172a;
+  font-size: 30rpx;
+  font-weight: 950;
+}
+
+.ops-chip.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.ops-chip.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.route-button {
+  height: 84rpx;
+  padding: 0;
+  color: #ffffff;
+  background: #0f172a;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
 .airport-grid,
 .resource-grid {
   display: grid;

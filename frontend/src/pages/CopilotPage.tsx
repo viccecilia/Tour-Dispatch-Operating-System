@@ -2,22 +2,38 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Bot, CheckCircle2, Lightbulb, Route, UserRound } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
+import { EmptyPanel, ErrorPanel, SkeletonCard } from "@/components/OperationalState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
+import type { CopilotSummary } from "@/types/api";
+
+function emptyCopilot(date: string): CopilotSummary {
+  return {
+    date,
+    operations_summary: "当前离线模式：后端恢复后会生成今日运营摘要。",
+    metrics: {
+      today_orders: 0,
+      unassigned_orders: 0,
+      active_execution: 0,
+      completion_rate: 0,
+      open_incidents: 0,
+    },
+    risk_orders: [],
+    unassigned_reminders: [],
+    driver_exception_summary: [],
+    open_incidents: [],
+    urgent_notifications: [],
+    suggestions: [],
+    explainability: ["未自动派车", "未修改财务", "等待后端数据"],
+  };
+}
 
 export function CopilotPage() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const copilot = useQuery({ queryKey: ["copilot-summary", date], queryFn: () => api.copilotSummary(date) });
 
-  if (copilot.isLoading) {
-    return <div className="panel p-8 text-sm text-slate-500">正在加载运营助手摘要...</div>;
-  }
-  if (copilot.isError || !copilot.data) {
-    return <div className="panel p-8 text-sm text-red-600">运营助手接口失败。</div>;
-  }
-
-  const data = copilot.data;
+  const data = copilot.data ?? emptyCopilot(date);
 
   return (
     <div className="space-y-6">
@@ -29,6 +45,15 @@ export function CopilotPage() {
         </div>
         <input className="h-10 rounded-md border border-border bg-white px-3 text-sm" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
       </div>
+
+      {copilot.isError ? (
+        <ErrorPanel
+          title="运营助手进入离线模式"
+          description="今日运营摘要、风险提醒和 AI 建议结构仍保留。后端恢复后会展示真实建议。"
+          requestPath="/api/copilot/summary"
+          onRetry={() => copilot.refetch()}
+        />
+      ) : null}
 
       <Card className="border-blue-200 bg-blue-50/50">
         <CardContent className="flex items-start gap-4 p-5">
@@ -48,11 +73,17 @@ export function CopilotPage() {
       </Card>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <KpiCard title="今日订单" value={data.metrics.today_orders} icon={Route} tone="blue" />
-        <KpiCard title="未派车" value={data.metrics.unassigned_orders} icon={AlertTriangle} tone={data.metrics.unassigned_orders ? "red" : "green"} />
-        <KpiCard title="执行中" value={data.metrics.active_execution} icon={UserRound} tone="violet" />
-        <KpiCard title="完成率" value={`${data.metrics.completion_rate}%`} icon={CheckCircle2} tone="green" />
-        <KpiCard title="开放异常" value={data.metrics.open_incidents} icon={AlertTriangle} tone={data.metrics.open_incidents ? "red" : "slate"} />
+        {copilot.isLoading ? (
+          Array.from({ length: 5 }).map((_, index) => <SkeletonCard key={index} rows={2} />)
+        ) : (
+          <>
+            <KpiCard title="今日订单" value={data.metrics.today_orders} icon={Route} tone="blue" />
+            <KpiCard title="未派车" value={data.metrics.unassigned_orders} icon={AlertTriangle} tone={data.metrics.unassigned_orders ? "red" : "green"} />
+            <KpiCard title="执行中" value={data.metrics.active_execution} icon={UserRound} tone="violet" />
+            <KpiCard title="完成率" value={`${data.metrics.completion_rate}%`} icon={CheckCircle2} tone="green" />
+            <KpiCard title="开放异常" value={data.metrics.open_incidents} icon={AlertTriangle} tone={data.metrics.open_incidents ? "red" : "slate"} />
+          </>
+        )}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
@@ -62,7 +93,7 @@ export function CopilotPage() {
             <p className="mt-1 text-sm text-slate-500">每条建议都附带可解释原因和入口。</p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.suggestions.map((suggestion) => (
+            {data.suggestions.length ? data.suggestions.map((suggestion) => (
               <div key={suggestion.title} className="rounded-lg border border-border bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
@@ -83,7 +114,7 @@ export function CopilotPage() {
                   </button>
                 ) : null}
               </div>
-            ))}
+            )) : <EmptyPanel title="暂无 AI 建议" description="当前无风险建议，或运营助手接口处于离线模式。" requestPath="/api/copilot/summary" />}
           </CardContent>
         </Card>
 

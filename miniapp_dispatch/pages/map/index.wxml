@@ -18,6 +18,12 @@
       <button class="refresh-button" bindtap="loadData">刷新</button>
     </view>
 
+    <view class="map-alert-row">
+      <view><text>在线司机</text><strong>{{filteredDrivers.length}}</strong></view>
+      <view><text>即将开始</text><strong>{{filteredOrders.length}}</strong></view>
+      <view><text>风险订单</text><strong>{{selected ? 1 : 0}}</strong></view>
+    </view>
+
     <view class="search-box">
       <input
         value="{{query}}"

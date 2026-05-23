@@ -98,6 +98,22 @@ CREATE TABLE IF NOT EXISTS operator_profiles (
     FOREIGN KEY (team_id) REFERENCES teams(id)
 );
 
+CREATE TABLE IF NOT EXISTS dispatch_mobile_audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    dispatcher_id INTEGER,
+    dispatcher_code TEXT,
+    dispatcher_name TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    summary TEXT,
+    source_path TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS agencies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tenant_id INTEGER NOT NULL DEFAULT 1,
@@ -207,6 +223,10 @@ CREATE TABLE IF NOT EXISTS orders (
     end_time TEXT,
     pickup_location TEXT,
     dropoff_location TEXT,
+    pickup_latitude REAL,
+    pickup_longitude REAL,
+    dropoff_latitude REAL,
+    dropoff_longitude REAL,
     order_type TEXT,
     vehicle_type TEXT,
     order_note_code TEXT,

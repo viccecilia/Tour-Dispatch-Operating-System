@@ -61,6 +61,36 @@
   font-weight: 900;
 }
 
+.map-alert-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.map-alert-row view {
+  min-width: 0;
+  padding: 12rpx;
+  border-radius: 18rpx;
+  background: #f8fafc;
+  border: 1rpx solid #e2e8f0;
+}
+
+.map-alert-row text {
+  display: block;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.map-alert-row strong {
+  display: block;
+  margin-top: 4rpx;
+  color: #0f172a;
+  font-size: 28rpx;
+  font-weight: 950;
+}
+
 .search-box {
   margin-top: 18rpx;
   height: 72rpx;

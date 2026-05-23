@@ -16,7 +16,8 @@ Page({
       high: 0,
       medium: 0,
       ok: 0
-    }
+    },
+    foldedDraftCount: 0
   },
 
   onShow() {
@@ -48,10 +49,17 @@ Page({
     api.drafts()
       .then((res) => {
         const drafts = this.decorateDrafts((res.drafts || []).filter((item) => item.parse_status !== 'confirmed').slice(0, 80));
-        const visibleDrafts = drafts.filter((item) => item.riskLevel !== 'ok').concat(drafts.filter((item) => item.riskLevel === 'ok').slice(0, 5));
-        this.setData({ drafts, visibleDrafts, riskSummary: this.buildRiskSummary(drafts) });
+        const problemDrafts = drafts.filter((item) => item.riskLevel !== 'ok');
+        const okPreview = drafts.filter((item) => item.riskLevel === 'ok').slice(0, 3);
+        const visibleDrafts = problemDrafts.concat(okPreview);
+        this.setData({
+          drafts,
+          visibleDrafts,
+          foldedDraftCount: Math.max(0, drafts.length - visibleDrafts.length),
+          riskSummary: this.buildRiskSummary(drafts)
+        });
       })
-      .catch(() => this.setData({ drafts: [], visibleDrafts: [], riskSummary: { high: 0, medium: 0, ok: 0 } }));
+      .catch(() => this.setData({ drafts: [], visibleDrafts: [], foldedDraftCount: 0, riskSummary: { high: 0, medium: 0, ok: 0 } }));
   },
 
   decorateDrafts(drafts) {

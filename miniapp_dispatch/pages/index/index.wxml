@@ -14,38 +14,60 @@
   </view>
 
   <view wx:else>
-    <view class="panel">
-      <view class="panel-title">今日运营</view>
-      <view class="grid">
-        <view class="metric"><text>今日订单</text><strong>{{dashboard.counts.today_orders || 0}}</strong></view>
-        <view class="metric"><text>未派车</text><strong>{{dashboard.counts.unassigned_orders || 0}}</strong></view>
-        <view class="metric"><text>在线司机</text><strong>{{dashboard.counts.online_drivers || 0}}</strong></view>
-        <view class="metric"><text>待确认</text><strong>{{dashboard.counts.pending_confirmations || 0}}</strong></view>
+    <view class="todo-panel">
+      <view class="todo-head">
+        <view>
+          <view class="section-kicker">TODAY OPS</view>
+          <view class="todo-title">调度待办中心</view>
+        </view>
+        <view class="live-pill">运行中</view>
+      </view>
+      <view class="todo-grid">
+        <view class="todo-card primary" bindtap="goDispatch">
+          <text>未派车</text>
+          <strong>{{dashboard.counts.unassigned_orders || 0}}</strong>
+          <view>优先处理</view>
+        </view>
+        <view class="todo-card warning">
+          <text>待确认</text>
+          <strong>{{dashboard.counts.pending_confirmations || 0}}</strong>
+          <view>司机回执</view>
+        </view>
+        <view class="todo-card danger">
+          <text>高风险</text>
+          <strong>{{dashboard.counts.exception_orders || dashboard.counts.incident_orders || 0}}</strong>
+          <view>异常/延误</view>
+        </view>
+        <view class="todo-card">
+          <text>今日订单</text>
+          <strong>{{dashboard.counts.today_orders || 0}}</strong>
+          <view>全量</view>
+        </view>
       </view>
     </view>
 
     <view class="panel">
-      <view class="panel-title">司机本月统计</view>
-      <view class="driver-stat-head">
-        <text>司机</text>
-        <text>今日</text>
-        <text>本月</text>
-        <text>休息</text>
-        <text>连续</text>
+      <view class="panel-header-lite">
+        <view>
+          <view class="panel-title">调度压力</view>
+          <view class="muted">红黄风险和连续工作司机。</view>
+        </view>
+        <view class="soft-count">{{driverStats.length}}人</view>
       </view>
-      <view class="driver-stat-row {{item.alert ? 'danger' : ''}}" wx:for="{{driverStats}}" wx:key="driver_id">
-        <text>{{item.driver_name}}</text>
-        <text>{{item.today_orders}}</text>
-        <text>{{item.month_orders}}</text>
-        <text>{{item.rest_days}}</text>
-        <text>{{item.continuous_days}}</text>
+      <view class="pressure-list">
+        <view class="pressure-row {{item.alert ? 'danger' : ''}}" wx:for="{{driverStats}}" wx:key="driver_id">
+          <view>
+            <view class="pressure-name">{{item.driver_name}}</view>
+            <view class="muted">今日 {{item.today_orders}} 单 · 本月 {{item.month_orders}} 单</view>
+          </view>
+          <view class="pressure-badge {{item.alert ? 'danger' : ''}}">连续 {{item.continuous_days}} 天</view>
+        </view>
       </view>
       <view wx:if="{{!driverStats.length}}" class="muted">暂无司机订单统计。</view>
-      <view class="warning-note">连续工作超过 13 天会标红，建议安排休息。</view>
     </view>
 
     <view class="panel">
-      <view class="panel-title">最近通知</view>
+      <view class="panel-title">关键通知</view>
       <view class="list">
         <view wx:for="{{notifications}}" wx:key="id" class="row">
           <view class="row-title">{{item.title}}</view>
@@ -56,7 +78,7 @@
     </view>
 
     <view class="grid">
-      <button class="button-secondary" bindtap="goDispatch">导入并派车</button>
+      <button class="button-secondary" bindtap="goDispatch">去派车</button>
       <button class="button-secondary" bindtap="goFinance">查看财务</button>
     </view>
   </view>

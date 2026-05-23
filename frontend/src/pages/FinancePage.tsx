@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { formatCurrency, shortRoute } from "@/lib/utils";
 import { api } from "@/services/apiClient";
-import type { Driver, DriverSettlementStat, FinanceOrder } from "@/types/api";
+import type { Driver, DriverSettlementStat, FinanceDriverExpense, FinanceOrder } from "@/types/api";
 
 type FinanceFilters = {
   date_from: string;
@@ -41,6 +41,11 @@ export function FinancePage() {
 
   const ledger = useQuery({ queryKey: ["finance-ledger", filters], queryFn: () => api.financeLedger(filters), refetchInterval: 10000 });
   const driverStats = useQuery({ queryKey: ["finance-driver-stats", filters], queryFn: () => api.driverSettlementStats(filters), refetchInterval: 10000 });
+  const driverExpenses = useQuery({
+    queryKey: ["finance-driver-expenses", filters],
+    queryFn: () => api.financeDriverExpenses({ ...filters, submit_status: "submitted,in_hand" }),
+    refetchInterval: 10000,
+  });
   const drivers = useQuery({ queryKey: ["resource-drivers"], queryFn: api.resourceDrivers });
 
   const updateMutation = useMutation({
@@ -75,11 +80,40 @@ export function FinancePage() {
     onError: (error: Error) => setMessage(`导出失败：${error.message}`),
   });
 
+  const expenseMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Partial<FinanceDriverExpense> }) => api.updateFinanceDriverExpense(id, payload),
+    onSuccess: async () => {
+      setMessage("司机费用状态已更新");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["finance-driver-expenses"] }),
+        queryClient.invalidateQueries({ queryKey: ["finance-ledger"] }),
+        queryClient.invalidateQueries({ queryKey: ["finance-driver-stats"] }),
+        queryClient.invalidateQueries({ queryKey: ["finance-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] }),
+      ]);
+    },
+    onError: (error: Error) => setMessage(`费用更新失败：${error.message}`),
+  });
+
   const summary = ledger.data?.summary;
   const rows = useMemo(() => ledger.data?.orders || [], [ledger.data]);
 
   return (
     <div className="space-y-5">
+      <section className="runtime-strip">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="runtime-eyebrow">FINANCE RUNTIME</p>
+            <h2 className="runtime-title">财务订单台账</h2>
+            <p className="runtime-subtitle">围绕订单价格、司机垫付、代收和结算状态处理日常财务。</p>
+          </div>
+          <div className="grid min-w-[520px] grid-cols-3 gap-2">
+            <FinanceRuntimeStat label="待旅行社" value={formatCurrency(summary?.agency_pending_amount || 0)} tone="amber" />
+            <FinanceRuntimeStat label="待司机" value={formatCurrency(summary?.driver_pending_amount || 0)} tone="red" />
+            <FinanceRuntimeStat label="代收" value={formatCurrency(summary?.driver_collect_amount || 0)} tone="blue" />
+          </div>
+        </div>
+      </section>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <KpiCard title="总订单数" value={summary?.total_orders || 0} icon={Banknote} tone="blue" />
         <KpiCard title="总金额" value={formatCurrency(summary?.total_amount || 0)} icon={WalletCards} tone="green" />
@@ -114,7 +148,114 @@ export function FinancePage() {
         </CardContent>
       </Card>
 
+      <DriverExpensePendingSection
+        rows={driverExpenses.data?.expenses || []}
+        summary={driverExpenses.data?.summary || {}}
+        loading={driverExpenses.isLoading}
+        saving={expenseMutation.isPending}
+        onUpdate={(id, payload) => expenseMutation.mutate({ id, payload })}
+      />
+
       <DriverSettlementSection rows={driverStats.data?.stats || []} loading={driverStats.isLoading} />
+    </div>
+  );
+}
+
+function DriverExpensePendingSection({
+  rows,
+  summary,
+  loading,
+  saving,
+  onUpdate,
+}: {
+  rows: FinanceDriverExpense[];
+  summary: Record<string, number>;
+  loading: boolean;
+  saving: boolean;
+  onUpdate: (id: number, payload: Partial<FinanceDriverExpense>) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold tracking-[0.18em] text-blue-600">司机费用待确认</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-950">垫付 / 代收财务池</h2>
+            <p className="mt-1 text-sm text-slate-500">司机端提交的停车费、高速费、门票、代收车费等，会先进入这里，财务确认后再进入司机结算统计。</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-right text-sm">
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
+              <p className="text-xs">待确认</p>
+              <b>{summary.driver_expense_pending_count || 0} 笔</b>
+            </div>
+            <div className="rounded-lg bg-red-50 px-3 py-2 text-red-700">
+              <p className="text-xs">司机垫付</p>
+              <b>{formatCurrency(summary.driver_advance_pending_amount || 0)}</b>
+            </div>
+            <div className="rounded-lg bg-blue-50 px-3 py-2 text-blue-700">
+              <p className="text-xs">司机代收</p>
+              <b>{formatCurrency(summary.driver_collect_pending_amount || 0)}</b>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? <EmptyState title="正在读取司机费用" /> : !rows.length ? <EmptyState title="暂无待确认司机费用" detail="司机提交垫付或代收后，会显示在这里。" /> : (
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="data-table min-w-[1120px]">
+              <thead>
+                <tr>
+                  <th>提交时间</th>
+                  <th>司机</th>
+                  <th>订单</th>
+                  <th>路线</th>
+                  <th>类型</th>
+                  <th>类别</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.submitted_at || row.created_at || "-"}<small>{row.order_date || ""} {row.start_time || ""}</small></td>
+                    <td className="font-semibold text-slate-950">{row.driver_name || row.driver_code || "-"}</td>
+                    <td>{row.oid || row.order_id || "-"}</td>
+                    <td>{shortRoute(row.pickup_location, row.dropoff_location)}</td>
+                    <td>{row.kind_label || row.expense_kind}</td>
+                    <td>{row.category || "-"}</td>
+                    <td className="font-semibold">{formatCurrency(row.amount || 0)}</td>
+                    <td><span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">{row.status_label || row.submit_status}</span></td>
+                    <td className="max-w-[180px] truncate">{row.note || "-"}</td>
+                    <td>
+                      <div className="flex gap-2">
+                        <Button type="button" className="h-8 px-3" disabled={saving} onClick={() => onUpdate(row.id, { submit_status: "confirmed" })}>确认</Button>
+                        <Button type="button" variant="secondary" className="h-8 px-3" disabled={saving} onClick={() => onUpdate(row.id, { submit_status: "rejected" })}>驳回</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FinanceRuntimeStat({ label, value, tone }: { label: string; value: string; tone: "blue" | "amber" | "red" }) {
+  const toneClass = {
+    blue: "bg-blue-50 text-blue-700",
+    amber: "bg-amber-50 text-amber-700",
+    red: "bg-red-50 text-red-700",
+  }[tone];
+  return (
+    <div className={`rounded-2xl px-4 py-3 ${toneClass}`}>
+      <div className="text-xs font-black">{label}</div>
+      <div className="mt-1 truncate text-lg font-black">{value}</div>
     </div>
   );
 }

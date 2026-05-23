@@ -8,7 +8,13 @@ import { api } from "@/services/apiClient";
 
 export function OrdersPage() {
   const [query, setQuery] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const orders = useQuery({ queryKey: ["orders"], queryFn: api.orders });
+  const evidenceChain = useQuery({
+    queryKey: ["order-evidence", selectedOrderId],
+    queryFn: () => api.orderEvidence(selectedOrderId || 0),
+    enabled: Boolean(selectedOrderId),
+  });
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -47,6 +53,11 @@ export function OrdersPage() {
           </label>
         </div>
       </CardHeader>
+      {selectedOrderId ? (
+        <div className="border-t border-border bg-slate-50 p-4">
+          <OrderEvidencePanel chain={evidenceChain.data?.evidence_chain} loading={evidenceChain.isFetching} />
+        </div>
+      ) : null}
       <CardContent className="overflow-x-auto p-0">
         <table className="data-table min-w-[1280px]">
           <thead>
@@ -63,6 +74,7 @@ export function OrdersPage() {
               <th>费用备注</th>
               <th>派车状态</th>
               <th>结算状态</th>
+              <th>执行证据</th>
             </tr>
           </thead>
           <tbody>
@@ -94,11 +106,54 @@ export function OrdersPage() {
                 <td>
                   <StatusBadge status={order.settlement_status} />
                 </td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderId(order.id)}
+                    className="rounded-md border border-blue-200 px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-50"
+                  >
+                    查看证据
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </CardContent>
     </Card>
+  );
+}
+
+function OrderEvidencePanel({ chain, loading }: { chain?: import("@/types/api").AssignmentEvidenceChain; loading: boolean }) {
+  if (loading) return <div className="text-sm text-slate-500">正在加载订单执行证据...</div>;
+  if (!chain) return <div className="text-sm text-slate-500">暂无证据链数据。</div>;
+  return (
+    <div className="rounded-xl border border-border bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black text-slate-950">执行证据链</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            照片 {chain.summary.photo_count || 0} · 报备 {chain.summary.report_count || 0} · 小票/费用 {chain.summary.expense_count || 0}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {chain.download_files.length ? chain.download_files.map((file) => (
+            <a key={`${file.kind}-${file.id}`} href={file.url} target="_blank" rel="noreferrer" className="rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">
+              下载{file.label || "证据"}
+            </a>
+          )) : <span className="text-xs text-slate-500">暂无可下载文件</span>}
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {chain.timeline.length ? chain.timeline.slice(0, 12).map((item) => (
+          <div key={`${item.kind}-${item.id}-${item.event_time}`} className="rounded-lg bg-slate-50 p-3 text-xs">
+            <div className="font-bold text-slate-900">{item.label || item.kind}</div>
+            <div className="mt-1 text-slate-500">{item.event_time || "-"} · {item.status || "-"}</div>
+            {item.note ? <div className="mt-1 text-slate-600">备注：{item.note}</div> : null}
+            {item.file_url ? <a href={item.file_url} target="_blank" rel="noreferrer" className="mt-2 inline-block font-bold text-blue-700">打开文件</a> : null}
+          </div>
+        )) : <div className="text-sm text-slate-500">暂无 timeline。</div>}
+      </div>
+    </div>
   );
 }

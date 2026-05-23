@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Crown, Save, ShieldCheck, UsersRound, Zap } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
+import { ErrorPanel } from "@/components/OperationalState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
-import type { OrgMember, Plan, ReminderSettings } from "@/types/api";
+import type { BillingOverview, OrgMember, OrgOverview, Plan, ReminderSettings } from "@/types/api";
 
 const featureLabels: Record<string, string> = {
   dashboard: "总览",
@@ -142,6 +143,43 @@ const emptyInviteForm: InviteForm = {
   phone: "",
 };
 
+function fallbackBilling(): BillingOverview {
+  const plan: Plan = {
+    id: 0,
+    code: "demo",
+    name: "演示模式",
+    monthly_price: 0,
+    features: { dashboard: true, orders: true, dispatch: true, calendar: true },
+    limits: { orders_per_month: 0, drivers: 0, vehicles: 0 },
+  };
+  return {
+    subscription: {
+      id: 0,
+      tenant_id: 0,
+      plan_code: "demo",
+      status: "trialing",
+      plan,
+    },
+    plans: [plan],
+    usage: { month: new Date().toISOString().slice(0, 7), actual: { orders: 0, drivers: 0, vehicles: 0 }, usage_events: [], limits: {}, limit_status: {} },
+    feature_flags: { dashboard: true, orders: true, dispatch: true, calendar: true },
+  };
+}
+
+function fallbackOrg(): OrgOverview {
+  return {
+    departments: [{ id: 0, name: "运营团队", member_count: 0, team_count: 0 }],
+    teams: [{ id: 0, name: "调度组", department_id: 0, member_count: 0 }],
+    members: [],
+    role_permissions: {
+      admin: ["all"],
+      dispatcher: ["dashboard", "orders", "dispatch", "calendar"],
+      driver: ["driver_mobile"],
+    },
+    summary: { departments: 1, teams: 1, members: 0, active_members: 0, disabled_members: 0 },
+  };
+}
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const [inviteForm, setInviteForm] = useState<InviteForm>(emptyInviteForm);
@@ -187,24 +225,47 @@ export function SettingsPage() {
     },
   });
 
-  if (overview.isLoading || org.isLoading) {
-    return <div className="panel p-8 text-sm text-slate-500">正在加载设置...</div>;
-  }
-  if (overview.isError || !overview.data) {
-    return <div className="panel p-8 text-sm text-red-600">套餐接口加载失败，请检查后端服务。</div>;
-  }
-  if (org.isError || !org.data) {
-    return <div className="panel p-8 text-sm text-red-600">组织接口加载失败，需要管理员登录。</div>;
-  }
-
-  const data = overview.data;
+  const data = overview.data ?? fallbackBilling();
   const subscription = data.subscription;
   const currentPlan = subscription.plan;
   const usageItems = Object.entries(data.usage.actual || {});
-  const orgData = org.data;
+  const orgData = org.data ?? fallbackOrg();
 
   return (
     <div className="space-y-6">
+      <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <Card>
+          <CardHeader>
+            <h2 className="text-base font-bold text-slate-950">当前租户信息</h2>
+            <p className="mt-1 text-sm text-slate-500">演示环境下用于确认当前公司、语言和 API 状态。</p>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <Info label="租户" value="Demo Travel Company" />
+            <Info label="默认语言" value="中文" />
+            <Info label="演示模式" value="已开启" />
+            <Info label="API 状态" value={overview.isError || org.isError ? "局部异常" : "在线"} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <h2 className="text-base font-bold text-slate-950">语言设置</h2>
+            <p className="mt-1 text-sm text-slate-500">当前默认中文，日文和英文保留字典结构。</p>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <Info label="中文" value="当前启用" />
+            <Info label="日本語" value="预留" />
+            <Info label="English" value="Reserved" />
+          </CardContent>
+        </Card>
+      </section>
+
+      {overview.isError || !overview.data ? (
+        <ErrorPanel title="套餐接口读取失败" description="套餐区域会显示演示结构，组织、提醒和 API 状态仍可继续查看。" requestPath="/api/billing/overview" onRetry={() => overview.refetch()} />
+      ) : null}
+      {org.isError || !org.data ? (
+        <ErrorPanel title="组织接口读取失败" description="成员管理区域保留结构，管理员登录或后端恢复后可继续维护团队。" requestPath="/api/org/overview" onRetry={() => org.refetch()} />
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard title="当前套餐" value={currentPlan.name} icon={Crown} tone="blue" caption={currentPlan.monthly_price === 0 ? "免费" : `JPY ${currentPlan.monthly_price}/月`} />
         <KpiCard title="启用成员" value={orgData.summary.active_members} icon={UsersRound} tone="green" caption={`${orgData.summary.disabled_members} 已停用`} />
@@ -324,6 +385,10 @@ export function SettingsPage() {
             onSave={(payload) => updateSettings.mutate(payload)}
           />
 
+          {reminderSettings.isError ? (
+            <ErrorPanel title="提醒规则接口读取失败" description="可先查看默认规则结构，后端恢复后再保存配置。" requestPath="/api/settings/reminders" onRetry={() => reminderSettings.refetch()} />
+          ) : null}
+
           <Card>
             <CardHeader>
               <h2 className="text-base font-bold text-slate-950">角色权限</h2>
@@ -413,6 +478,15 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       </section>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-3">
+      <div className="text-xs font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-bold text-slate-950">{value}</div>
     </div>
   );
 }

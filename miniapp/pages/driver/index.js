@@ -62,6 +62,7 @@ Page({
     allAssignments: [],
     assignments: [],
     tomorrowAssignments: [],
+    todayTimeline: [],
     selectedDate: '',
     selectedDateAssignments: [],
     availableDates: [],
@@ -163,6 +164,7 @@ Page({
         selectedDate,
         selectedDateAssignments,
         availableDates: this.buildAvailableDates(assignments),
+        todayTimeline: this.buildTodayTimeline(todayAssignments),
         pendingConfirmAssignments,
         calendarMonth,
         calendarTitle: this.formatCalendarTitle(calendarMonth),
@@ -247,6 +249,59 @@ Page({
     const dates = Object.keys(seen);
     dates.sort();
     return dates.slice(0, 14);
+  },
+
+  buildTodayTimeline(items) {
+    const rows = (items || []).slice().sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+    if (!rows.length) {
+      return [{ time: '--:--', title: '今天暂无任务', meta: '等待调度分配订单', status: 'idle' }];
+    }
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const timeline = [];
+    timeline.push({
+      time: this.minusMinutes(first.start_time || '08:00', 60),
+      title: '点呼出库',
+      meta: '车辆检查、酒精确认后出库',
+      status: 'yard'
+    });
+    rows.forEach((item) => {
+      timeline.push({
+        time: item.start_time || '--:--',
+        title: item.pickup_location || '上车点',
+        meta: `${item.pickup_location || '-'} → ${item.dropoff_location || '-'}`,
+        status: item.execution_status || 'assigned'
+      });
+      if (item.end_time) {
+        timeline.push({
+          time: item.end_time,
+          title: '送达 / 完成',
+          meta: item.dropoff_location || '终点',
+          status: ['completed', 'returned'].includes(item.execution_status || '') ? 'completed' : 'pending'
+        });
+      }
+    });
+    timeline.push({
+      time: this.plusMinutes(last.end_time || last.start_time || '18:00', 30),
+      title: '归库收工',
+      meta: '清扫、入库点检、入库酒测',
+      status: 'return'
+    });
+    return timeline;
+  },
+
+  minusMinutes(timeText, minutes) {
+    const parts = String(timeText || '00:00').split(':').map(Number);
+    const date = new Date(2000, 0, 1, parts[0] || 0, parts[1] || 0);
+    date.setMinutes(date.getMinutes() - minutes);
+    return this.formatTime(date);
+  },
+
+  plusMinutes(timeText, minutes) {
+    const parts = String(timeText || '00:00').split(':').map(Number);
+    const date = new Date(2000, 0, 1, parts[0] || 0, parts[1] || 0);
+    date.setMinutes(date.getMinutes() + minutes);
+    return this.formatTime(date);
   },
 
   buildCalendarDays(items, month, selectedDate, mode = 'week') {

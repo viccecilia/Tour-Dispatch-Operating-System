@@ -1,4 +1,5 @@
 import base64
+import math
 import re
 import uuid
 from datetime import date, datetime, timedelta
@@ -17,8 +18,24 @@ REPORT_STATUS_MAP = {
     "complete_order": "completed",
     "return_yard": "returned",
 }
+GEOFENCE_RADIUS_METERS = 800
 
 STATUS_ORDER = ["assigned", "confirmed", "departed", "arrived", "in_service", "completed", "returned"]
+VEHICLE_RUNTIME_STATUS = {
+    "departed": "outbound",
+    "arrived": "outbound",
+    "in_service": "in_service",
+    "completed": "in_service",
+    "returned": "returned",
+}
+WORKFLOW_VEHICLE_STATUS = {
+    "roll_call_out": "outbound",
+    "depart_yard": "outbound",
+    "vehicle_check_out": "outbound",
+    "roll_call_in": "returned",
+    "return_yard": "returned",
+    "vehicle_check_in": "returned",
+}
 EVIDENCE_TYPES = {
     "pickup",
     "completion",
@@ -30,6 +47,12 @@ EVIDENCE_TYPES = {
     "vehicle_check_photo",
     "cleaning_photo",
     "expense_receipt_photo",
+}
+EVIDENCE_STATUS_RULES = {
+    "arrive_waiting_photo": {"arrived", "in_service", "completed", "returned"},
+    "pickup_photo": {"arrived", "in_service", "completed", "returned"},
+    "waypoint_photo": {"in_service", "completed", "returned"},
+    "dropoff_photo": {"in_service", "completed", "returned"},
 }
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "runtime" / "uploads" / "driver_evidence"
 
@@ -109,6 +132,9 @@ def submit_driver_report(payload: dict[str, Any]) -> dict[str, Any]:
         return {"success": False, "error": "execution_status_duplicate_or_regression_not_allowed"}
     if new_index != current_index + 1:
         return {"success": False, "error": "execution_status_skip_not_allowed", "current_status": current_status}
+    location_check = _validate_report_geofence(report_type, assignment, payload)
+    if not location_check.get("ok"):
+        return {"success": False, "error": "location_out_of_range", "location_check": location_check}
 
     with get_connection() as conn:
         cursor = conn.execute(
@@ -162,11 +188,12 @@ def submit_driver_report(payload: dict[str, Any]) -> dict[str, Any]:
             """,
             (new_status, assignment["order_id"], get_current_tenant_id()),
         )
+        _update_vehicle_runtime_status(conn, assignment.get("vehicle_id"), VEHICLE_RUNTIME_STATUS.get(new_status))
         conn.commit()
     from backend.services.notification_service import notify_driver_report
 
     notify_driver_report(report_id, report_type, assignment_id, driver_id)
-    return {"success": True, "report_id": report_id, "new_execution_status": new_status}
+    return {"success": True, "report_id": report_id, "new_execution_status": new_status, "location_check": location_check}
 
 
 def submit_driver_location(payload: dict[str, Any]) -> dict[str, Any]:
@@ -415,6 +442,11 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
                 "source": f"workflow:{event_type}",
             },
         )
+        _update_vehicle_runtime_status(
+            conn,
+            assignment.get("vehicle_id") if assignment else payload.get("vehicle_id"),
+            WORKFLOW_VEHICLE_STATUS.get(event_type),
+        )
         conn.commit()
     return {"success": True, "event_id": event_id, "event_type": event_type, "label": WORKFLOW_LABELS.get(event_type, event_type)}
 
@@ -610,6 +642,14 @@ def upload_driver_evidence(payload: dict[str, Any]) -> dict[str, Any]:
     assignment = get_driver_assignment(driver_id, assignment_id)
     if not assignment:
         return {"success": False, "error": "assignment_not_found_for_driver"}
+    allowed_statuses = EVIDENCE_STATUS_RULES.get(evidence_type)
+    if allowed_statuses and (assignment.get("execution_status") or "assigned") not in allowed_statuses:
+        return {
+            "success": False,
+            "error": "evidence_status_not_allowed",
+            "current_status": assignment.get("execution_status") or "assigned",
+            "allowed_statuses": sorted(allowed_statuses),
+        }
 
     try:
         suffix, raw = _decode_image_payload(image_data)
@@ -694,6 +734,186 @@ def list_driver_evidence(driver_id: Any, assignment_id: Any = None) -> list[dict
             params,
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_assignment_evidence_chain(assignment_id: Any) -> dict[str, Any] | None:
+    assignment_id_int = _to_int(assignment_id)
+    if not assignment_id_int:
+        return None
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        assignment_row = conn.execute(
+            """
+            SELECT
+                a.id AS assignment_id,
+                a.order_id,
+                a.driver_id,
+                a.vehicle_id,
+                a.status AS assignment_status,
+                a.execution_status,
+                a.assigned_at,
+                o.oid,
+                o.order_date,
+                o.start_time,
+                o.end_time,
+                o.pickup_location,
+                o.dropoff_location,
+                o.order_type,
+                o.vehicle_type,
+                o.guest_name,
+                o.guest_contact,
+                o.remark,
+                d.name AS driver_name,
+                d.phone AS driver_phone,
+                v.plate_number,
+                v.vehicle_type AS assigned_vehicle_type
+            FROM assignments a
+            JOIN orders o ON o.id = a.order_id AND o.tenant_id = a.tenant_id
+            LEFT JOIN drivers d ON d.id = a.driver_id
+            LEFT JOIN vehicles v ON v.id = a.vehicle_id
+            WHERE a.tenant_id = ? AND a.id = ?
+            """,
+            (tenant_id, assignment_id_int),
+        ).fetchone()
+        if not assignment_row:
+            return None
+        assignment = dict(assignment_row)
+        evidence = [
+            _decorate_evidence(dict(row))
+            for row in conn.execute(
+                """
+                SELECT *
+                FROM driver_evidence_uploads
+                WHERE tenant_id = ? AND assignment_id = ?
+                ORDER BY uploaded_at ASC, id ASC
+                """,
+                (tenant_id, assignment_id_int),
+            ).fetchall()
+        ]
+        reports = [
+            _decorate_report_event(dict(row))
+            for row in conn.execute(
+                """
+                SELECT *
+                FROM driver_reports
+                WHERE tenant_id = ? AND assignment_id = ?
+                ORDER BY report_time ASC, id ASC
+                """,
+                (tenant_id, assignment_id_int),
+            ).fetchall()
+        ]
+        workflow_events = [
+            _decorate_workflow_timeline_event(dict(row))
+            for row in conn.execute(
+                """
+                SELECT *
+                FROM driver_workflow_events
+                WHERE tenant_id = ? AND assignment_id = ?
+                ORDER BY event_time ASC, id ASC
+                """,
+                (tenant_id, assignment_id_int),
+            ).fetchall()
+        ]
+        expenses = [
+            _decorate_expense_event(dict(row))
+            for row in conn.execute(
+                """
+                SELECT *
+                FROM driver_expense_reports
+                WHERE tenant_id = ? AND assignment_id = ?
+                ORDER BY created_at ASC, id ASC
+                """,
+                (tenant_id, assignment_id_int),
+            ).fetchall()
+        ]
+
+    timeline = sorted(
+        [
+            *[_timeline_item("report", item) for item in reports],
+            *[_timeline_item("workflow", item) for item in workflow_events],
+            *[_timeline_item("photo", item) for item in evidence],
+            *[_timeline_item("expense", item) for item in expenses],
+        ],
+        key=lambda item: (item.get("event_time") or "", item.get("id") or 0),
+    )
+    download_files = [
+        {
+            "id": item.get("id"),
+            "kind": "photo",
+            "label": item.get("label"),
+            "url": item.get("file_url"),
+            "file_name": item.get("file_name"),
+        }
+        for item in evidence
+        if item.get("file_url")
+    ] + [
+        {
+            "id": item.get("id"),
+            "kind": "receipt",
+            "label": item.get("label"),
+            "url": item.get("receipt_photo_url"),
+            "file_name": f"expense-{item.get('id')}",
+        }
+        for item in expenses
+        if item.get("receipt_photo_url")
+    ]
+    return {
+        "assignment": assignment,
+        "timeline": timeline,
+        "reports": reports,
+        "workflow_events": workflow_events,
+        "evidence": evidence,
+        "expenses": expenses,
+        "download_files": download_files,
+        "summary": {
+            "photo_count": len(evidence),
+            "report_count": len(reports),
+            "workflow_event_count": len(workflow_events),
+            "expense_count": len(expenses),
+            "download_count": len(download_files),
+        },
+    }
+
+
+def get_order_evidence_chain(order_id: Any) -> dict[str, Any] | None:
+    order_id_int = _to_int(order_id)
+    if not order_id_int:
+        return None
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        assignment = conn.execute(
+            """
+            SELECT id
+            FROM assignments
+            WHERE tenant_id = ? AND order_id = ?
+            ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, id DESC
+            LIMIT 1
+            """,
+            (tenant_id, order_id_int),
+        ).fetchone()
+        order = conn.execute(
+            """
+            SELECT id AS order_id, oid, order_date, start_time, end_time, pickup_location, dropoff_location,
+                   order_type, vehicle_type, guest_name, guest_contact, remark
+            FROM orders
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (tenant_id, order_id_int),
+        ).fetchone()
+    if assignment:
+        return get_assignment_evidence_chain(assignment["id"])
+    if not order:
+        return None
+    return {
+        "assignment": dict(order),
+        "timeline": [],
+        "reports": [],
+        "workflow_events": [],
+        "evidence": [],
+        "expenses": [],
+        "download_files": [],
+        "summary": {"photo_count": 0, "report_count": 0, "workflow_event_count": 0, "expense_count": 0, "download_count": 0},
+    }
 
 
 def get_driver_dashboard(driver_id: Any) -> dict[str, Any]:
@@ -829,7 +1049,7 @@ def _has_event(events: list[dict[str, Any]], event_type: str) -> bool:
 
 
 def _vehicle_status_from_events(events: list[dict[str, Any]]) -> str:
-    if _has_event(events, "return_yard"):
+    if _has_event(events, "return_yard") or _has_event(events, "roll_call_in") or _has_event(events, "vehicle_check_in"):
         return "已入库"
     if _has_event(events, "depart_yard") or _has_event(events, "roll_call_out"):
         return "已出库"
@@ -965,6 +1185,52 @@ def _insert_location_log(conn, payload: dict[str, Any]) -> int | None:
     return cursor.lastrowid
 
 
+def _validate_report_geofence(report_type: str, assignment: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    target_map = {
+        "arrive_pickup": ("pickup_latitude", "pickup_longitude", "上车点"),
+        "complete_order": ("dropoff_latitude", "dropoff_longitude", "终点"),
+    }
+    if report_type not in target_map:
+        return {"ok": True, "required": False}
+
+    lat_key, lng_key, label = target_map[report_type]
+    target_lat = _optional_float(assignment.get(lat_key))
+    target_lng = _optional_float(assignment.get(lng_key))
+    if target_lat is None or target_lng is None:
+        return {"ok": True, "required": False, "skipped_reason": "target_coordinate_missing", "target_label": label}
+
+    driver_lat = _optional_float(payload.get("latitude"))
+    driver_lng = _optional_float(payload.get("longitude"))
+    if driver_lat is None or driver_lng is None:
+        return {
+            "ok": False,
+            "required": True,
+            "target_label": label,
+            "reason": "driver_coordinate_missing",
+            "allowed_radius_meters": GEOFENCE_RADIUS_METERS,
+        }
+
+    distance = _distance_meters(driver_lat, driver_lng, target_lat, target_lng)
+    return {
+        "ok": distance <= GEOFENCE_RADIUS_METERS,
+        "required": True,
+        "target_label": label,
+        "distance_meters": round(distance),
+        "allowed_radius_meters": GEOFENCE_RADIUS_METERS,
+        "reason": "ok" if distance <= GEOFENCE_RADIUS_METERS else "out_of_range",
+    }
+
+
+def _distance_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    radius = 6371000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lng2 - lng1)
+    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 def _with_online_status(row: dict[str, Any]) -> dict[str, Any]:
     try:
         reported_at = datetime.fromisoformat(str(row.get("reported_at")).replace("Z", ""))
@@ -972,6 +1238,78 @@ def _with_online_status(row: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         row["online_status"] = "unknown"
     return row
+
+
+def _update_vehicle_runtime_status(conn, vehicle_id: Any, status: str | None) -> None:
+    vehicle_id_int = _to_int(vehicle_id)
+    if not vehicle_id_int or not status:
+        return
+    conn.execute(
+        """
+        UPDATE vehicles
+        SET status = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND tenant_id = ?
+        """,
+        (status, vehicle_id_int, get_current_tenant_id()),
+    )
+
+
+def _decorate_evidence(row: dict[str, Any]) -> dict[str, Any]:
+    labels = {
+        "pickup": "接客照片",
+        "completion": "完成照片",
+        "vehicle_condition": "车况照片",
+        "arrive_waiting_photo": "到达等待照片",
+        "pickup_photo": "接到客人照片",
+        "waypoint_photo": "中途地点照片",
+        "dropoff_photo": "送达照片",
+        "vehicle_check_photo": "车辆点检照片",
+        "cleaning_photo": "车辆清扫照片",
+        "expense_receipt_photo": "费用小票照片",
+    }
+    row["label"] = labels.get(row.get("evidence_type"), row.get("evidence_type") or "照片")
+    row["event_time"] = row.get("uploaded_at") or row.get("created_at")
+    return row
+
+
+def _decorate_report_event(row: dict[str, Any]) -> dict[str, Any]:
+    row["label"] = WORKFLOW_LABELS.get(row.get("report_type"), row.get("report_type") or "司机报备")
+    row["event_time"] = row.get("report_time") or row.get("created_at")
+    return row
+
+
+def _decorate_workflow_timeline_event(row: dict[str, Any]) -> dict[str, Any]:
+    row["label"] = WORKFLOW_LABELS.get(row.get("event_type"), row.get("event_type") or "工作流事件")
+    row["event_time"] = row.get("event_time") or row.get("created_at")
+    return row
+
+
+def _decorate_expense_event(row: dict[str, Any]) -> dict[str, Any]:
+    kind_label = "司机垫付" if row.get("expense_kind") == "advance" else "司机代收"
+    row["label"] = f"{kind_label}：{row.get('category') or '-'}"
+    row["event_time"] = row.get("submitted_at") or row.get("created_at")
+    return row
+
+
+def _timeline_item(kind: str, row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "id": row.get("id"),
+        "assignment_id": row.get("assignment_id"),
+        "order_id": row.get("order_id"),
+        "driver_id": row.get("driver_id"),
+        "label": row.get("label"),
+        "event_time": row.get("event_time"),
+        "status": row.get("report_status") or row.get("event_status") or row.get("submit_status"),
+        "location_text": row.get("location_text"),
+        "latitude": row.get("latitude"),
+        "longitude": row.get("longitude"),
+        "note": row.get("note"),
+        "file_url": row.get("file_url") or row.get("photo_url") or row.get("receipt_photo_url"),
+        "amount": row.get("amount"),
+        "currency": row.get("currency"),
+        "raw": row,
+    }
 
 
 DRIVER_ASSIGNMENT_SELECT = """
@@ -985,10 +1323,15 @@ SELECT
     a.assigned_at,
     o.oid,
     o.order_date,
+    o.end_date,
     o.start_time,
     o.end_time,
     o.pickup_location,
     o.dropoff_location,
+    o.pickup_latitude,
+    o.pickup_longitude,
+    o.dropoff_latitude,
+    o.dropoff_longitude,
     o.order_type,
     o.vehicle_type,
     o.passenger_count,
@@ -1002,7 +1345,8 @@ SELECT
     d.name AS driver_name,
     d.phone AS driver_phone,
     v.plate_number,
-    v.vehicle_type AS assigned_vehicle_type
+    v.vehicle_type AS assigned_vehicle_type,
+    v.status AS vehicle_status
 FROM assignments a
 JOIN orders o ON o.id = a.order_id
 LEFT JOIN drivers d ON d.id = a.driver_id

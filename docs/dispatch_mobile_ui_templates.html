@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>移动调度 App UI 模板</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #eef3f8;
+      color: #0f172a;
+    }
+    header {
+      padding: 28px 36px 8px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin-top: 8px;
+      color: #64748b;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(280px, 1fr));
+      gap: 24px;
+      padding: 24px 36px 44px;
+    }
+    .option {
+      background: #fff;
+      border: 1px solid #dbe4f0;
+      border-radius: 24px;
+      padding: 18px;
+      box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+    }
+    .option h2 {
+      margin: 0 0 4px;
+      font-size: 18px;
+    }
+    .option p {
+      margin: 0 0 16px;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .phone {
+      width: 265px;
+      height: 575px;
+      margin: 0 auto;
+      overflow: hidden;
+      border-radius: 34px;
+      border: 8px solid #111827;
+      background: #f5f7fb;
+      box-shadow: 0 18px 44px rgba(15, 23, 42, 0.24);
+      position: relative;
+    }
+    .nav {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: #07111f;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .content {
+      padding: 12px;
+    }
+    .hero {
+      border-radius: 20px;
+      padding: 16px;
+      color: #fff;
+      min-height: 112px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero:after {
+      content: "";
+      position: absolute;
+      right: -20px;
+      top: -20px;
+      width: 94px;
+      height: 94px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.14);
+    }
+    .hero strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+    .hero span {
+      font-size: 12px;
+      opacity: .86;
+    }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .mini {
+      border-radius: 13px;
+      padding: 9px;
+      background: rgba(255,255,255,.14);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .mini b {
+      display: block;
+      margin-top: 4px;
+      font-size: 16px;
+    }
+    .card {
+      margin-top: 10px;
+      border-radius: 16px;
+      padding: 12px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 0;
+      border-top: 1px solid #edf2f7;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .row:first-of-type { border-top: 0; }
+    .muted { color: #64748b; font-weight: 650; }
+    .btn {
+      width: 100%;
+      height: 48px;
+      border: 0;
+      border-radius: 16px;
+      color: #fff;
+      background: #16a34a;
+      font-weight: 900;
+      font-size: 15px;
+      margin-top: 10px;
+    }
+    .tabs {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 9px;
+      height: 48px;
+      border-radius: 18px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: center;
+      background: rgba(255,255,255,.95);
+      box-shadow: 0 -8px 24px rgba(15, 23, 42, .1);
+      font-size: 11px;
+      font-weight: 800;
+      color: #64748b;
+      text-align: center;
+    }
+    .tabs div.active {
+      margin: 6px;
+      padding: 9px 0;
+      border-radius: 13px;
+      color: #fff;
+      background: #2563eb;
+    }
+    .map {
+      height: 292px;
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 60% 38%, #93c5fd 0 3px, transparent 4px),
+        radial-gradient(circle at 42% 61%, #22c55e 0 4px, transparent 5px),
+        linear-gradient(135deg, #bfdbfe, #e0f2fe 48%, #dcfce7);
+      position: relative;
+      overflow: hidden;
+    }
+    .map:before {
+      content: "";
+      position: absolute;
+      left: -30px;
+      right: -30px;
+      top: 136px;
+      height: 18px;
+      background: rgba(255,255,255,.7);
+      transform: rotate(-14deg);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #2563eb;
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .listbox {
+      max-height: 132px;
+      overflow: hidden;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 8px;
+    }
+    .chip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 11px;
+      font-weight: 850;
+    }
+    .chip-row:last-child { border-bottom: 0; }
+    .dark .phone { background: #0b1220; }
+    .dark .card { background: #111827; border-color: #1f2937; color: #e5e7eb; }
+    .dark .row { border-color: #1f2937; }
+    .dark .muted { color: #94a3b8; }
+    .dark .tabs { background: rgba(15,23,42,.96); }
+    .dark .listbox { background: #111827; border-color: #1f2937; }
+    .green { background: linear-gradient(135deg, #0f7b45, #16a34a); }
+    .blue { background: linear-gradient(135deg, #102a55, #2458d8); }
+    .black { background: linear-gradient(135deg, #0f172a, #1e293b); }
+    .purple { background: linear-gradient(135deg, #312e81, #7c3aed); }
+    @media (max-width: 1200px) {
+      .grid { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>移动调度 App UI 模板</h1>
+    <div class="sub">用于选择调度员手机端风格。建议先选整体方向，再混合具体模块。</div>
+  </header>
+
+  <main class="grid">
+    <section class="option">
+      <h2>方案 1：深蓝专业车队版</h2>
+      <p>适合正式运营。稳重、清晰，首页看统计，派车页强调单手快速操作。</p>
+      <div class="phone">
+        <div class="nav">移动调度</div>
+        <div class="content">
+          <div class="hero blue">
+            <strong>今日调度</strong>
+            <span>admin · 在线 · 2026-05-22</span>
+            <div class="mini-grid">
+              <div class="mini">今日订单<b>42</b></div>
+              <div class="mini">未派车<b>9</b></div>
+              <div class="mini">在线司机<b>12</b></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">司机连续工作预警</div>
+            <div class="row"><span>姚博</span><span class="pill">12 天</span></div>
+            <div class="row"><span>李力</span><span class="pill">8 天</span></div>
+            <div class="row"><span>万強</span><span class="pill">休息中</span></div>
+          </div>
+          <button class="btn">进入派车工作台</button>
+        </div>
+        <div class="tabs"><div class="active">首页</div><div>派车</div><div>地图</div><div>财务</div><div>我的</div></div>
+      </div>
+    </section>
+
+    <section class="option">
+      <h2>方案 2：地图优先调度版</h2>
+      <p>适合临时调度和找车。打开就是车队地图，顶部搜索订单/司机/车辆。</p>
+      <div class="phone">
+        <div class="nav">车队地图</div>
+        <div class="content">
+          <div class="map"></div>
+          <div class="card" style="margin-top:-72px; position:relative;">
+            <div class="card-title">搜索调度资源</div>
+            <div class="row"><span class="muted">司机 / 订单 / 车牌</span><span class="pill">搜索</span></div>
+            <div class="row"><span>姚博 · 1001</span><span class="pill">在线</span></div>
+            <div class="row"><span>D260522-001</span><span class="pill">执行中</span></div>
+          </div>
+        </div>
+        <div class="tabs"><div>首页</div><div>派车</div><div class="active">地图</div><div>财务</div><div>我的</div></div>
+      </div>
+    </section>
+
+    <section class="option dark">
+      <h2>方案 3：快速派车控制台版</h2>
+      <p>适合手机紧急派车。订单单列，司机车辆并排，底部固定一键派车。</p>
+      <div class="phone">
+        <div class="nav">快速派车</div>
+        <div class="content">
+          <div class="hero black">
+            <strong>3 秒派车</strong>
+            <span>订单 -> 司机 -> 车辆 -> 一键派发</span>
+          </div>
+          <div class="card">
+            <div class="card-title">未派车订单</div>
+            <div class="row"><span>KIX -> 心斋桥</span><span>08:00</span></div>
+            <div class="row"><span>大阪 -> 京都</span><span>10:20</span></div>
+            <div class="row"><span>京都 -> 奈良</span><span>13:30</span></div>
+          </div>
+          <div class="split">
+            <div class="listbox">
+              <div class="chip-row"><span>姚博</span><span class="pill">可派</span></div>
+              <div class="chip-row"><span>李力</span><span>冲突</span></div>
+              <div class="chip-row"><span>万強</span><span>可派</span></div>
+            </div>
+            <div class="listbox">
+              <div class="chip-row"><span>1001</span><span class="pill">可派</span></div>
+              <div class="chip-row"><span>1021</span><span>占用</span></div>
+              <div class="chip-row"><span>1027</span><span>可派</span></div>
+            </div>
+          </div>
+          <button class="btn">确认派车</button>
+        </div>
+        <div class="tabs"><div>首页</div><div class="active">派车</div><div>地图</div><div>财务</div><div>我的</div></div>
+      </div>
+    </section>
+
+    <section class="option">
+      <h2>方案 4：极简财务运营版</h2>
+      <p>适合老板和财务快速查看。弱化操作，突出订单数、金额、待结算。</p>
+      <div class="phone">
+        <div class="nav">财务</div>
+        <div class="content">
+          <div class="hero purple">
+            <strong>本月财务</strong>
+            <span>订单和金额按实时订单台账汇总</span>
+            <div class="mini-grid">
+              <div class="mini">订单<b>218</b></div>
+              <div class="mini">合计<b>¥4.8M</b></div>
+              <div class="mini">待结算<b>¥1.2M</b></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">最近订单</div>
+            <div class="row"><span>D260522-001</span><span>¥45,000</span></div>
+            <div class="row"><span>D260522-002</span><span>¥60,000</span></div>
+            <div class="row"><span>D260522-003</span><span>¥18,000</span></div>
+            <div class="row"><span>D260522-004</span><span>¥72,000</span></div>
+          </div>
+        </div>
+        <div class="tabs"><div>首页</div><div>派车</div><div>地图</div><div class="active">财务</div><div>我的</div></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

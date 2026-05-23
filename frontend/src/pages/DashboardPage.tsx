@@ -47,6 +47,7 @@ export function DashboardPage() {
         <KpiCard title="未报备" value={data.unreported_orders} icon={AlertTriangle} tone="red" />
         <KpiCard title="异常提醒" value={data.open_incidents} icon={AlertTriangle} tone="red" caption={`高优先级 ${data.high_priority_incidents || 0}`} />
         <KpiCard title="资源提醒" value={data.resource_alerts} icon={Wrench} tone="red" caption={`过期 ${data.resource_expired_alerts || 0} · 即将到期 ${data.resource_upcoming_alerts || 0}`} />
+        <KpiCard title="车辆出库" value={data.outbound_vehicles} icon={Truck} tone="amber" caption={`服务中 ${data.in_service_vehicles || 0} · 已入库 ${data.returned_vehicles || 0}`} />
       </section>
 
       <ResourceReminderOverview alerts={resourceReminders.data?.alerts || []} loading={resourceReminders.isLoading} />

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>司机端 App 视觉方案预览</title>
+  <style>
+    :root {
+      --bg: #e9eef6;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #dbe5f0;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --soft: #f6f9fd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 22px 34px;
+      background: rgba(255,255,255,.9);
+      border-bottom: 1px solid rgba(148,163,184,.28);
+      backdrop-filter: blur(16px);
+    }
+    h1 { margin: 0; font-size: 24px; }
+    .sub { margin-top: 6px; color: var(--muted); font-size: 14px; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(320px, 1fr));
+      gap: 28px;
+      padding: 28px 34px 42px;
+    }
+    .option-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .option-title h2 { margin: 0; font-size: 18px; }
+    .tag {
+      padding: 4px 9px;
+      border-radius: 999px;
+      color: #1d4ed8;
+      background: #dbeafe;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .phone {
+      width: 390px;
+      max-width: 100%;
+      height: 790px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 10px solid #111827;
+      border-radius: 38px;
+      background: #f7faff;
+      box-shadow: 0 30px 80px rgba(15,23,42,.24);
+    }
+    .screen {
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+      padding: 16px 16px 86px;
+    }
+    .nav {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 12px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 5px;
+      padding: 7px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,.98);
+      box-shadow: 0 14px 34px rgba(15,23,42,.12);
+    }
+    .nav span {
+      min-height: 46px;
+      display: grid;
+      place-items: center;
+      border-radius: 15px;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .nav .active { color: #fff; background: var(--blue); }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 22px;
+      border-radius: 26px;
+      color: #fff;
+      background: linear-gradient(135deg, #0b1224 0%, #1d4ed8 100%);
+      box-shadow: 0 18px 42px rgba(15,23,42,.22);
+    }
+    .hero.green { background: linear-gradient(135deg, #0b1224 0%, #1d4ed8 100%); }
+    .hero:after {
+      content: "";
+      position: absolute;
+      right: -42px;
+      top: -48px;
+      width: 160px;
+      height: 160px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.15);
+    }
+    .hero h3 { margin: 0; font-size: 26px; }
+    .hero .meta { margin-top: 6px; color: rgba(255,255,255,.82); font-size: 13px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.3fr .8fr .8fr;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .hero-grid div {
+      padding: 12px;
+      border-radius: 15px;
+      background: rgba(255,255,255,.14);
+    }
+    .hero-grid small { display:block; color: rgba(255,255,255,.75); }
+    .hero-grid strong { display:block; margin-top: 4px; font-size: 17px; }
+    .status {
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      z-index: 1;
+      padding: 8px 13px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.18);
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .kpi, .card, .step, .task-row, .expense-row {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 10px 26px rgba(15,23,42,.06);
+    }
+    .kpi { padding: 12px; }
+    .kpi small { color: var(--muted); font-weight: 700; }
+    .kpi strong { display:block; margin-top: 4px; font-size: 22px; }
+    .card { padding: 16px; margin-top: 12px; }
+    .card h4 { margin: 0 0 10px; font-size: 18px; }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      margin-top: 8px;
+      font-weight: 750;
+    }
+    .dot {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #b8c6d8;
+      border-radius: 999px;
+    }
+    .task-row {
+      padding: 14px;
+      margin-top: 10px;
+    }
+    .task-row .time { color: #1d4ed8; font-weight: 800; font-size: 13px; }
+    .task-row .route { margin-top: 5px; font-size: 17px; font-weight: 850; }
+    .task-row .guest { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .map-phone .screen { padding: 12px 12px 86px; }
+    .map-shell {
+      position: relative;
+      overflow: hidden;
+      height: 610px;
+      border-radius: 28px;
+      background: linear-gradient(160deg, #9bd4ff 0%, #e8eef4 52%, #8bd5ac 100%);
+      box-shadow: 0 24px 54px rgba(15,23,42,.2);
+    }
+    .map-watermark {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: rgba(15,23,42,.24);
+      font-size: 86px;
+      font-weight: 900;
+      transform: rotate(-18deg);
+    }
+    .floating-order {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 14px;
+      padding: 16px;
+      border-radius: 22px;
+      color: #fff;
+      background: rgba(15,23,42,.86);
+      box-shadow: 0 18px 40px rgba(15,23,42,.25);
+    }
+    .floating-order small { color: rgba(255,255,255,.72); font-weight: 800; }
+    .floating-order h4 { margin: 5px 0; font-size: 20px; }
+    .map-sheet {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 92px;
+      padding: 15px;
+      border-radius: 22px;
+      color: #e2e8f0;
+      background: rgba(15,23,42,.88);
+    }
+    .map-actions {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .button {
+      min-height: 54px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      color: #fff;
+      background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+      font-weight: 900;
+    }
+    .button.blue { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
+    .main-button {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 76px;
+      min-height: 58px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      color: #fff;
+      background: #16a34a;
+      font-size: 17px;
+      font-weight: 900;
+      box-shadow: 0 16px 34px rgba(22,163,74,.28);
+    }
+    @media (max-width: 1080px) { .board { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>司机端 App 视觉方案预览</h1>
+    <div class="sub">本次采用：方案 1 做首页，方案 3 做中间地图 Tab。底部顺序：首页 / 任务 / 地图 / 费用 / 我的。</div>
+  </header>
+
+  <main class="board">
+    <section>
+      <div class="option-title"><h2>方案 1：深蓝专业车队版</h2><span class="tag">已选：首页</span></div>
+      <div class="phone">
+        <div class="screen">
+          <div class="hero green">
+            <div class="status">已出库</div>
+            <h3>姚博</h3>
+            <div class="meta">2026-05-22 13:17 · 在线</div>
+            <div class="hero-grid">
+              <div><small>当前车辆</small><strong>1001</strong></div>
+              <div><small>今日订单</small><strong>4</strong></div>
+              <div><small>下一单</small><strong>13:30</strong></div>
+            </div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><small>本月送迎</small><strong>23</strong></div>
+            <div class="kpi"><small>本月包车</small><strong>9</strong></div>
+            <div class="kpi"><small>本月事故</small><strong>0</strong></div>
+            <div class="kpi"><small>待交费用</small><strong>5</strong></div>
+          </div>
+          <div class="card">
+            <h4>出库流程</h4>
+            <div class="step"><span class="dot"></span>车灯正常</div>
+            <div class="step"><span class="dot"></span>刹车正常</div>
+            <div class="step"><span class="dot"></span>已携带驾照</div>
+            <div class="step"><span class="dot"></span>出库前酒精确认</div>
+            <div class="step"><span class="dot"></span>睡眠状态充足</div>
+          </div>
+          <div class="main-button">点呼出库</div>
+          <div class="nav"><span class="active">首页</span><span>任务</span><span>地图</span><span>费用</span><span>我的</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="option-title"><h2>方案 2：任务列表页</h2><span class="tag">第二 Tab</span></div>
+      <div class="phone">
+        <div class="screen">
+          <div class="hero">
+            <div class="status">未出库</div>
+            <h3>姚博</h3>
+            <div class="meta">2026-05-22 07:20 · 在线</div>
+            <div class="hero-grid">
+              <div><small>当前车辆</small><strong>1001</strong></div>
+              <div><small>今日订单</small><strong>5</strong></div>
+              <div><small>下一单</small><strong>08:00</strong></div>
+            </div>
+          </div>
+          <div class="card">
+            <h4>今日任务</h4>
+            <div class="task-row"><div class="time">2026-05-22 08:00 - 10:30</div><div class="route">KIX → 心斋桥微笑酒店</div><div class="guest">客人：演示客人 · 090-0000-1234</div></div>
+            <div class="task-row"><div class="time">2026-05-22 13:30 - 16:40</div><div class="route">京都 → 奈良 → 大阪</div><div class="guest">包车 · 10座</div></div>
+            <div class="task-row"><div class="time">2026-05-22 18:10 - 19:20</div><div class="route">大阪市内酒店 → 关西机场</div><div class="guest">送机 · 3代</div></div>
+          </div>
+          <div class="nav"><span>首页</span><span class="active">任务</span><span>地图</span><span>费用</span><span>我的</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="option-title"><h2>方案 3：导航地图页</h2><span class="tag">已选：中间地图</span></div>
+      <div class="phone map-phone">
+        <div class="screen">
+          <div class="map-shell">
+            <div class="map-watermark">MAP</div>
+            <div class="floating-order">
+              <small>当前订单</small>
+              <h4>KIX → 心斋桥微笑酒店</h4>
+              <small>2026-05-22 08:00 - 10:30 · 已出库</small>
+            </div>
+            <div class="map-sheet">
+              <strong>导航信息</strong><br />
+              上车点：关西国际机场<br />
+              终点：心斋桥微笑酒店<br />
+              定位：点击到达/完成时自动获取
+            </div>
+            <div class="map-actions">
+              <div class="button">定位跟踪中</div>
+              <div class="button blue">当前任务</div>
+            </div>
+          </div>
+          <div class="nav"><span>首页</span><span>任务</span><span class="active">地图</span><span>费用</span><span>我的</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -64,6 +64,39 @@ def main() -> None:
     assert assigned.get("success"), assigned
     assignment_id = assigned["assignment_ids"][0]
 
+    advance_expense = request(
+        "POST",
+        "/api/driver/expense",
+        {
+            "driver_id": driver["id"],
+            "assignment_id": assignment_id,
+            "expense_kind": "advance",
+            "category": "parking",
+            "amount": 12000,
+            "note": "司机垫付停车费",
+            "submit_status": "submitted",
+        },
+    )
+    collect_expense = request(
+        "POST",
+        "/api/driver/expense",
+        {
+            "driver_id": driver["id"],
+            "assignment_id": assignment_id,
+            "expense_kind": "collect",
+            "category": "fare",
+            "amount": 35000,
+            "note": "司机代收车费",
+            "submit_status": "submitted",
+        },
+    )
+    assert advance_expense.get("success"), advance_expense
+    assert collect_expense.get("success"), collect_expense
+    pending_expenses = request("GET", f"/api/finance/driver-expenses?{urllib.parse.urlencode({'driver_id': driver['id'], 'submit_status': 'submitted,in_hand'})}")
+    assert pending_expenses["summary"]["driver_expense_pending_count"] >= 2, pending_expenses
+    confirmed_expense = request("PUT", f"/api/finance/driver-expenses/{advance_expense['expense_id']}", {"submit_status": "confirmed"})["expense"]
+    rejected_expense = request("PUT", f"/api/finance/driver-expenses/{collect_expense['expense_id']}", {"submit_status": "rejected", "note": "测试驳回"})["expense"]
+
     for report_type in ["confirm_order", "depart_yard", "arrive_pickup", "start_service", "complete_order", "return_yard"]:
         report = request(
             "POST",
@@ -94,8 +127,10 @@ def main() -> None:
     ledger = request("GET", f"/api/finance/ledger?{params}")
     stats = request("GET", f"/api/finance/driver-stats?{params}")
     income = request("GET", f"/api/driver/income?{params}")
+    expense_pool = request("GET", f"/api/finance/driver-expenses?{urllib.parse.urlencode({'driver_id': driver['id']})}")
     driver_detail = request("GET", f"/api/driver/assignments/{assignment_id}?driver_id={driver['id']}")["assignment"]
     audits = request("GET", f"/api/audit/logs?{urllib.parse.urlencode({'action': 'finance_update', 'entity_id': order['id'], 'limit': 20})}")["logs"]
+    expense_audits = request("GET", f"/api/audit/logs?{urllib.parse.urlencode({'action': 'finance_driver_expense_update', 'entity_id': advance_expense['expense_id'], 'limit': 20})}")["logs"]
 
     ledger_order = next((item for item in ledger["orders"] if item["order_id"] == order["id"]), None)
     driver_stat = next((item for item in stats["stats"] if item.get("driver_id") == driver["id"]), None)
@@ -107,6 +142,11 @@ def main() -> None:
         "ledger_contains_order": ledger_order is not None,
         "ledger_driver_collect_amount": ledger_order.get("driver_collect_amount") if ledger_order else None,
         "ledger_execution_status": ledger_order.get("execution_status") if ledger_order else None,
+        "finance_expense_pending_before": pending_expenses["summary"]["driver_expense_pending_count"],
+        "confirmed_expense_status": confirmed_expense.get("submit_status"),
+        "rejected_expense_status": rejected_expense.get("submit_status"),
+        "expense_pool_count": len(expense_pool.get("expenses", [])),
+        "finance_dashboard_driver_expense_pending": ledger["summary"].get("driver_expense_pending_count"),
         "driver_stats_completed_orders": driver_stat.get("completed_order_count") if driver_stat else None,
         "driver_stats_airport_orders": driver_stat.get("airport_order_count") if driver_stat else None,
         "driver_income_today_salary": income.get("today", {}).get("salary_amount"),
@@ -114,11 +154,16 @@ def main() -> None:
         "driver_income_hides_order_price": all("price" not in item for item in income.get("recent_orders", [])),
         "driver_endpoint_hides_price": "price" not in driver_detail,
         "audit_finance_update_written": len(audits) > 0,
+        "audit_driver_expense_update_written": len(expense_audits) > 0,
     }
     required = [
         result["ledger_contains_order"],
         result["ledger_driver_collect_amount"] == 35000,
         result["ledger_execution_status"] == "returned",
+        result["finance_expense_pending_before"] >= 2,
+        result["confirmed_expense_status"] == "confirmed",
+        result["rejected_expense_status"] == "rejected",
+        result["expense_pool_count"] >= 2,
         result["driver_stats_completed_orders"] >= 1,
         result["driver_stats_airport_orders"] >= 1,
         result["driver_income_today_salary"] >= 9000,
@@ -126,6 +171,7 @@ def main() -> None:
         result["driver_income_hides_order_price"],
         result["driver_endpoint_hides_price"],
         result["audit_finance_update_written"],
+        result["audit_driver_expense_update_written"],
     ]
     if not all(required):
         raise SystemExit(json.dumps(result, ensure_ascii=False, indent=2))

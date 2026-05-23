@@ -3,6 +3,7 @@ import type {
   AgencyPortalAgency,
   AgencyPortalSession,
   Assignment,
+  AssignmentEvidenceChain,
   AnalyticsSummary,
   AuditLog,
   AuthUser,
@@ -17,6 +18,8 @@ import type {
   DriverSafetyAlert,
   DriverSettlementStatsResponse,
   DriverReport,
+  FinanceDriverExpense,
+  FinanceDriverExpenseResponse,
   FinanceLedger,
   FinanceOrder,
   FinanceSummary,
@@ -301,6 +304,18 @@ export const api = {
     });
     return request<DriverSettlementStatsResponse>(`/api/finance/driver-stats${search.toString() ? `?${search}` : ""}`);
   },
+  financeDriverExpenses: (params?: { submit_status?: string; expense_kind?: string; driver_id?: string; date_from?: string; date_to?: string }) => {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value) search.set(key, value);
+    });
+    return request<FinanceDriverExpenseResponse>(`/api/finance/driver-expenses${search.toString() ? `?${search}` : ""}`);
+  },
+  updateFinanceDriverExpense: (id: number, payload: Partial<FinanceDriverExpense>) =>
+    request<{ expense: FinanceDriverExpense }>(`/api/finance/driver-expenses/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   updateSettlement: (id: number, payload: Partial<FinanceOrder>) =>
     request<{ order: Order }>(`/api/finance/orders/${id}`, {
       method: "PUT",
@@ -339,6 +354,10 @@ export const api = {
     listFrom<Order>(await request<unknown>("/api/dispatch/unassigned-orders"), ["orders", "items", "data"]),
   assignments: async () =>
     listFrom<Assignment>(await request<unknown>("/api/dispatch/assignments"), ["assignments", "items", "data"]),
+  assignmentEvidence: async (assignmentId: number) =>
+    request<{ evidence_chain: AssignmentEvidenceChain }>(`/api/assignments/${assignmentId}/evidence`),
+  orderEvidence: async (orderId: number) =>
+    request<{ evidence_chain: AssignmentEvidenceChain }>(`/api/orders/${orderId}/evidence`),
   drivers: async () => listFrom<Driver>(await request<unknown>("/api/dispatch/drivers"), ["drivers", "items", "data"]),
   vehicles: async () =>
     listFrom<Vehicle>(await request<unknown>("/api/dispatch/vehicles"), ["vehicles", "items", "data"]),
@@ -415,7 +434,7 @@ export const api = {
     listFrom<NotificationItem>(await request<unknown>(`/api/driver/notifications?driver_id=${driverId}`), ["notifications", "items", "data"]),
   driverSafetyAlerts: async () =>
     listFrom<DriverSafetyAlert>(await request<unknown>("/api/driver/safety-alerts"), ["alerts", "items", "data"]),
-  fleetLatestLocations: async (params?: { driver_id?: string; online_status?: string; limit?: number }) => {
+  fleetLatestLocations: async (params?: { driver_id?: string; online_status?: string; vehicle_status?: string; limit?: number }) => {
     const search = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== "") search.set(key, String(value));

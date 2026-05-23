@@ -11,11 +11,14 @@ SETTLED_STATUSES = {"settled", "paid"}
 PENDING_STATUSES = {"pending", "unsettled", ""}
 DRIVER_SETTLEMENT_STATUSES = {"pending", "settled", "paid", "unsettled"}
 AGENCY_SETTLEMENT_STATUSES = {"pending", "settled", "paid", "unsettled"}
+DRIVER_EXPENSE_PENDING_STATUSES = {"submitted", "in_hand"}
+DRIVER_EXPENSE_STATUSES = {"unsubmitted", "submitted", "in_hand", "confirmed", "rejected"}
 
 
 def get_finance_summary(params: dict[str, Any] | None = None) -> dict:
     params = params or {}
     ledger = get_finance_ledger(params)
+    driver_expenses = get_driver_expense_summary(params)
     orders = ledger["orders"]
     today = date.today().isoformat()
     return {
@@ -31,6 +34,7 @@ def get_finance_summary(params: dict[str, Any] | None = None) -> dict:
         "by_vehicle": _group_amount(orders, "vehicle_plate"),
         "orders": orders,
         "pending_orders": [item for item in orders if item.get("agency_settlement_status") in PENDING_STATUSES][:30],
+        "driver_expense_summary": driver_expenses,
         "ledger": ledger,
     }
 
@@ -94,9 +98,99 @@ def get_finance_ledger(params: dict[str, Any] | None = None) -> dict:
         ]
     return {
         "orders": rows,
-        "summary": _ledger_summary(rows),
+        "summary": {**_ledger_summary(rows), **get_driver_expense_summary(params)},
         "filters": params,
     }
+
+
+def list_finance_driver_expenses(params: dict[str, Any] | None = None) -> dict[str, Any]:
+    params = params or {}
+    where, values = _driver_expense_filters(params)
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        rows = [
+            _decorate_driver_expense(dict(row))
+            for row in conn.execute(
+                f"""
+                SELECT
+                    e.*,
+                    d.name AS driver_name,
+                    d.driver_code,
+                    o.oid,
+                    o.order_date,
+                    o.start_time,
+                    o.end_time,
+                    o.pickup_location,
+                    o.dropoff_location,
+                    o.order_type,
+                    a.vehicle_id,
+                    v.plate_number AS vehicle_plate
+                FROM driver_expense_reports e
+                LEFT JOIN drivers d ON d.id = e.driver_id AND d.tenant_id = e.tenant_id
+                LEFT JOIN assignments a ON a.id = e.assignment_id AND a.tenant_id = e.tenant_id
+                LEFT JOIN orders o ON o.id = COALESCE(e.order_id, a.order_id) AND o.tenant_id = e.tenant_id
+                LEFT JOIN vehicles v ON v.id = a.vehicle_id AND v.tenant_id = e.tenant_id
+                WHERE e.tenant_id = ? {where}
+                ORDER BY
+                    CASE WHEN e.submit_status IN ('submitted', 'in_hand') THEN 0 ELSE 1 END,
+                    e.created_at DESC,
+                    e.id DESC
+                LIMIT 500
+                """,
+                [tenant_id, *values],
+            ).fetchall()
+        ]
+    return {
+        "expenses": rows,
+        "summary": _driver_expense_summary(rows),
+        "filters": params,
+    }
+
+
+def get_driver_expense_summary(params: dict[str, Any] | None = None) -> dict[str, Any]:
+    return _driver_expense_summary(list_finance_driver_expenses(params)["expenses"])
+
+
+def get_finance_driver_expense(expense_id: Any) -> dict[str, Any] | None:
+    result = list_finance_driver_expenses({"expense_id": expense_id})
+    return result["expenses"][0] if result["expenses"] else None
+
+
+def update_finance_driver_expense(expense_id: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
+    status = str(payload.get("submit_status") or payload.get("status") or "").strip()
+    if status and status not in DRIVER_EXPENSE_STATUSES:
+        raise ValueError("invalid_driver_expense_status")
+    fields: list[str] = []
+    values: list[Any] = []
+    if status:
+        fields.append("submit_status = ?")
+        values.append(status)
+        if status == "confirmed":
+            fields.append("confirmed_at = CURRENT_TIMESTAMP")
+        if status == "rejected":
+            fields.append("confirmed_at = NULL")
+    if "note" in payload:
+        fields.append("note = ?")
+        values.append("" if payload.get("note") is None else str(payload.get("note")))
+    if "amount" in payload:
+        fields.append("amount = ?")
+        values.append(_num(payload.get("amount")))
+    if not fields:
+        return get_finance_driver_expense(expense_id)
+    with get_connection() as conn:
+        conn.execute(
+            f"""
+            UPDATE driver_expense_reports
+            SET {", ".join(fields)}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            [*values, _to_int(expense_id), get_current_tenant_id()],
+        )
+        conn.commit()
+    expense = get_finance_driver_expense(expense_id)
+    if expense:
+        _sync_order_finance_amounts(expense)
+    return expense
 
 
 def get_driver_settlement_stats(params: dict[str, Any] | None = None) -> dict:
@@ -372,6 +466,35 @@ def _finance_filters(params: dict[str, Any], include_driver_settlement: bool = T
     return " ".join(clauses), values
 
 
+def _driver_expense_filters(params: dict[str, Any]) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    values: list[Any] = []
+    if params.get("expense_id"):
+        clauses.append("AND e.id = ?")
+        values.append(_to_int(params["expense_id"]))
+    if params.get("driver_id"):
+        clauses.append("AND e.driver_id = ?")
+        values.append(_to_int(params["driver_id"]))
+    if params.get("order_id"):
+        clauses.append("AND COALESCE(e.order_id, a.order_id) = ?")
+        values.append(_to_int(params["order_id"]))
+    if params.get("expense_kind"):
+        clauses.append("AND e.expense_kind = ?")
+        values.append(params["expense_kind"])
+    if params.get("submit_status"):
+        statuses = [item.strip() for item in str(params["submit_status"]).split(",") if item.strip()]
+        if statuses:
+            clauses.append(f"AND e.submit_status IN ({','.join('?' for _ in statuses)})")
+            values.extend(statuses)
+    if params.get("date_from"):
+        clauses.append("AND COALESCE(o.order_date, date(e.created_at)) >= ?")
+        values.append(params["date_from"])
+    if params.get("date_to"):
+        clauses.append("AND COALESCE(o.order_date, date(e.created_at)) <= ?")
+        values.append(params["date_to"])
+    return " ".join(clauses), values
+
+
 def _execution_status_values(status: str) -> list[str]:
     groups = {
         "not_started": ["assigned", "confirmed"],
@@ -388,6 +511,72 @@ def _decorate_order(row: dict[str, Any]) -> dict[str, Any]:
     row["agency_settlement_status"] = row.get("agency_settlement_status") or row.get("settlement_status") or "pending"
     row["settlement_status"] = row["agency_settlement_status"]
     return row
+
+
+def _decorate_driver_expense(row: dict[str, Any]) -> dict[str, Any]:
+    row["amount"] = _num(row.get("amount"))
+    row["status_label"] = {
+        "unsubmitted": "未提交",
+        "submitted": "待财务确认",
+        "in_hand": "待财务确认",
+        "confirmed": "财务已确认",
+        "rejected": "财务已驳回",
+    }.get(str(row.get("submit_status") or ""), row.get("submit_status") or "-")
+    row["kind_label"] = "司机垫付" if row.get("expense_kind") == "advance" else "司机代收"
+    row["is_pending_finance"] = row.get("submit_status") in DRIVER_EXPENSE_PENDING_STATUSES
+    return row
+
+
+def _driver_expense_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    pending = [item for item in rows if item.get("submit_status") in DRIVER_EXPENSE_PENDING_STATUSES]
+    confirmed = [item for item in rows if item.get("submit_status") == "confirmed"]
+    rejected = [item for item in rows if item.get("submit_status") == "rejected"]
+    return {
+        "driver_expense_pending_count": len(pending),
+        "driver_expense_pending_amount": sum(_num(item.get("amount")) for item in pending),
+        "driver_expense_confirmed_count": len(confirmed),
+        "driver_expense_confirmed_amount": sum(_num(item.get("amount")) for item in confirmed),
+        "driver_expense_rejected_count": len(rejected),
+        "driver_expense_rejected_amount": sum(_num(item.get("amount")) for item in rejected),
+        "driver_advance_pending_amount": sum(_num(item.get("amount")) for item in pending if item.get("expense_kind") == "advance"),
+        "driver_collect_pending_amount": sum(_num(item.get("amount")) for item in pending if item.get("expense_kind") == "collect"),
+    }
+
+
+def _sync_order_finance_amounts(expense: dict[str, Any]) -> None:
+    order_id = _to_int(expense.get("order_id"))
+    if order_id <= 0:
+        return
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN expense_kind = 'advance' AND submit_status = 'confirmed' THEN amount ELSE 0 END), 0) AS advance_amount,
+                COALESCE(SUM(CASE WHEN expense_kind = 'collect' AND submit_status = 'confirmed' THEN amount ELSE 0 END), 0) AS collect_amount
+            FROM driver_expense_reports
+            WHERE tenant_id = ? AND order_id = ?
+            """,
+            (tenant_id, order_id),
+        ).fetchone()
+        conn.execute(
+            """
+            UPDATE orders
+            SET driver_advance_amount = ?,
+                driver_collect_amount = ?,
+                driver_settlement_amount = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (
+                _num(row["advance_amount"] if row else 0),
+                _num(row["collect_amount"] if row else 0),
+                _num(row["advance_amount"] if row else 0) - _num(row["collect_amount"] if row else 0),
+                tenant_id,
+                order_id,
+            ),
+        )
+        conn.commit()
 
 
 def _driver_settlement_amount(row: dict[str, Any]) -> float:

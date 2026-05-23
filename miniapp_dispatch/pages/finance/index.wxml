@@ -6,14 +6,17 @@
   </view>
 
   <view class="panel">
-    <view class="panel-title">订单金额</view>
-    <view class="grid">
+    <view class="panel-title">今日财务待办</view>
+    <view class="finance-focus-grid">
+      <view class="finance-focus"><text>今日垫付</text><strong>¥{{summary.driver_advance_total || 0}}</strong></view>
+      <view class="finance-focus warning"><text>异常费用</text><strong>¥{{summary.exception_amount || 0}}</strong></view>
+      <view class="finance-focus danger"><text>待确认</text><strong>¥{{summary.pending_amount || 0}}</strong></view>
+    </view>
+    <view class="grid finance-sub-grid">
       <view class="metric"><text>订单数</text><strong>{{summary.order_count || 0}}</strong></view>
       <view class="metric"><text>合计金额</text><strong>¥{{summary.total_amount || 0}}</strong></view>
-      <view class="metric"><text>待结算</text><strong>¥{{summary.pending_amount || 0}}</strong></view>
-      <view class="metric"><text>今日金额</text><strong>¥{{summary.today_amount || 0}}</strong></view>
-      <view class="metric"><text>司机垫付</text><strong>¥{{summary.driver_advance_total || 0}}</strong></view>
       <view class="metric"><text>司机代收</text><strong>¥{{summary.driver_collect_total || 0}}</strong></view>
+      <view class="metric"><text>今日金额</text><strong>¥{{summary.today_amount || 0}}</strong></view>
     </view>
   </view>
 

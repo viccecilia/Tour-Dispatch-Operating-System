@@ -20,12 +20,18 @@ export type DashboardSummary = {
   completed_orders?: number;
   unassigned_orders?: number;
   pending_drafts?: number;
-  unreported_orders?: number;
-  pending_settlement_orders?: number;
+    unreported_orders?: number;
+    assigned_unconfirmed_orders?: number;
+    confirmed_driver_count?: number;
+    pending_settlement_orders?: number;
   failed_drafts?: number;
-  available_drivers?: number;
-  available_vehicles?: number;
-  resource_alerts?: number;
+    available_drivers?: number;
+    available_vehicles?: number;
+    outbound_vehicles?: number;
+    in_service_vehicles?: number;
+    returned_vehicles?: number;
+    vehicle_status?: Record<string, number>;
+    resource_alerts?: number;
   resource_expired_alerts?: number;
   resource_upcoming_alerts?: number;
   resource_maintenance_alerts?: number;
@@ -226,8 +232,9 @@ export type Assignment = {
   driver_id?: number;
   driver_name?: string;
   vehicle_id?: number;
-  plate_number?: string;
-  price?: number;
+    plate_number?: string;
+    vehicle_status?: string;
+    price?: number;
   dispatch_status?: string;
   settlement_status?: string;
   execution_status?: string;
@@ -318,15 +325,21 @@ export type LocationLog = {
   source?: string;
   reported_at?: string;
   driver_name?: string;
+  driver_phone?: string;
   plate_number?: string;
   vehicle_type?: string;
+  vehicle_status?: string;
   oid?: string;
   pickup_location?: string;
   dropoff_location?: string;
   order_date?: string;
   start_time?: string;
   end_time?: string;
+  dispatch_status?: string;
+  settlement_status?: string;
+  assignment_status?: string;
   execution_status?: string;
+  order_execution_status?: string;
   online_status?: "online" | "stale" | "unknown";
 };
 
@@ -719,6 +732,14 @@ export type FinanceLedgerSummary = {
   driver_settled_amount: number;
   driver_advance_amount: number;
   driver_collect_amount: number;
+  driver_expense_pending_count?: number;
+  driver_expense_pending_amount?: number;
+  driver_expense_confirmed_count?: number;
+  driver_expense_confirmed_amount?: number;
+  driver_expense_rejected_count?: number;
+  driver_expense_rejected_amount?: number;
+  driver_advance_pending_amount?: number;
+  driver_collect_pending_amount?: number;
 };
 
 export type FinanceLedger = {
@@ -746,6 +767,85 @@ export type DriverSettlementStatsResponse = {
   summary: Record<string, number>;
 };
 
+export type FinanceDriverExpense = {
+  id: number;
+  driver_id?: number;
+  driver_name?: string;
+  driver_code?: string;
+  assignment_id?: number;
+  order_id?: number;
+  oid?: string;
+  order_date?: string;
+  start_time?: string;
+  end_time?: string;
+  pickup_location?: string;
+  dropoff_location?: string;
+  order_type?: string;
+  vehicle_id?: number;
+  vehicle_plate?: string;
+  expense_kind: "advance" | "collect" | string;
+  kind_label?: string;
+  category: string;
+  amount: number;
+  currency?: string;
+  submit_status: string;
+  status_label?: string;
+  receipt_photo_url?: string;
+  note?: string;
+  submitted_at?: string;
+  confirmed_at?: string;
+  created_at?: string;
+  is_pending_finance?: boolean;
+};
+
+export type FinanceDriverExpenseResponse = {
+  expenses: FinanceDriverExpense[];
+  summary: Record<string, number>;
+  filters?: Record<string, unknown>;
+};
+
+export type EvidenceTimelineItem = {
+  kind: "report" | "workflow" | "photo" | "expense" | string;
+  id?: number;
+  assignment_id?: number;
+  order_id?: number;
+  driver_id?: number;
+  label?: string;
+  event_time?: string;
+  status?: string;
+  location_text?: string;
+  latitude?: number;
+  longitude?: number;
+  note?: string;
+  file_url?: string;
+  amount?: number;
+  currency?: string;
+};
+
+export type AssignmentEvidenceChain = {
+  assignment?: Assignment & {
+    guest_name?: string;
+    guest_contact?: string;
+    remark?: string;
+    assignment_status?: string;
+  };
+  timeline: EvidenceTimelineItem[];
+  evidence: Array<{
+    id: number;
+    evidence_type: string;
+    label?: string;
+    file_name?: string;
+    file_url?: string;
+    note?: string;
+    uploaded_at?: string;
+  }>;
+  expenses: FinanceDriverExpense[];
+  reports: DriverReport[];
+  workflow_events: Array<Record<string, unknown>>;
+  download_files: Array<{ id?: number; kind?: string; label?: string; url?: string; file_name?: string }>;
+  summary: Record<string, number>;
+};
+
 export type FinanceSummary = {
   date: string;
   order_count: number;
@@ -759,4 +859,5 @@ export type FinanceSummary = {
   by_vehicle: FinanceGroup[];
   orders: FinanceOrder[];
   pending_orders: FinanceOrder[];
+  driver_expense_summary?: Record<string, number>;
 };

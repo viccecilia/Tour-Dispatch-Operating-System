@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
+from datetime import timedelta
 from datetime import datetime
 from pathlib import Path
 
@@ -46,13 +47,13 @@ def request(method: str, path: str, payload: dict | None = None) -> dict:
         return payload
 
 
-def create_order(start_time: str, end_time: str, suffix: str) -> dict:
-    today = date.today().isoformat()
+def create_order(start_time: str, end_time: str, suffix: str, order_date: str | None = None) -> dict:
+    order_date = order_date or date.today().isoformat()
     return request(
         "POST",
         "/api/orders",
         {
-            "order_date": today,
+            "order_date": order_date,
             "start_time": start_time,
             "end_time": end_time,
             "pickup_location": f"东京站{suffix}",
@@ -84,6 +85,8 @@ def main() -> None:
     end_b = _format_time(base_minute + 90)
     order_a = create_order(start_a, end_a, "A")
     order_b = create_order(start_b, end_b, "B")
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    order_tomorrow = create_order("09:00", "10:00", "T", tomorrow)
 
     orders_before = request("GET", "/api/orders")
     unassigned = request("GET", "/api/dispatch/unassigned-orders")
@@ -107,8 +110,33 @@ def main() -> None:
             "vehicle_id": vehicles[0]["id"],
         },
     )
+    assign_tomorrow = request(
+        "POST",
+        "/api/dispatch/assign",
+        {
+            "order_ids": [order_tomorrow["id"]],
+            "driver_id": drivers[1]["id"],
+            "vehicle_id": vehicles[1]["id"],
+        },
+    )
+    tomorrow_driver_assignments = request("GET", f"/api/driver/assignments?driver_id={drivers[1]['id']}")["assignments"]
     assigned_order = request("GET", f"/api/orders/{order_a['id']}")["order"]
     active_assignments = request("GET", "/api/dispatch/assignments")["assignments"]
+    assignment_id = assign_a["assignment_ids"][0]
+    driver_visible_assignments = request("GET", f"/api/driver/assignments?driver_id={drivers[0]['id']}")["assignments"]
+    driver_confirm = request(
+        "POST",
+        "/api/driver/report",
+        {
+            "driver_id": drivers[0]["id"],
+            "assignment_id": assignment_id,
+            "report_type": "confirm_order",
+            "location_text": "dispatch-driver linkage smoke",
+            "note": "driver confirmed after dispatch",
+        },
+    )
+    post_confirm_assignments = request("GET", "/api/dispatch/assignments")["assignments"]
+    summary_after_confirm = request("GET", "/api/dashboard/summary")
 
     conflict = request(
         "POST",
@@ -152,7 +180,7 @@ def main() -> None:
         "ping_ok": ping.get("ok") is True,
         "login_user": login.get("user", {}).get("username"),
         "orders_api_count": len(orders_before.get("orders", [])),
-        "created_order_ids": [order_a["id"], order_b["id"]],
+        "created_order_ids": [order_a["id"], order_b["id"], order_tomorrow["id"]],
         "unassigned_count": len(unassigned.get("orders", [])),
         "drivers_count": len(drivers),
         "vehicles_count": len(vehicles),
@@ -164,8 +192,21 @@ def main() -> None:
         "recommend_after_conflict_success": recommend_after_conflict.get("success") is True,
         "recommend_after_conflict_has_reason": bool((recommend_after_conflict.get("recommendations") or [{}])[0].get("reasons")),
         "assign_success": assign_a.get("success") is True,
+        "assign_tomorrow_success": assign_tomorrow.get("success") is True,
+        "tomorrow_order_visible_to_driver": any(
+            item["assignment_id"] == assign_tomorrow["assignment_ids"][0] and item.get("order_date") == tomorrow
+            for item in tomorrow_driver_assignments
+        ),
         "assigned_order_status": assigned_order.get("dispatch_status"),
-        "active_assignment_exists": any(item["id"] == assign_a["assignment_ids"][0] for item in active_assignments),
+        "active_assignment_exists": any(item["id"] == assignment_id for item in active_assignments),
+        "driver_received_order": any(item["assignment_id"] == assignment_id for item in driver_visible_assignments),
+        "driver_confirm_success": driver_confirm.get("success") is True,
+        "dispatch_sees_driver_confirmed": any(
+            item["id"] == assignment_id and item.get("execution_status") == "confirmed"
+            for item in post_confirm_assignments
+        ),
+        "dashboard_assigned_unconfirmed_orders_after_confirm": summary_after_confirm.get("assigned_unconfirmed_orders"),
+        "dashboard_confirmed_driver_count_after_confirm": summary_after_confirm.get("confirmed_driver_count"),
         "conflict_success": conflict.get("success"),
         "conflict_count": len(conflict.get("conflicts", [])),
         "route_link_count": len(route.get("links", [])),
@@ -178,6 +219,7 @@ def main() -> None:
         "dashboard_assigned_orders": summary.get("assigned_orders"),
         "dashboard_available_drivers": summary.get("available_drivers"),
         "dashboard_available_vehicles": summary.get("available_vehicles"),
+        "dashboard_vehicle_status": summary.get("vehicle_status"),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

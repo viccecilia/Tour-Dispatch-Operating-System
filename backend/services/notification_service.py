@@ -64,7 +64,7 @@ def create_notification(payload: dict[str, Any]) -> dict[str, Any]:
 
 def list_notifications(params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     params = params or {}
-    sync_resource_notifications()
+    sync_operation_notifications()
     sql = [
         """
         SELECT *
@@ -138,6 +138,7 @@ def list_driver_notifications(driver_id: Any, params: dict[str, Any] | None = No
     if driver_id_int <= 0:
         return []
     sync_driver_task_notifications(driver_id_int)
+    sync_dispatch_runtime_notifications()
     sql = [
         """
         SELECT *
@@ -249,7 +250,7 @@ def sync_driver_task_notifications(driver_id: int) -> None:
 
 
 def get_notification_summary() -> dict[str, Any]:
-    sync_resource_notifications()
+    sync_operation_notifications()
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         row = conn.execute(
@@ -292,6 +293,170 @@ def sync_resource_notifications() -> None:
         )
 
 
+def sync_operation_notifications() -> None:
+    sync_resource_notifications()
+    sync_dispatch_runtime_notifications()
+
+
+def sync_dispatch_runtime_notifications() -> None:
+    today = date.today().isoformat()
+    now = datetime.now()
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT
+                    a.id AS assignment_id,
+                    a.driver_id,
+                    a.vehicle_id,
+                    a.execution_status,
+                    a.status AS assignment_status,
+                    o.id AS order_id,
+                    o.oid,
+                    o.order_date,
+                    o.start_time,
+                    o.end_time,
+                    o.pickup_location,
+                    o.dropoff_location,
+                    d.name AS driver_name,
+                    v.plate_number,
+                    COALESCE(ev.photo_count, 0) AS photo_count,
+                    COALESCE(ex.pending_expense_count, 0) AS pending_expense_count,
+                    COALESCE(ex.pending_expense_amount, 0) AS pending_expense_amount
+                FROM assignments a
+                JOIN orders o ON o.id = a.order_id AND o.tenant_id = a.tenant_id
+                LEFT JOIN drivers d ON d.id = a.driver_id AND d.tenant_id = a.tenant_id
+                LEFT JOIN vehicles v ON v.id = a.vehicle_id AND v.tenant_id = a.tenant_id
+                LEFT JOIN (
+                    SELECT assignment_id, tenant_id, COUNT(*) AS photo_count
+                    FROM driver_evidence_uploads
+                    GROUP BY assignment_id, tenant_id
+                ) ev ON ev.assignment_id = a.id AND ev.tenant_id = a.tenant_id
+                LEFT JOIN (
+                    SELECT assignment_id, tenant_id, COUNT(*) AS pending_expense_count, SUM(amount) AS pending_expense_amount
+                    FROM driver_expense_reports
+                    WHERE submit_status IN ('unsubmitted', 'in_hand', 'submitted')
+                    GROUP BY assignment_id, tenant_id
+                ) ex ON ex.assignment_id = a.id AND ex.tenant_id = a.tenant_id
+                WHERE a.tenant_id = ?
+                  AND a.status = 'active'
+                  AND COALESCE(o.is_deleted, 0) = 0
+                  AND o.order_date >= date(?, '-1 day')
+                  AND o.order_date <= date(?, '+1 day')
+                ORDER BY o.order_date ASC, o.start_time ASC, a.id ASC
+                LIMIT 500
+                """,
+                (tenant_id, today, today),
+            ).fetchall()
+        ]
+    for item in rows:
+        start_dt = _assignment_start_datetime(item)
+        end_dt = _assignment_end_datetime(item) or start_dt
+        status = item.get("execution_status") or "assigned"
+        route = f"{item.get('pickup_location') or '-'} -> {item.get('dropoff_location') or '-'}"
+        order_label = item.get("oid") or f"#{item.get('assignment_id')}"
+        driver_id = _to_int(item.get("driver_id"))
+
+        if status == "assigned":
+            _create_runtime_pair(
+                driver_id,
+                "unconfirmed_order",
+                "订单未确认",
+                f"{order_label} {item.get('order_date')} {item.get('start_time') or ''} {route}",
+                "high" if _is_due(start_dt, now, minutes_before=720) else "normal",
+                item,
+                "unconfirmed",
+            )
+
+        if status in {"assigned", "confirmed"} and _is_due(start_dt, now, minutes_before=90):
+            _create_runtime_pair(
+                driver_id,
+                "not_departed",
+                "司机未出库",
+                f"{order_label} 即将开始，司机 {item.get('driver_name') or '-'} 尚未出库。",
+                "high",
+                item,
+                "not_departed",
+            )
+
+        if status == "departed" and _is_due(start_dt, now, minutes_after=15):
+            _create_runtime_pair(
+                driver_id,
+                "not_arrived",
+                "司机未到达上车点",
+                f"{order_label} 已出库但未到达上车点：{item.get('pickup_location') or '-'}",
+                "high",
+                item,
+                "not_arrived",
+            )
+
+        if status in {"arrived", "in_service", "completed", "returned"} and _to_int(item.get("photo_count")) == 0:
+            _create_runtime_pair(
+                driver_id,
+                "missing_photo",
+                "未上传执行照片",
+                f"{order_label} 已进入执行流程，但还没有照片记录。",
+                "normal",
+                item,
+                "missing_photo",
+            )
+
+        if _to_int(item.get("pending_expense_count")) > 0:
+            _create_runtime_pair(
+                driver_id,
+                "pending_driver_expense",
+                "有未提交费用",
+                f"{order_label} 有 {item.get('pending_expense_count')} 笔费用待处理，合计 {item.get('pending_expense_amount') or 0} JPY。",
+                "normal",
+                item,
+                "pending_expense",
+            )
+
+        if status in {"completed"} and _is_due(end_dt, now, minutes_after=60):
+            _create_runtime_pair(
+                driver_id,
+                "not_returned",
+                "司机未入库",
+                f"{order_label} 行程已完成，车辆 {item.get('plate_number') or '-'} 尚未入库。",
+                "high",
+                item,
+                "not_returned",
+            )
+
+
+def _create_runtime_pair(driver_id: int, notification_type: str, title: str, body: str, priority: str, item: dict[str, Any], code: str) -> None:
+    assignment_id = item.get("assignment_id")
+    order_date = item.get("order_date") or date.today().isoformat()
+    source_id = f"{order_date}:{code}:{assignment_id}"
+    create_notification(
+        {
+            "notification_type": notification_type,
+            "title": title,
+            "body": body,
+            "priority": priority,
+            "target_role": "dispatcher",
+            "link": "#driver-monitor",
+            "source_type": "operation_runtime",
+            "source_id": source_id,
+        }
+    )
+    if driver_id > 0:
+        create_notification(
+            {
+                "notification_type": notification_type,
+                "title": title,
+                "body": body,
+                "priority": priority,
+                "target_role": "driver",
+                "link": "#driver",
+                "source_type": "driver_operation_runtime",
+                "source_id": f"{driver_id}:{source_id}",
+            }
+        )
+
+
 def notify_dispatch_assigned(assignment_ids: list[int], order_ids: list[int], driver_id: int | None = None, driver_name: str | None = None, plate_number: str | None = None) -> None:
     if not assignment_ids:
         return
@@ -312,7 +477,7 @@ def notify_dispatch_assigned(assignment_ids: list[int], order_ids: list[int], dr
             {
                 "notification_type": "new_order",
                 "title": f"你有 {len(order_ids)} 个新任务",
-                "body": f"车辆 {plate_number or '-'}，请打开今日任务确认。",
+                "body": f"车辆 {plate_number or '-'}，请打开今日任务确认接单。",
                 "priority": "high",
                 "target_role": "driver",
                 "link": "#driver",
@@ -378,3 +543,21 @@ def _assignment_start_datetime(item: dict[str, Any]) -> datetime | None:
         return datetime.strptime(raw, "%Y-%m-%d %H:%M")
     except (TypeError, ValueError):
         return None
+
+
+def _assignment_end_datetime(item: dict[str, Any]) -> datetime | None:
+    try:
+        raw = f"{item.get('order_date')} {item.get('end_time') or item.get('start_time') or '00:00'}"
+        end_dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+        start_dt = _assignment_start_datetime(item)
+        if start_dt and end_dt < start_dt:
+            return end_dt + timedelta(days=1)
+        return end_dt
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_due(target: datetime | None, now: datetime, minutes_before: int = 0, minutes_after: int = 0) -> bool:
+    if not target:
+        return False
+    return now >= target - timedelta(minutes=minutes_before) + timedelta(minutes=minutes_after)

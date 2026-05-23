@@ -240,7 +240,12 @@ def extract_note_tokens(raw_text: str) -> tuple[list[str], str]:
     return list(dict.fromkeys(notes)), raw
 
 
-def get_latest_locations(driver_id: Any = None, limit: int = 50, online_status: str | None = None) -> list[dict[str, Any]]:
+def get_latest_locations(
+    driver_id: Any = None,
+    limit: int = 50,
+    online_status: str | None = None,
+    vehicle_status: str | None = None,
+) -> list[dict[str, Any]]:
     params: list[Any] = [get_current_tenant_id()]
     where = ["ll.tenant_id = ?"]
     if driver_id not in ("", None):
@@ -258,12 +263,17 @@ def get_latest_locations(driver_id: Any = None, limit: int = 50, online_status: 
                     d.phone AS driver_phone,
                     v.plate_number,
                     v.vehicle_type,
+                    v.status AS vehicle_status,
                     o.oid,
                     o.pickup_location,
                     o.dropoff_location,
                     o.order_date,
                     o.start_time,
                     o.end_time,
+                    o.dispatch_status,
+                    o.settlement_status,
+                    o.execution_status AS order_execution_status,
+                    a.status AS assignment_status,
                     a.execution_status,
                     ROW_NUMBER() OVER (PARTITION BY ll.driver_id ORDER BY ll.reported_at DESC, ll.id DESC) AS rn
                 FROM location_logs ll
@@ -282,6 +292,8 @@ def get_latest_locations(driver_id: Any = None, limit: int = 50, online_status: 
     locations = [_with_online_status(dict(row)) for row in rows]
     if online_status:
         locations = [item for item in locations if item.get("online_status") == online_status]
+    if vehicle_status:
+        locations = [item for item in locations if item.get("vehicle_status") == vehicle_status]
     return locations
 
 
@@ -301,12 +313,17 @@ def list_location_logs(driver_id: Any = None, limit: int = 100) -> list[dict[str
                 d.phone AS driver_phone,
                 v.plate_number,
                 v.vehicle_type,
+                v.status AS vehicle_status,
                 o.oid,
                 o.pickup_location,
                 o.dropoff_location,
                 o.order_date,
                 o.start_time,
                 o.end_time,
+                o.dispatch_status,
+                o.settlement_status,
+                o.execution_status AS order_execution_status,
+                a.status AS assignment_status,
                 a.execution_status
             FROM location_logs ll
             LEFT JOIN drivers d ON d.id = ll.driver_id

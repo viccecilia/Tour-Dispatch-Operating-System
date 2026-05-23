@@ -14,7 +14,8 @@
   </view>
 
   <view class="panel">
-    <view class="panel-title">本次/当前草稿</view>
+    <view class="panel-title">风险草稿</view>
+    <view class="muted">默认折叠正常草稿，只展开缺时间、缺车型、地点异常、重复或价格可疑的草稿。</view>
     <view class="risk-grid">
       <view class="risk-box danger"><text>高风险</text><strong>{{riskSummary.high}}</strong></view>
       <view class="risk-box warning"><text>需修正</text><strong>{{riskSummary.medium}}</strong></view>
@@ -24,7 +25,13 @@
   </view>
 
   <view class="panel">
-    <view class="panel-title">问题草稿优先</view>
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">问题优先处理</view>
+        <view class="muted">正常草稿已收起，避免 50 单导入时铺满屏幕。</view>
+      </view>
+      <view wx:if="{{foldedDraftCount > 0}}" class="fold-badge">已折叠 {{foldedDraftCount}}</view>
+    </view>
     <view class="list">
       <view wx:for="{{visibleDrafts}}" wx:key="id" class="draft-card {{item.riskLevel}}">
         <view class="draft-main">

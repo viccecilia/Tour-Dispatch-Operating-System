@@ -89,6 +89,7 @@ def list_assignments(status: str | None = "active") -> list[dict[str, Any]]:
             d.phone AS driver_phone,
             v.plate_number,
             v.vehicle_type AS assigned_vehicle_type,
+            v.status AS vehicle_status,
             r.report_type AS latest_report_type,
             r.report_time AS latest_report_time,
             r.location_text AS latest_location_text
@@ -236,6 +237,7 @@ def cancel_assignment(assignment_id: Any = None, order_id: Any = None) -> dict[s
             """,
             (row["order_id"], get_current_tenant_id()),
         )
+        _mark_vehicle_available_if_idle(conn, row["vehicle_id"])
         conn.commit()
     return {
         "success": True,
@@ -267,6 +269,12 @@ def reassign_orders(order_ids: list[Any], new_driver_id: Any, new_vehicle_id: An
                     """,
                     (row["id"], get_current_tenant_id()),
                 )
+                old_assignment = conn.execute(
+                    "SELECT vehicle_id FROM assignments WHERE id = ? AND tenant_id = ?",
+                    (row["id"], get_current_tenant_id()),
+                ).fetchone()
+                if old_assignment:
+                    _mark_vehicle_available_if_idle(conn, old_assignment["vehicle_id"])
                 cancelled_ids.append(row["id"])
             conn.execute(
                 """
@@ -526,6 +534,33 @@ def _fetch_driver(conn, driver_id: int) -> dict[str, Any] | None:
 def _fetch_vehicle(conn, vehicle_id: int) -> dict[str, Any] | None:
     row = conn.execute("SELECT id, plate_number, vehicle_type, plate_short_code, vehicle_type_code, vehicle_color, snow_tire FROM vehicles WHERE id = ? AND tenant_id = ?", (vehicle_id, get_current_tenant_id())).fetchone()
     return dict(row) if row else None
+
+
+def _mark_vehicle_available_if_idle(conn, vehicle_id: Any) -> None:
+    vehicle_id_int = _to_int(vehicle_id)
+    if not vehicle_id_int:
+        return
+    active = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM assignments
+        WHERE vehicle_id = ?
+          AND tenant_id = ?
+          AND status = 'active'
+          AND COALESCE(execution_status, 'assigned') NOT IN ('completed', 'returned')
+        """,
+        (vehicle_id_int, get_current_tenant_id()),
+    ).fetchone()
+    if active and int(active["total"] or 0) > 0:
+        return
+    conn.execute(
+        """
+        UPDATE vehicles
+        SET status = 'available', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND tenant_id = ? AND status IN ('outbound', 'in_service', 'returned')
+        """,
+        (vehicle_id_int, get_current_tenant_id()),
+    )
 
 
 def _build_assigned_oid(conn, order: dict[str, Any], vehicle: dict[str, Any], driver: dict[str, Any]) -> str:

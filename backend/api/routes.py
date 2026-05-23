@@ -5,7 +5,7 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from backend.services.auth_service import authenticate, get_user_by_token
 from backend.services.agency_portal_service import (
@@ -45,10 +45,24 @@ from backend.services.dispatch_service import (
     route_suggestion,
 )
 from backend.services.dispatch_brain_service import recommend_dispatch
+from backend.services.dispatch_mobile_audit_service import list_dispatch_mobile_audit_logs, record_dispatch_mobile_audit
+from backend.services.dispatcher_mobile_service import (
+    get_dispatcher_context,
+    get_dispatcher_dashboard,
+    get_dispatcher_notifications,
+    get_shared_runtime_state,
+    list_dispatcher_unassigned_orders,
+    login_dispatcher,
+    mark_order_dispatcher_context,
+    parse_dispatcher_text,
+    update_dispatcher_draft,
+)
 from backend.services.driver_service import (
     get_driver_assignment,
+    get_assignment_evidence_chain,
     get_driver_dashboard,
     get_driver_workbench,
+    get_order_evidence_chain,
     list_driver_evidence,
     list_driver_assignments,
     list_driver_expenses,
@@ -67,8 +81,11 @@ from backend.services.finance_service import (
     export_finance_csv,
     get_driver_income_summary,
     get_driver_settlement_stats,
+    get_finance_driver_expense,
     get_finance_ledger,
     get_finance_summary,
+    list_finance_driver_expenses,
+    update_finance_driver_expense,
     update_settlement,
 )
 from backend.services.incident_service import close_incident, create_incident, get_incident_summary, list_incidents
@@ -161,6 +178,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         params = self.query_params(parsed.query)
+        if path == "/driver-google-map":
+            self.send_driver_google_map_page(params)
+            return
         if path == "/api/ping":
             self.send_json({"ok": True, "message": "pong"})
             return
@@ -170,10 +190,28 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/agency-portal/orders":
             self.safe_agency(lambda: {"orders": list_agency_orders(self.agency_token())})
             return
-        if path.startswith("/api/") and path != "/api/auth/me" and not path.startswith("/api/driver/"):
+        if path.startswith("/api/") and path != "/api/auth/me" and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
             user = self.require_api_user()
             if not user:
                 return
+        if path == "/api/dispatch-mobile/context":
+            self.send_json(get_dispatcher_context(params))
+            return
+        if path == "/api/dispatch-mobile/dashboard":
+            self.send_json(get_dispatcher_dashboard(params))
+            return
+        if path == "/api/dispatch-mobile/shared-state":
+            self.send_json(get_shared_runtime_state(params))
+            return
+        if path == "/api/dispatch-mobile/unassigned-orders":
+            self.send_json({"orders": list_dispatcher_unassigned_orders(params)})
+            return
+        if path == "/api/dispatch-mobile/notifications":
+            self.send_json(get_dispatcher_notifications(params))
+            return
+        if path == "/api/dispatch-mobile/audit-logs":
+            self.send_json({"logs": list_dispatch_mobile_audit_logs(params)})
+            return
         if path == "/api/auth/me":
             user = self.require_api_user()
             if not user:
@@ -275,6 +313,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             self.send_json(get_driver_settlement_stats(params))
             return
+        if path == "/api/finance/driver-expenses":
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_json(list_finance_driver_expenses(params))
+            return
         if path == "/api/finance/export":
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
@@ -342,6 +386,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     params.get("driver_id"),
                     int(params.get("limit") or 50),
                     params.get("online_status"),
+                    params.get("vehicle_status"),
                 )
             })
             return
@@ -375,6 +420,16 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/driver/evidence":
             self.send_json({"evidence": list_driver_evidence(self.driver_id(params), params.get("assignment_id"))})
             return
+        assignment_evidence_id = self.match_assignment_evidence_path(path)
+        if assignment_evidence_id:
+            evidence_chain = get_assignment_evidence_chain(assignment_evidence_id)
+            self.send_json({"evidence_chain": evidence_chain} if evidence_chain else {"error": "assignment_evidence_not_found"}, HTTPStatus.OK if evidence_chain else HTTPStatus.NOT_FOUND)
+            return
+        order_evidence_id = self.match_order_evidence_path(path)
+        if order_evidence_id:
+            evidence_chain = get_order_evidence_chain(order_evidence_id)
+            self.send_json({"evidence_chain": evidence_chain} if evidence_chain else {"error": "order_evidence_not_found"}, HTTPStatus.OK if evidence_chain else HTTPStatus.NOT_FOUND)
+            return
         draft_id = self.match_parser_draft_path(path)
         if draft_id:
             draft = get_draft(draft_id)
@@ -399,7 +454,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/agency-portal/orders":
             self.safe_agency(lambda: {"order": create_agency_order(self.agency_token(), payload)}, HTTPStatus.CREATED)
             return
-        if path.startswith("/api/") and path != "/api/auth/login" and not path.startswith("/api/driver/"):
+        if path == "/api/dispatch-mobile/login":
+            result = login_dispatcher(payload)
+            log_operation("DISPATCHER_MOBILE_LOGIN_OK" if result else "DISPATCHER_MOBILE_LOGIN_FAIL", path, {"username": payload.get("username", "")}, payload.get("username", ""))
+            self.send_json(result if result else {"error": "invalid_dispatcher_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
+            return
+        if path.startswith("/api/") and path != "/api/auth/login" and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
             user = self.require_api_user()
             if not user:
                 return
@@ -492,6 +552,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             draft = parse_text_to_draft(payload.get("text", ""), "text")
             self.send_json({"draft": draft, "parse_result": draft.get("parse_result"), "parse_status": draft["parse_status"]}, HTTPStatus.CREATED)
             return
+        if path == "/api/dispatch-mobile/parser/text":
+            self.send_json(parse_dispatcher_text(payload), HTTPStatus.CREATED)
+            return
+        if path == "/api/dispatch-mobile/order-context":
+            order = mark_order_dispatcher_context(payload.get("order_id"), payload, bool(payload.get("update_only")))
+            self.send_json({"ok": bool(order), "order": order} if order else {"ok": False, "error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
+            return
         if path == "/api/parser/excel":
             drafts = parse_excel_to_drafts(payload)
             self.send_json({"drafts": drafts, "count": len(drafts)}, HTTPStatus.CREATED)
@@ -499,6 +566,11 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/parser/voice":
             draft = parse_voice_to_draft(payload)
             self.send_json({"draft": draft, "parse_result": draft.get("parse_result"), "parse_status": draft["parse_status"]}, HTTPStatus.CREATED)
+            return
+        mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
+        if mobile_draft_id:
+            draft = update_dispatcher_draft(mobile_draft_id, payload)
+            self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/driver/report":
             result = submit_driver_report(payload)
@@ -539,6 +611,17 @@ class ApiHandler(BaseHTTPRequestHandler):
         confirm_id = self.match_parser_confirm_path(path)
         if confirm_id:
             result = confirm_draft(confirm_id)
+            if result and result.get("order_id") and (payload.get("dispatcher_id") or payload.get("dispatcher_code") or payload.get("dispatcher_name")):
+                result["order"] = mark_order_dispatcher_context(result["order_id"], payload) or result.get("order")
+                record_dispatch_mobile_audit(
+                    "mobile_confirm_order",
+                    payload,
+                    entity_type="order",
+                    entity_id=result.get("order_id"),
+                    after=result,
+                    summary=f"Mobile confirmed draft {confirm_id} to order {result.get('order_id')}",
+                    source_path=path,
+                )
             self.send_json(result if result else {"error": "draft_not_found"}, HTTPStatus.OK if result else HTTPStatus.NOT_FOUND)
             return
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
@@ -579,9 +662,21 @@ class ApiHandler(BaseHTTPRequestHandler):
         if draft_id:
             self.safe_update(lambda: update_draft(draft_id, payload), "draft", "draft_not_found")
             return
+        mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
+        if mobile_draft_id:
+            draft = update_dispatcher_draft(mobile_draft_id, payload)
+            self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
+            return
         order_id = self.match_order_path(path)
         if order_id:
             self.update_order_with_audit(order_id, payload, path)
+            return
+        finance_expense_id = self._match_prefixed_id(path, "/api/finance/driver-expenses/")
+        if finance_expense_id:
+            if not is_feature_enabled("finance"):
+                self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
+                return
+            self.update_driver_expense_with_audit(finance_expense_id, payload, path)
             return
         finance_order_id = self._match_prefixed_id(path, "/api/finance/orders/")
         if finance_order_id:
@@ -713,6 +808,29 @@ class ApiHandler(BaseHTTPRequestHandler):
             )
         self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
 
+    def update_driver_expense_with_audit(self, expense_id: str, payload: dict, path: str) -> None:
+        before = get_finance_driver_expense(expense_id)
+        if not before:
+            self.send_json({"error": "driver_expense_not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        try:
+            expense = update_finance_driver_expense(expense_id, payload)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if expense:
+            record_audit(
+                "finance_driver_expense_update",
+                "driver_expense",
+                expense.get("id") or expense_id,
+                before=before,
+                after=expense,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Updated driver expense {expense.get('id') or expense_id} to {expense.get('submit_status')}",
+            )
+        self.send_json({"expense": expense} if expense else {"error": "driver_expense_not_found"}, HTTPStatus.OK if expense else HTTPStatus.NOT_FOUND)
+
     def dispatch_assign_with_audit(self, payload: dict, path: str) -> None:
         try:
             result = assign_orders(payload.get("order_ids", []), payload.get("driver_id"), payload.get("vehicle_id"))
@@ -728,6 +846,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             actor=self.actor_label(),
             source_path=path,
             summary=f"Assigned {len(result.get('updated_order_ids', []))} order(s)",
+        )
+        record_dispatch_mobile_audit(
+            "mobile_dispatch_assign",
+            payload,
+            entity_type="assignment",
+            entity_id=entity_id,
+            after=result,
+            summary=f"Mobile assigned {len(result.get('updated_order_ids', []))} order(s)",
+            source_path=path,
         )
         self.send_json(result)
 
@@ -805,6 +932,73 @@ class ApiHandler(BaseHTTPRequestHandler):
         parsed = parse_qs(query, keep_blank_values=False)
         return {key: values[-1] for key, values in parsed.items() if values}
 
+    def send_driver_google_map_page(self, params: dict) -> None:
+        pickup = (params.get("pickup") or "").strip()
+        dropoff = (params.get("dropoff") or "").strip()
+        pickup_lat = (params.get("pickup_latitude") or "").strip()
+        pickup_lng = (params.get("pickup_longitude") or "").strip()
+        dropoff_lat = (params.get("dropoff_latitude") or "").strip()
+        dropoff_lng = (params.get("dropoff_longitude") or "").strip()
+
+        origin = f"{pickup_lat},{pickup_lng}" if pickup_lat and pickup_lng else pickup
+        destination = f"{dropoff_lat},{dropoff_lng}" if dropoff_lat and dropoff_lng else dropoff
+        if origin and destination:
+            embed_url = f"https://maps.google.com/maps?saddr={quote(origin)}&daddr={quote(destination)}&output=embed"
+            open_url = (
+                "https://www.google.com/maps/dir/?api=1"
+                f"&origin={quote(origin)}&destination={quote(destination)}&travelmode=driving"
+            )
+        else:
+            query = origin or destination or "Japan"
+            embed_url = f"https://maps.google.com/maps?q={quote(query)}&output=embed"
+            open_url = f"https://www.google.com/maps/search/?api=1&query={quote(query)}"
+
+        html = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Google Maps 导航</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f7fb; color: #0f172a; }}
+    .page {{ min-height: 100vh; display: flex; flex-direction: column; }}
+    .header {{ padding: 14px 16px 12px; background: #0f172a; color: #fff; }}
+    .title {{ font-size: 18px; font-weight: 800; }}
+    .route {{ margin-top: 8px; font-size: 13px; color: #dbeafe; line-height: 1.5; }}
+    .map {{ flex: 1; min-height: 65vh; background: #e2e8f0; }}
+    iframe {{ width: 100%; height: 100%; min-height: 65vh; border: 0; display: block; }}
+    .actions {{ padding: 12px 16px 18px; display: grid; gap: 10px; background: #fff; box-shadow: 0 -8px 24px rgba(15,23,42,.08); }}
+    .button {{ display: block; text-align: center; text-decoration: none; border-radius: 14px; padding: 13px 14px; font-weight: 800; }}
+    .primary {{ background: #2563eb; color: #fff; }}
+    .secondary {{ background: #eff6ff; color: #1d4ed8; }}
+    .hint {{ font-size: 12px; color: #64748b; text-align: center; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="title">Google Maps 导航</div>
+      <div class="route">上车点：{escape(pickup or "-")}<br>终点：{escape(dropoff or "-")}</div>
+    </div>
+    <div class="map">
+      <iframe src="{escape(embed_url)}" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+    </div>
+    <div class="actions">
+      <a class="button primary" href="{escape(open_url)}">在 Google Maps 打开导航</a>
+      <a class="button secondary" href="https://www.google.com/maps/search/?api=1&query={quote(pickup or dropoff or 'Japan')}">搜索上车点</a>
+      <div class="hint">如果嵌入地图未显示，请点上方按钮打开 Google Maps。小程序正式版需要配置 web-view 业务域名。</div>
+    </div>
+  </div>
+</body>
+</html>"""
+        body = html.encode("utf-8")
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def parse_ids(self, value: str) -> list[int]:
         return [int(item.strip()) for item in value.split(",") if item.strip().isdigit()]
 
@@ -824,6 +1018,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not path.startswith(prefix) or not path.endswith(suffix):
             return ""
         return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
+    def match_dispatch_mobile_draft_path(self, path: str) -> str:
+        return self._match_prefixed_id(path, "/api/dispatch-mobile/drafts/")
 
     def match_incident_close_path(self, path: str) -> str:
         prefix, suffix = "/api/incidents/", "/close"
@@ -857,6 +1054,20 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def match_driver_assignment_path(self, path: str) -> str:
         return self._match_prefixed_id(path, "/api/driver/assignments/")
+
+    def match_assignment_evidence_path(self, path: str) -> str:
+        prefix, suffix = "/api/assignments/", "/evidence"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        value = path.removeprefix(prefix).removesuffix(suffix).strip("/")
+        return value if value and "/" not in value else ""
+
+    def match_order_evidence_path(self, path: str) -> str:
+        prefix, suffix = "/api/orders/", "/evidence"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        value = path.removeprefix(prefix).removesuffix(suffix).strip("/")
+        return value if value and "/" not in value else ""
 
     def match_driver_notification_read_path(self, path: str) -> str:
         prefix, suffix = "/api/driver/notifications/", "/read"

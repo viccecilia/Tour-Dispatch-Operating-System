@@ -11,6 +11,13 @@
     </view>
   </view>
 
+  <view class="ops-strip">
+    <view class="ops-chip danger"><text>未派车</text><strong>{{orders.length}}</strong></view>
+    <view class="ops-chip warning"><text>已选择</text><strong>{{selectedOrderIds.length}}</strong></view>
+    <view class="ops-chip"><text>司机</text><strong>{{drivers.length}}</strong></view>
+    <button class="route-button" bindtap="smartRouteSort">一键接龙</button>
+  </view>
+
   <view wx:if="{{conflictText}}" class="conflict">{{conflictText}}</view>
   <view wx:elif="{{message}}" class="success-text">{{message}}</view>
 

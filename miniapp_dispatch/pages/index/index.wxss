@@ -1,5 +1,142 @@
 @import "../../app.wxss";
 
+.todo-panel {
+  margin-top: 20rpx;
+  border-radius: 32rpx;
+  padding: 24rpx;
+  background: #ffffff;
+  border: 1rpx solid #dbe5f0;
+  box-shadow: 0 16rpx 38rpx rgba(15, 23, 42, 0.07);
+}
+
+.todo-head,
+.panel-header-lite,
+.pressure-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.section-kicker {
+  color: #2563eb;
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.todo-title {
+  margin-top: 4rpx;
+  color: #0f172a;
+  font-size: 36rpx;
+  font-weight: 950;
+}
+
+.live-pill,
+.soft-count {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 8rpx 14rpx;
+  color: #15803d;
+  background: #dcfce7;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.todo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.todo-card {
+  min-height: 144rpx;
+  box-sizing: border-box;
+  padding: 18rpx;
+  border-radius: 24rpx;
+  border: 1rpx solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.todo-card.primary {
+  color: #ffffff;
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+}
+
+.todo-card.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.todo-card.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.todo-card text,
+.todo-card view {
+  color: #64748b;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.todo-card.primary text,
+.todo-card.primary view {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.todo-card strong {
+  display: block;
+  margin: 8rpx 0 4rpx;
+  color: #0f172a;
+  font-size: 44rpx;
+  font-weight: 950;
+}
+
+.todo-card.primary strong {
+  color: #ffffff;
+}
+
+.pressure-list {
+  margin-top: 16rpx;
+}
+
+.pressure-row {
+  min-height: 80rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #edf2f7;
+}
+
+.pressure-row:last-child {
+  border-bottom: 0;
+}
+
+.pressure-row.danger {
+  background: transparent;
+}
+
+.pressure-name {
+  color: #0f172a;
+  font-size: 27rpx;
+  font-weight: 900;
+}
+
+.pressure-badge {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 8rpx 12rpx;
+  color: #475569;
+  background: #f1f5f9;
+  font-size: 21rpx;
+  font-weight: 900;
+}
+
+.pressure-badge.danger {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
 .driver-stat-head,
 .driver-stat-row {
   display: grid;

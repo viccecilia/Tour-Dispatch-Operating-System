@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 export type PageKey =
   | "dashboard"
+  | "notifications"
   | "parser"
   | "orders"
   | "dispatch"
@@ -27,6 +28,7 @@ function pageFromHash(): PageKey {
   const hash = window.location.hash.replace("#", "");
   const known: PageKey[] = [
     "dashboard",
+    "notifications",
     "parser",
     "orders",
     "dispatch",

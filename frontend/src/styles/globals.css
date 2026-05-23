@@ -4,24 +4,28 @@
 
 @layer base {
   :root {
-    --background: 215 24% 97%;
+    --background: 210 29% 97%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    --muted: 216 33% 94%;
-    --muted-foreground: 215 16% 47%;
-    --primary: 218 88% 54%;
+    --muted: 214 32% 95%;
+    --muted-foreground: 215 14% 45%;
+    --primary: 217 82% 52%;
     --primary-foreground: 0 0% 100%;
-    --success: 151 78% 35%;
+    --success: 151 69% 34%;
     --success-foreground: 0 0% 100%;
-    --warning: 36 93% 50%;
+    --warning: 38 91% 52%;
     --warning-foreground: 222 47% 11%;
-    --danger: 0 78% 58%;
+    --danger: 0 72% 54%;
     --danger-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 218 88% 54%;
-    --radius: 8px;
+    --border: 214 30% 89%;
+    --input: 214 30% 89%;
+    --ring: 217 82% 52%;
+    --surface-soft: 213 35% 96%;
+    --info: 197 79% 42%;
+    --shadow-soft: 0 14px 34px rgba(15, 23, 42, 0.06);
+    --shadow-runtime: 0 18px 44px rgba(15, 23, 42, 0.08);
+    --radius: 14px;
   }
 
   * {
@@ -32,21 +36,78 @@
     @apply bg-background text-foreground antialiased;
     font-family:
       Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-      "Segoe UI", sans-serif;
+      "Segoe UI", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    letter-spacing: 0;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: rgba(37, 99, 235, 0.16);
   }
 }
 
 @layer components {
+  .runtime-page {
+    animation: runtime-page-in 220ms ease-out both;
+  }
+
+  .micro-surface {
+    transition:
+      transform 160ms ease,
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease;
+  }
+
+  .micro-surface:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+  }
+
+  .micro-press {
+    transition:
+      transform 120ms ease,
+      box-shadow 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease;
+  }
+
+  .micro-press:active {
+    transform: translateY(1px) scale(0.99);
+  }
+
+  .focus-runtime {
+    @apply outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-blue-300;
+  }
+
   .data-table {
     @apply w-full border-separate border-spacing-0 text-sm;
   }
 
   .data-table th {
-    @apply border-b border-border bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-normal text-slate-500;
+    @apply border-b border-border bg-slate-50/80 px-3 py-3 text-left text-xs font-bold tracking-normal text-slate-500;
   }
 
   .data-table td {
     @apply border-b border-border px-3 py-3 align-middle text-slate-700;
+  }
+
+  .data-table tbody tr {
+    transition:
+      background-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-slate-50/80;
   }
 
   .date-alert-cell {
@@ -70,6 +131,181 @@
   }
 
   .panel {
-    @apply rounded-lg border border-border bg-card shadow-panel;
+    @apply rounded-[22px] border border-border bg-card;
+    box-shadow: var(--shadow-soft);
+    transition:
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .runtime-card {
+    @apply rounded-[24px] border border-border bg-card;
+    box-shadow: var(--shadow-runtime);
+    transition:
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .runtime-hero {
+    @apply rounded-[28px] border border-white/70 bg-white text-slate-900;
+    box-shadow: var(--shadow-runtime);
+    animation: runtime-fade-up 260ms ease-out both;
+  }
+
+  .runtime-strip {
+    @apply rounded-[28px] border border-white/70 bg-white p-5 text-slate-900;
+    box-shadow: var(--shadow-runtime);
+    animation: runtime-fade-up 240ms ease-out both;
+  }
+
+  .runtime-eyebrow {
+    @apply text-xs font-black uppercase tracking-normal text-blue-600;
+  }
+
+  .runtime-title {
+    @apply mt-1 text-2xl font-black tracking-normal text-slate-950;
+  }
+
+  .runtime-subtitle {
+    @apply mt-1 text-sm font-medium text-slate-500;
+  }
+
+  .runtime-pill {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-bold;
+    transition:
+      transform 140ms ease,
+      background-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .runtime-pill:hover {
+    transform: translateY(-1px);
+  }
+
+  .runtime-pill-blue {
+    @apply bg-blue-50 text-blue-700;
+  }
+
+  .runtime-pill-green {
+    @apply bg-emerald-50 text-emerald-700;
+  }
+
+  .runtime-pill-amber {
+    @apply bg-amber-50 text-amber-700;
+  }
+
+  .runtime-pill-red {
+    @apply bg-red-50 text-red-700;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .status-assigned,
+  .status-pending {
+    @apply bg-blue-50 text-blue-700;
+  }
+
+  .status-confirmed,
+  .status-departed,
+  .status-arrived,
+  .status-in_service {
+    @apply bg-amber-50 text-amber-700;
+  }
+
+  .status-completed,
+  .status-returned {
+    @apply bg-emerald-50 text-emerald-700;
+  }
+
+  .status-failed,
+  .status-danger {
+    @apply bg-red-50 text-red-700;
+  }
+
+  .empty-panel {
+    @apply rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-8 text-center text-sm text-slate-500;
+  }
+
+  .runtime-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: #eef3f8;
+  }
+
+  .runtime-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+    animation: runtime-shimmer 1.45s infinite;
+  }
+
+  .runtime-pulse-dot {
+    position: relative;
+  }
+
+  .runtime-pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    opacity: 0.18;
+    animation: runtime-pulse 1.8s ease-out infinite;
+  }
+}
+
+@keyframes runtime-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes runtime-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes runtime-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes runtime-pulse {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.24;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
   }
 }

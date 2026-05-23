@@ -1,0 +1,26 @@
+[
+  {
+    "id": "R068-FB-001",
+    "priority": "P2",
+    "role": "driver",
+    "area": "driver_home",
+    "issue": "司机首页需要真机确认下一步按钮是否足够醒目。",
+    "expected": "司机打开首页 3 秒内知道下一步。",
+    "evidence": "待真机截图",
+    "owner": "product",
+    "status": "new",
+    "next_action": "安排司机端真机试运行并截图记录。"
+  },
+  {
+    "id": "R068-FB-002",
+    "priority": "P2",
+    "role": "dispatcher",
+    "area": "dispatch_mobile",
+    "issue": "手机端连续处理 50 单时需要确认滚动和筛选是否顺手。",
+    "expected": "50 单导入、筛选、派车不应占满屏幕后无法操作。",
+    "evidence": "待真机录屏",
+    "owner": "product",
+    "status": "new",
+    "next_action": "使用真实订单文本进行批量导入试运行。"
+  }
+]

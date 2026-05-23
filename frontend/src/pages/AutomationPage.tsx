@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, PlayCircle, ToggleLeft, ToggleRight } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { EmptyPanel, ErrorPanel, SkeletonCard } from "@/components/OperationalState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
@@ -86,12 +87,8 @@ export function AutomationPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflow-rules"] }),
   });
 
-  if (rules.isLoading) {
-    return <div className="panel p-8 text-sm text-slate-500">正在加载自动化规则...</div>;
-  }
-  if (rules.isError) {
-    return <div className="panel p-8 text-sm text-red-600">自动化规则接口加载失败，请检查后端服务。</div>;
-  }
+  const ruleList = rules.data || [];
+  const runList = runs.data || [];
 
   return (
     <div className="space-y-6">
@@ -122,8 +119,19 @@ export function AutomationPage() {
         </Card>
       ) : null}
 
+      {rules.isError ? (
+        <ErrorPanel
+          title="自动化规则接口暂时不可用"
+          description="规则列表、触发条件、动作和执行日志结构仍保留，后端恢复后可继续操作。"
+          requestPath="/api/workflows/rules"
+          onRetry={() => rules.refetch()}
+        />
+      ) : null}
+
       <section className="grid gap-4 xl:grid-cols-2">
-        {(rules.data || []).map((rule) => (
+        {rules.isLoading ? (
+          Array.from({ length: 4 }).map((_, index) => <SkeletonCard key={index} title="规则列表加载中" rows={4} />)
+        ) : ruleList.length ? ruleList.map((rule) => (
           <Card key={rule.id}>
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
@@ -165,7 +173,14 @@ export function AutomationPage() {
               </div>
             </CardContent>
           </Card>
-        ))}
+        )) : (
+          <>
+            <RulePlaceholder title="规则列表区域" desc="展示自动提醒、异常标记和派车建议规则。" />
+            <RulePlaceholder title="触发条件区域" desc="展示订单、司机报备、资源到期等触发源。" />
+            <RulePlaceholder title="动作区域" desc="展示生成通知、标记异常、生成建议等动作。" />
+            <RulePlaceholder title="执行策略区域" desc="显示规则优先级、启停状态和人工运行入口。" />
+          </>
+        )}
       </section>
 
       <Card>
@@ -184,7 +199,7 @@ export function AutomationPage() {
               </tr>
             </thead>
             <tbody>
-              {(runs.data || []).slice(0, 20).map((run) => (
+              {runList.slice(0, 20).map((run) => (
                 <tr key={run.id}>
                   <td>{run.created_at || "-"}</td>
                   <td>
@@ -197,9 +212,44 @@ export function AutomationPage() {
               ))}
             </tbody>
           </table>
+          {runs.isError ? (
+            <div className="p-4">
+              <ErrorPanel title="最近执行日志读取失败" requestPath="/api/workflows/runs" onRetry={() => runs.refetch()} />
+            </div>
+          ) : null}
+          {!runs.isLoading && !runs.isError && !runList.length ? (
+            <div className="p-4">
+              <EmptyPanel title="暂无执行日志" description="手动运行规则或定时任务触发后，这里会出现最近执行记录。" />
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function RulePlaceholder({ title, desc }: { title: string; desc: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+            <Bot size={20} />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-950">{title}</h3>
+            <p className="mt-1 text-sm text-slate-500">{desc}</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Meta label="触发条件" value="待后端同步" />
+          <Meta label="执行动作" value="生成提醒 / 建议" />
+          <Meta label="状态" value="离线模式" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

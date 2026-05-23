@@ -56,6 +56,7 @@ DRAFT_FIELDS = [
     "driver_salary_jpy",
     "remark",
     "parse_result_json",
+    "source_channel",
 ]
 
 EDITABLE_FIELDS = [
@@ -92,6 +93,7 @@ EDITABLE_FIELDS = [
     "driver_salary_jpy",
     "remark",
     "parse_status",
+    "source_channel",
 ]
 
 
@@ -106,6 +108,7 @@ def parse_text_to_draft(raw_text: str, source_type: str = "text") -> dict[str, A
         quality["confidence"] = min(float(quality["confidence"]), 0.35)
         quality["confidence_level"] = "low"
         quality["low_confidence"] = True
+        quality["pilot_feedback_hint"] = "解析失败但已保留原文，请在待确认表展开后手工补齐日期、时间、路线和车型。"
     parsed["raw_text"] = raw_text
     parsed["source_type"] = source_type
     parsed["parse_status"] = parse_status
@@ -323,6 +326,7 @@ def confirm_draft(draft_id: str) -> dict[str, Any] | None:
             "remark": _merge_remark(draft.get("remark"), f"原始文本：{draft.get('raw_text') or ''}"),
             "dispatch_status": "unassigned",
             "settlement_status": "pending",
+            "source_channel": draft.get("source_channel"),
         }
     )
     with get_connection() as conn:

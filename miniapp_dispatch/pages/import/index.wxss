@@ -1,5 +1,22 @@
 @import "../../app.wxss";
 
+.panel-header-lite {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.fold-badge {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 8rpx 14rpx;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
 .intake-textarea {
   min-height: 320rpx;
 }
