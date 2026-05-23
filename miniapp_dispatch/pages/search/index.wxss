@@ -1,0 +1,35 @@
+@import "../../app.wxss";
+
+.search-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.search-tabs view {
+  height: 64rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.search-tabs view.active {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.result-badge {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 8rpx 13rpx;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 21rpx;
+  font-weight: 900;
+}

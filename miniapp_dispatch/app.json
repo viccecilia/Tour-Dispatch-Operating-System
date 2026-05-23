@@ -1,0 +1,55 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/import/index",
+    "pages/dispatch/index",
+    "pages/search/index",
+    "pages/map/index",
+    "pages/finance/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "移动调度",
+    "navigationBarBackgroundColor": "#07111f",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#eef3f8"
+  },
+  "tabBar": {
+    "color": "#64748b",
+    "selectedColor": "#1d4ed8",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/import/index",
+        "text": "导入"
+      },
+      {
+        "pagePath": "pages/dispatch/index",
+        "text": "派车"
+      },
+      {
+        "pagePath": "pages/map/index",
+        "text": "地图"
+      },
+      {
+        "pagePath": "pages/finance/index",
+        "text": "财务"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于调度查看司机位置和车辆状态"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ]
+}

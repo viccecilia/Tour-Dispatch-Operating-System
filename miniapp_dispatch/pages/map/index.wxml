@@ -1,0 +1,79 @@
+<view class="map-page">
+  <map
+    class="fleet-map"
+    latitude="{{latitude}}"
+    longitude="{{longitude}}"
+    markers="{{markers}}"
+    scale="{{scale}}"
+    show-location
+    bindmarkertap="onMarkerTap"
+  ></map>
+
+  <view class="map-top">
+    <view class="map-title-row">
+      <view>
+        <view class="map-eyebrow">FLEET MAP</view>
+        <view class="map-title">车队地图</view>
+      </view>
+      <button class="refresh-button" bindtap="loadData">刷新</button>
+    </view>
+
+    <view class="search-box">
+      <input
+        value="{{query}}"
+        bindinput="onSearchInput"
+        placeholder="搜索司机、车辆、订单号、路线"
+        confirm-type="search"
+      />
+    </view>
+
+    <view class="mode-tabs">
+      <view data-mode="drivers" bindtap="setMode" class="mode-tab {{mode === 'drivers' ? 'active' : ''}}">
+        司机 {{filteredDrivers.length}}
+      </view>
+      <view data-mode="orders" bindtap="setMode" class="mode-tab {{mode === 'orders' ? 'active' : ''}}">
+        订单 {{filteredOrders.length}}
+      </view>
+    </view>
+  </view>
+
+  <view class="map-bottom">
+    <view wx:if="{{selected}}" class="selected-card">
+      <view class="selected-title">{{selected.title}}</view>
+      <view class="selected-meta">{{selected.meta}}</view>
+      <view wx:if="{{selected.sub}}" class="selected-sub">{{selected.sub}}</view>
+    </view>
+
+    <scroll-view wx:if="{{mode === 'drivers'}}" scroll-y class="result-list">
+      <view
+        wx:for="{{filteredDrivers}}"
+        wx:key="driver_id"
+        data-driver-id="{{item.driver_id}}"
+        bindtap="focusDriver"
+        class="result-row"
+      >
+        <view>
+          <view class="result-title">{{item.driver_name || '未命名司机'}}</view>
+          <view class="result-meta">{{item.plate_number || '未绑定车辆'}} · {{item.locationText}}</view>
+        </view>
+        <text class="result-badge {{item.hasLocation ? 'online' : ''}}">{{item.hasLocation ? '有定位' : '无定位'}}</text>
+      </view>
+    </scroll-view>
+
+    <scroll-view wx:else scroll-y class="result-list">
+      <view
+        wx:for="{{filteredOrders}}"
+        wx:key="assignment_id"
+        data-assignment-id="{{item.assignment_id}}"
+        bindtap="focusOrder"
+        class="result-row"
+      >
+        <view>
+          <view class="result-title">{{item.oid || item.order_id}} · {{item.driver_name || '未派司机'}}</view>
+          <view class="result-meta">{{item.timeText}} · {{item.routeText}}</view>
+        </view>
+        <text class="result-badge">{{item.execution_status || item.status}}</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>

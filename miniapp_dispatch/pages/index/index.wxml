@@ -1,0 +1,63 @@
+<view class="page">
+  <view class="hero">
+    <view class="hero-eyebrow">DISPATCH MOBILE</view>
+    <view class="hero-title">{{session ? session.dispatcher.dispatcher_name : '调度员登录'}}</view>
+    <view class="hero-meta">{{session ? session.dispatcher.dispatcher_code + ' · ' + session.dispatcher.dispatcher_role : '移动调度运行入口'}}</view>
+  </view>
+
+  <view wx:if="{{!session}}" class="panel stack">
+    <view class="panel-title">账号登录</view>
+    <input class="input" value="{{username}}" bindinput="onUsername" placeholder="用户名" />
+    <input class="input" value="{{password}}" password bindinput="onPassword" placeholder="密码" />
+    <button class="button-primary" loading="{{loading}}" bindtap="login">进入移动调度</button>
+    <view wx:if="{{error}}" class="muted">{{error}}</view>
+  </view>
+
+  <view wx:else>
+    <view class="panel">
+      <view class="panel-title">今日运营</view>
+      <view class="grid">
+        <view class="metric"><text>今日订单</text><strong>{{dashboard.counts.today_orders || 0}}</strong></view>
+        <view class="metric"><text>未派车</text><strong>{{dashboard.counts.unassigned_orders || 0}}</strong></view>
+        <view class="metric"><text>在线司机</text><strong>{{dashboard.counts.online_drivers || 0}}</strong></view>
+        <view class="metric"><text>待确认</text><strong>{{dashboard.counts.pending_confirmations || 0}}</strong></view>
+      </view>
+    </view>
+
+    <view class="panel">
+      <view class="panel-title">司机本月统计</view>
+      <view class="driver-stat-head">
+        <text>司机</text>
+        <text>今日</text>
+        <text>本月</text>
+        <text>休息</text>
+        <text>连续</text>
+      </view>
+      <view class="driver-stat-row {{item.alert ? 'danger' : ''}}" wx:for="{{driverStats}}" wx:key="driver_id">
+        <text>{{item.driver_name}}</text>
+        <text>{{item.today_orders}}</text>
+        <text>{{item.month_orders}}</text>
+        <text>{{item.rest_days}}</text>
+        <text>{{item.continuous_days}}</text>
+      </view>
+      <view wx:if="{{!driverStats.length}}" class="muted">暂无司机订单统计。</view>
+      <view class="warning-note">连续工作超过 13 天会标红，建议安排休息。</view>
+    </view>
+
+    <view class="panel">
+      <view class="panel-title">最近通知</view>
+      <view class="list">
+        <view wx:for="{{notifications}}" wx:key="id" class="row">
+          <view class="row-title">{{item.title}}</view>
+          <view class="muted">{{item.notification_type}} · {{item.priority}} · {{item.status}}</view>
+        </view>
+        <view wx:if="{{!notifications.length}}" class="muted">暂无关键通知。</view>
+      </view>
+    </view>
+
+    <view class="grid">
+      <button class="button-secondary" bindtap="goDispatch">导入并派车</button>
+      <button class="button-secondary" bindtap="goFinance">查看财务</button>
+    </view>
+  </view>
+</view>

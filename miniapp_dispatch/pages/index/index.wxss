@@ -1,0 +1,36 @@
+@import "../../app.wxss";
+
+.driver-stat-head,
+.driver-stat-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.7fr 0.7fr 0.7fr 0.7fr;
+  gap: 10rpx;
+  align-items: center;
+}
+
+.driver-stat-head {
+  margin-top: 14rpx;
+  padding: 12rpx 0;
+  color: #64748b;
+  font-size: 21rpx;
+  font-weight: 850;
+}
+
+.driver-stat-row {
+  min-height: 62rpx;
+  border-top: 1rpx solid #e2e8f0;
+  color: #0f172a;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.driver-stat-row.danger {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.warning-note {
+  margin-top: 14rpx;
+  color: #b45309;
+  font-size: 22rpx;
+}

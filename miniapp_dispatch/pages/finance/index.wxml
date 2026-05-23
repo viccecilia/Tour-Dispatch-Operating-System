@@ -1,0 +1,35 @@
+<view class="page">
+  <view class="hero finance-hero">
+    <view class="hero-eyebrow">MOBILE FINANCE</view>
+    <view class="hero-title">本月财务</view>
+    <view class="hero-meta">订单数、金额合计和待结算摘要。</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">订单金额</view>
+    <view class="grid">
+      <view class="metric"><text>订单数</text><strong>{{summary.order_count || 0}}</strong></view>
+      <view class="metric"><text>合计金额</text><strong>¥{{summary.total_amount || 0}}</strong></view>
+      <view class="metric"><text>待结算</text><strong>¥{{summary.pending_amount || 0}}</strong></view>
+      <view class="metric"><text>今日金额</text><strong>¥{{summary.today_amount || 0}}</strong></view>
+      <view class="metric"><text>司机垫付</text><strong>¥{{summary.driver_advance_total || 0}}</strong></view>
+      <view class="metric"><text>司机代收</text><strong>¥{{summary.driver_collect_total || 0}}</strong></view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">最近订单</view>
+    <view class="finance-list">
+      <view wx:for="{{orders}}" wx:key="order_id" class="finance-row">
+        <view>
+          <view class="row-title">{{item.oid || item.order_id}} · {{item.agency_name || '未填旅行社'}}</view>
+          <view class="muted">{{item.order_date}} {{item.start_time || ''}} · {{item.driver_name || '未派司机'}}</view>
+        </view>
+        <view class="amount">¥{{item.price || 0}}</view>
+      </view>
+      <view wx:if="{{!orders.length}}" class="muted">暂无财务订单。</view>
+    </view>
+  </view>
+
+  <view wx:if="{{message}}" class="panel muted">{{message}}</view>
+</view>
