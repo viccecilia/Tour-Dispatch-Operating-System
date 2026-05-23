@@ -12,7 +12,7 @@
   <view class="map-top">
     <view class="map-title-row">
       <view>
-        <view class="map-eyebrow">FLEET MAP</view>
+        <view class="map-eyebrow">FLEET LIVE</view>
         <view class="map-title">车队地图</view>
       </view>
       <button class="refresh-button" bindtap="loadData">刷新</button>
@@ -20,15 +20,15 @@
 
     <view class="map-alert-row">
       <view><text>在线司机</text><strong>{{filteredDrivers.length}}</strong></view>
-      <view><text>即将开始</text><strong>{{filteredOrders.length}}</strong></view>
-      <view><text>风险订单</text><strong>{{selected ? 1 : 0}}</strong></view>
+      <view><text>执行订单</text><strong>{{filteredOrders.length}}</strong></view>
+      <view><text>已选目标</text><strong>{{selected ? 1 : 0}}</strong></view>
     </view>
 
     <view class="search-box">
       <input
         value="{{query}}"
         bindinput="onSearchInput"
-        placeholder="搜索司机、车辆、订单号、路线"
+        placeholder="搜索司机、车辆、订单或路线"
         confirm-type="search"
       />
     </view>

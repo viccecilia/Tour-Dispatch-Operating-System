@@ -78,6 +78,7 @@ module.exports = {
   parseText: (text) => request('/api/dispatch-mobile/parser/text', { method: 'POST', data: withDispatcher({ text, batch: true }) }),
   drafts: () => request('/api/parser/drafts'),
   updateDraft: (id, data) => request(`/api/dispatch-mobile/drafts/${id}`, { method: 'PUT', data: withDispatcher(data) }),
+  updateOrder: (id, data) => request(`/api/orders/${id}`, { method: 'PUT', data: withDispatcher(data) }),
   confirmDraft: (id) => request(`/api/parser/drafts/${id}/confirm`, { method: 'POST', data: withDispatcher({}) }),
   unassignedOrders: () => {
     const session = getSession();

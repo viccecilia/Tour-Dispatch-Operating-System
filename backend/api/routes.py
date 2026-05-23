@@ -61,6 +61,7 @@ from backend.services.driver_service import (
     get_driver_assignment,
     get_assignment_evidence_chain,
     get_driver_dashboard,
+    get_driver_profile,
     get_driver_workbench,
     get_order_evidence_chain,
     list_driver_evidence,
@@ -395,6 +396,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/driver/dashboard":
             self.send_json(get_driver_dashboard(self.driver_id(params)))
+            return
+        if path == "/api/driver/profile":
+            self.send_json(get_driver_profile(self.driver_id(params)))
             return
         if path == "/api/driver/workbench":
             self.send_json(get_driver_workbench(self.driver_id(params)))

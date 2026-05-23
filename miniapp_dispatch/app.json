@@ -1,8 +1,8 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/import/index",
     "pages/dispatch/index",
+    "pages/import/index",
     "pages/search/index",
     "pages/map/index",
     "pages/finance/index",
@@ -12,21 +12,18 @@
     "navigationBarTitleText": "移动调度",
     "navigationBarBackgroundColor": "#07111f",
     "navigationBarTextStyle": "white",
-    "backgroundColor": "#eef3f8"
+    "backgroundColor": "#f4f7fb"
   },
   "tabBar": {
-    "color": "#64748b",
-    "selectedColor": "#1d4ed8",
+    "custom": true,
+    "color": "#718096",
+    "selectedColor": "#246bfe",
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/index/index",
         "text": "首页"
-      },
-      {
-        "pagePath": "pages/import/index",
-        "text": "导入"
       },
       {
         "pagePath": "pages/dispatch/index",
@@ -39,6 +36,10 @@
       {
         "pagePath": "pages/finance/index",
         "text": "财务"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
       }
     ]
   },
@@ -46,7 +47,7 @@
   "sitemapLocation": "sitemap.json",
   "permission": {
     "scope.userLocation": {
-      "desc": "用于调度查看司机位置和车辆状态"
+      "desc": "用于查看司机和车辆位置"
     }
   },
   "requiredPrivateInfos": [

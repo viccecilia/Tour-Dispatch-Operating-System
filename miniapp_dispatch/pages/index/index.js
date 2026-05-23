@@ -11,6 +11,8 @@ Page({
       fleet_status: {}
     },
     driverStats: [],
+    visibleDriverStats: [],
+    pressureExpanded: false,
     notifications: [],
     error: '',
     loading: false
@@ -48,12 +50,16 @@ Page({
       api.assignments().catch(() => ({ assignments: [] })),
       api.drivers().catch(() => ({ drivers: [] }))
     ])
-      .then(([dashboard, notifications, assignments, drivers]) => this.setData({
-        dashboard,
-        notifications: (notifications.notifications || []).slice(0, 5),
-        driverStats: this.buildDriverStats(assignments.assignments || [], drivers.drivers || []),
-        loading: false
-      }))
+      .then(([dashboard, notifications, assignments, drivers]) => {
+        const driverStats = this.buildDriverStats(assignments.assignments || [], drivers.drivers || []);
+        this.setData({
+          dashboard,
+          notifications: (notifications.notifications || []).slice(0, 5),
+          driverStats,
+          visibleDriverStats: this.visibleDriverStats(driverStats, this.data.pressureExpanded),
+          loading: false
+        });
+      })
       .catch(() => this.setData({ loading: false, error: '无法加载移动调度首页。' }));
   },
 
@@ -63,6 +69,18 @@ Page({
 
   goFinance() {
     wx.switchTab({ url: '/pages/finance/index' });
+  },
+
+  togglePressureList() {
+    const pressureExpanded = !this.data.pressureExpanded;
+    this.setData({
+      pressureExpanded,
+      visibleDriverStats: this.visibleDriverStats(this.data.driverStats, pressureExpanded)
+    });
+  },
+
+  visibleDriverStats(driverStats, expanded) {
+    return expanded ? driverStats : driverStats.slice(0, 3);
   },
 
   buildDriverStats(assignments, drivers) {
@@ -100,8 +118,11 @@ Page({
           alert: continuous > 13
         };
       })
-      .sort((a, b) => b.month_orders - a.month_orders)
-      .slice(0, 8);
+      .sort((a, b) => {
+        if (b.continuous_days !== a.continuous_days) return b.continuous_days - a.continuous_days;
+        if (b.month_orders !== a.month_orders) return b.month_orders - a.month_orders;
+        return b.today_orders - a.today_orders;
+      });
   },
 
   continuousWorkDays(activeDays, today) {

@@ -631,6 +631,23 @@ def get_driver_workbench(driver_id: Any) -> dict[str, Any]:
     }
 
 
+def get_driver_profile(driver_id: Any) -> dict[str, Any]:
+    driver_id_int = _to_int(driver_id)
+    if not driver_id_int:
+        return {"driver": None}
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, name, driver_code, driver_language, office, phone, email,
+                   license_due_date, health_check_due_date, driver_status, status
+            FROM drivers
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (get_current_tenant_id(), driver_id_int),
+        ).fetchone()
+    return {"driver": dict(row) if row else None}
+
+
 def upload_driver_evidence(payload: dict[str, Any]) -> dict[str, Any]:
     driver_id = _to_int(payload.get("driver_id"))
     assignment_id = _to_int(payload.get("assignment_id"))

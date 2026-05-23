@@ -1,223 +1,495 @@
 const api = require('../../utils/api');
 
+const SAMPLE_TEXT = [
+  '5.29 08:00 KIX接机大阪市内 3代 绿450',
+  '5.29 10:20 大阪市内-京都市内 包车 3代 1500',
+  '5.29 13:30 京都酒店-关西机场 3代 儿童座椅 绿600'
+].join('\n');
+
 Page({
   data: {
-    orders: [],
-    visibleOrders: [],
-    pickupOrders: [],
-    dropoffOrders: [],
-    charterOrders: [],
-    timeGroups: [],
-    activeTimeGroup: 'all',
+    importOpen: false,
+    importText: SAMPLE_TEXT,
+    pendingRows: [],
+    charterRows: [],
+    pickupRows: [],
+    dropoffRows: [],
     drivers: [],
     vehicles: [],
     assignments: [],
-    locations: [],
-    selectedOrderIds: [],
+    selectedKeys: [],
     driverId: '',
     vehicleId: '',
-    activeResourceTab: 'drivers',
+    editingKey: '',
+    editing: {},
+    sortMode: false,
+    charterCollapsed: false,
     loading: false,
     message: '',
     conflictText: '',
-    canAssign: false,
-    assignButtonText: '请选择订单',
     preview: {
-      orders: 0,
-      route: '请选择订单',
-      driver: '未选择司机',
-      vehicle: '未选择车辆'
-    }
+      orderCount: 0,
+      driverName: '未选司机',
+      vehicleName: '未选车辆'
+    },
+    canAssign: false
   },
+  _lastTapKey: '',
+  _lastTapAt: 0,
+  _tapTimer: null,
 
   onShow() {
     this.loadAll();
   },
 
-  loadAll() {
+  toggleImport() {
+    this.setData({ importOpen: !this.data.importOpen });
+  },
+
+  toggleCharter() {
+    this.setData({ charterCollapsed: !this.data.charterCollapsed });
+  },
+
+  onImportText(e) {
+    this.setData({ importText: e.detail.value });
+  },
+
+  noop() {},
+
+  parseOrders() {
+    const text = String(this.data.importText || '').trim();
+    if (!text) {
+      wx.showToast({ title: '请先粘贴订单文本', icon: 'none' });
+      return;
+    }
     this.setData({ loading: true, message: '', conflictText: '' });
+    api.parseText(text)
+      .then((res) => {
+        this.setData({
+          loading: false,
+          importOpen: false,
+          message: `已解析 ${res.count || 0} 条，已按包车/接机/送机分类。`
+        });
+        this.loadAll();
+      })
+      .catch(() => {
+        this.setData({ loading: false, conflictText: '解析失败，请检查后端服务或订单文本格式。' });
+      });
+  },
+
+  loadAll() {
+    this.setData({ loading: true });
     Promise.all([
-      api.unassignedOrders(),
+      api.drafts().catch(() => ({ drafts: [] })),
+      api.unassignedOrders().catch(() => ({ orders: [] })),
       api.drivers(),
       api.vehicles(),
-      api.assignments(),
-      api.fleetLocations().catch(() => ({ locations: [] }))
+      api.assignments()
     ])
-      .then(([orders, drivers, vehicles, assignments, locations]) => {
-        const activeAssignments = assignments.assignments || [];
-        const decoratedOrders = this.decorateOrders(this.sortOrders(orders.orders || []));
-        const timeGroups = this.buildTimeGroups(decoratedOrders);
+      .then(([draftsRes, ordersRes, driversRes, vehiclesRes, assignmentsRes]) => {
+        const drafts = (draftsRes.drafts || [])
+          .filter((item) => item.parse_status !== 'confirmed' && item.parse_status !== 'discarded')
+          .map((item) => this.decoratePendingRow({ ...item, kind: 'draft' }));
+        const orders = (ordersRes.orders || []).map((item) => this.decoratePendingRow({ ...item, kind: 'order' }));
+        const pendingRows = this.sortPendingRows(drafts.concat(orders)).slice(0, 120);
+        const assignments = assignmentsRes.assignments || [];
         this.setData({
-          orders: decoratedOrders,
-          timeGroups,
-          visibleOrders: this.filterVisibleOrders(decoratedOrders, this.data.activeTimeGroup),
-          pickupOrders: decoratedOrders.filter((item) => item.dispatchKind === 'pickup'),
-          dropoffOrders: decoratedOrders.filter((item) => item.dispatchKind === 'dropoff'),
-          charterOrders: decoratedOrders.filter((item) => item.dispatchKind === 'charter'),
-          drivers: this.decorateDrivers(drivers.drivers || [], activeAssignments, locations.locations || []),
-          vehicles: this.decorateVehicles(vehicles.vehicles || [], activeAssignments),
-          assignments: activeAssignments.slice(0, 16),
-          locations: locations.locations || [],
+          pendingRows,
+          ...this.groupPendingRows(pendingRows),
+          drivers: this.decorateDrivers(driversRes.drivers || [], assignments),
+          vehicles: this.decorateVehicles(vehiclesRes.vehicles || [], assignments),
+          assignments,
           loading: false
         });
         this.updatePreview();
       })
       .catch(() => {
-        this.setData({ loading: false, message: '无法加载派车数据，请检查后端服务。' });
-        this.updatePreview();
+        this.setData({ loading: false, conflictText: '加载派车数据失败，请确认后端在线。' });
       });
   },
 
-
-  decorateOrders(orders) {
-    return orders.slice(0, 50).map((item) => ({
-      ...item,
-      selected: this.data.selectedOrderIds.includes(Number(item.id)),
-      dispatchKind: this.classifyAirportOrder(item),
-      routeText: `${item.pickup_location || '-'} -> ${item.dropoff_location || '-'}`,
-      timeText: `${item.order_date || '-'} ${item.start_time || '--:--'}-${item.end_time || '--:--'}`
-    }));
+  decoratePendingRow(row) {
+    const key = `${row.kind}-${row.id}`;
+    const selected = this.data.selectedKeys.includes(key);
+    const risks = this.getRowRisks(row);
+    const dispatchKind = this.classifyOrder(row);
+    return {
+      ...row,
+      key,
+      selected,
+      dispatchKind,
+      riskText: risks.join('、'),
+      hasRisk: risks.length > 0,
+      sourceText: row.kind === 'draft' ? '草稿' : '订单',
+      typeText: dispatchKind === 'charter' ? '包车' : dispatchKind === 'dropoff' ? '送机' : '接机',
+      timeText: `${row.order_date || '缺日期'} ${row.start_time || '--:--'}-${row.end_time || '--:--'}`,
+      compactTimeText: `${row.start_time || '--:--'}-${row.end_time || '--:--'}`,
+      routeText: `${row.pickup_location || '缺起点'} → ${row.dropoff_location || '缺终点'}`,
+      priceText: row.price ? `¥${row.price}` : '缺价格'
+    };
   },
 
-  classifyAirportOrder(order) {
-    const type = String(order.order_type || '').toLowerCase();
-    const pickup = String(order.pickup_location || '').toLowerCase();
-    const dropoff = String(order.dropoff_location || '').toLowerCase();
-    const allText = `${type} ${pickup} ${dropoff} ${String(order.remark || '').toLowerCase()}`;
-    const airportWords = ['机场', '空港', 'kix', '関空', '关空', '关西', '成田', '羽田', '伊丹', '神户机场', '神戸空港'];
-    if (type.includes('charter') || allText.includes('包车') || allText.includes('包車')) return 'charter';
-    if (type.includes('airport_pickup') || type.includes('接机')) return 'pickup';
-    if (type.includes('airport_dropoff') || type.includes('送机')) return 'dropoff';
-    const pickupAirport = airportWords.some((word) => pickup.includes(String(word).toLowerCase()));
-    const dropoffAirport = airportWords.some((word) => dropoff.includes(String(word).toLowerCase()));
-    if (pickupAirport && !dropoffAirport) return 'pickup';
+  classifyOrder(row) {
+    const text = [
+      row.order_type,
+      row.pickup_location,
+      row.dropoff_location,
+      row.remark,
+      row.raw_text
+    ].filter(Boolean).join(' ').toLowerCase();
+    const pickup = String(row.pickup_location || '').toLowerCase();
+    const dropoff = String(row.dropoff_location || '').toLowerCase();
+    const airportWords = ['kix', '机场', '空港', '关西', '关空', '羽田', '成田', '伊丹', '神户机场'];
+    if (text.includes('包车') || text.includes('包車') || text.includes('charter')) return 'charter';
+    if (text.includes('送机') || text.includes('送機') || text.includes('airport_dropoff')) return 'dropoff';
+    if (text.includes('接机') || text.includes('接機') || text.includes('airport_pickup')) return 'pickup';
+    const pickupAirport = airportWords.some((word) => pickup.includes(word));
+    const dropoffAirport = airportWords.some((word) => dropoff.includes(word));
     if (dropoffAirport && !pickupAirport) return 'dropoff';
-    if (String(order.remark || '').includes('接机')) return 'pickup';
-    if (String(order.remark || '').includes('送机')) return 'dropoff';
     return 'pickup';
   },
 
-  sortOrders(orders) {
-    return orders.slice().sort((a, b) => {
+  groupPendingRows(rows) {
+    return {
+      charterRows: rows.filter((item) => item.dispatchKind === 'charter'),
+      pickupRows: rows.filter((item) => item.dispatchKind === 'pickup'),
+      dropoffRows: rows.filter((item) => item.dispatchKind === 'dropoff')
+    };
+  },
+
+  getRowRisks(row) {
+    const risks = [];
+    if (!row.order_date || !row.start_time) risks.push('缺时间');
+    if (!row.pickup_location || !row.dropoff_location) risks.push('缺地点');
+    if (!row.vehicle_type) risks.push('缺车型');
+    if (!row.price && row.price !== 0) risks.push('缺价格');
+    return risks;
+  },
+
+  sortPendingRows(rows) {
+    return rows.slice().sort((a, b) => {
       const left = `${a.order_date || ''} ${a.start_time || ''} ${a.pickup_location || ''}`;
       const right = `${b.order_date || ''} ${b.start_time || ''} ${b.pickup_location || ''}`;
       return left.localeCompare(right, 'zh-Hans-CN');
     });
   },
 
-  buildTimeGroups(orders) {
-    const groups = [
-      { key: 'all', label: '全部未派车', from: 0, to: 24, count: 0, summary: '所有时间段' },
-      { key: 'morning', label: '06:00 - 10:00', from: 6, to: 10, count: 0, summary: '早班接送优先' },
-      { key: 'midday', label: '10:00 - 14:00', from: 10, to: 14, count: 0, summary: '午间包车/送迎' },
-      { key: 'afternoon', label: '14:00 - 18:00', from: 14, to: 18, count: 0, summary: '下午订单' },
-      { key: 'evening', label: '18:00 以后', from: 18, to: 24, count: 0, summary: '晚间和跨日订单' }
-    ];
-    orders.forEach((order) => {
-      groups[0].count += 1;
-      const hour = this.startHour(order);
-      const group = groups.find((item) => item.key !== 'all' && hour >= item.from && hour < item.to);
-      if (group) group.count += 1;
-    });
-    return groups;
-  },
-
-  startHour(order) {
-    const hour = Number(String(order.start_time || '').slice(0, 2));
-    return Number.isFinite(hour) ? hour : 0;
-  },
-
-  filterVisibleOrders(orders, groupKey) {
-    if (groupKey === 'all') return orders.slice(0, 50);
-    const group = this.data.timeGroups.find((item) => item.key === groupKey);
-    if (!group) return orders.slice(0, 50);
-    return orders.filter((order) => {
-      const hour = this.startHour(order);
-      return hour >= group.from && hour < group.to;
-    }).slice(0, 50);
-  },
-
-  selectTimeGroup(e) {
-    const key = e.currentTarget.dataset.key || 'all';
-    this.setData({
-      activeTimeGroup: key,
-      visibleOrders: this.filterVisibleOrders(this.data.orders, key)
-    });
-  },
-
-  decorateDrivers(drivers, assignments, locations) {
-    const selectedWindows = this.getSelectedOrderWindows();
+  decorateDrivers(drivers, assignments) {
+    const selectedWindows = this.getSelectedWindows();
     return drivers.map((driver) => {
-      const current = assignments.find((item) => Number(item.driver_id) === Number(driver.id));
-      const location = locations.find((item) => Number(item.driver_id) === Number(driver.id));
-      const conflict = this.hasResourceTimeConflict(assignments, 'driver_id', driver.id, selectedWindows);
+      const active = assignments.find((item) => Number(item.driver_id) === Number(driver.id));
+      const conflict = this.hasConflict(assignments, 'driver_id', driver.id, selectedWindows);
       return {
         ...driver,
+        displayName: this.formatDriverDisplayName(driver),
         selected: String(this.data.driverId) === String(driver.id),
-        isBusy: Boolean(current),
-        isOnline: Boolean(location),
-        hasSelectedTimeConflict: conflict,
-        availabilityText: selectedWindows.length ? (conflict ? '冲突' : '可派') : (location ? '在线' : '未上线'),
-        statusClass: selectedWindows.length ? (conflict ? 'busy' : 'online') : (location ? 'online' : ''),
-        onlineText: location ? '在线' : '未上线',
-        currentTask: current ? `${current.pickup_location || '-'} -> ${current.dropoff_location || '-'}` : '空闲',
-        nextFreeTime: current ? (current.end_time || '待确认') : '现在可用',
-        distanceText: location && location.distance_text ? location.distance_text : '距离待估'
+        disabled: conflict,
+        statusText: conflict ? '冲突' : (active ? '忙' : '空'),
+        statusClass: conflict ? 'danger' : (active ? 'busy' : 'ok')
       };
-    })
-      .sort((a, b) => {
-        if (a.hasSelectedTimeConflict !== b.hasSelectedTimeConflict) return a.hasSelectedTimeConflict ? 1 : -1;
-        if (a.isBusy !== b.isBusy) return a.isBusy ? 1 : -1;
-        if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
-        return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
-      })
-      .slice(0, 16);
+    }).sort((a, b) => {
+      if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
+      if ((a.statusClass === 'busy') !== (b.statusClass === 'busy')) return a.statusClass === 'busy' ? 1 : -1;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
+    }).slice(0, 15);
+  },
+
+  formatDriverDisplayName(driver) {
+    const raw = String(driver.display_name || driver.driver_name || driver.name || driver.driver_code || '未命名司机');
+    return raw.replace(/(R00[0-9]司机[AB]?)[0-9A-Za-z_-]+$/, '$1');
   },
 
   decorateVehicles(vehicles, assignments) {
-    const selectedWindows = this.getSelectedOrderWindows();
+    const selectedWindows = this.getSelectedWindows();
     return vehicles.map((vehicle) => {
-      const current = assignments.find((item) => Number(item.vehicle_id) === Number(vehicle.id));
-      const maintenanceRisk = vehicle.maintenance_status && vehicle.maintenance_status !== 'available';
-      const conflict = this.hasResourceTimeConflict(assignments, 'vehicle_id', vehicle.id, selectedWindows);
+      const active = assignments.find((item) => Number(item.vehicle_id) === Number(vehicle.id));
+      const conflict = this.hasConflict(assignments, 'vehicle_id', vehicle.id, selectedWindows);
       return {
         ...vehicle,
         selected: String(this.data.vehicleId) === String(vehicle.id),
-        isBusy: Boolean(current),
-        hasMaintenanceRisk: Boolean(maintenanceRisk),
-        hasSelectedTimeConflict: conflict,
+        disabled: conflict,
         shortPlate: String(vehicle.plate_number || '').slice(-4) || vehicle.plate_number,
-        availabilityText: selectedWindows.length ? (conflict ? '冲突' : '可派') : (current ? '占用中' : '空闲'),
-        statusClass: selectedWindows.length ? (conflict ? 'busy' : 'online') : (current ? 'busy' : 'online'),
-        availableText: current ? '占用中' : '空闲',
-        riskText: maintenanceRisk ? '维护风险' : '状态正常',
-        etcText: vehicle.etc_status || 'ETC待确认',
-        seatText: `${vehicle.seat_count || '-'}座`
+        statusText: conflict ? '冲突' : (active ? '忙' : '空'),
+        statusClass: conflict ? 'danger' : (active ? 'busy' : 'ok')
       };
-    })
-      .sort((a, b) => {
-        if (a.hasSelectedTimeConflict !== b.hasSelectedTimeConflict) return a.hasSelectedTimeConflict ? 1 : -1;
-        if (a.isBusy !== b.isBusy) return a.isBusy ? 1 : -1;
-        if (a.hasMaintenanceRisk !== b.hasMaintenanceRisk) return a.hasMaintenanceRisk ? 1 : -1;
-        return String(a.plate_number || '').localeCompare(String(b.plate_number || ''), 'ja-JP');
+    }).sort((a, b) => {
+      if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
+      if ((a.statusClass === 'busy') !== (b.statusClass === 'busy')) return a.statusClass === 'busy' ? 1 : -1;
+      return String(a.plate_number || '').localeCompare(String(b.plate_number || ''), 'ja-JP');
+    }).slice(0, 15);
+  },
+
+  toggleRow(e) {
+    const key = e.currentTarget.dataset.key;
+    const selected = this.data.selectedKeys.slice();
+    const index = selected.indexOf(key);
+    if (index >= 0) selected.splice(index, 1);
+    else selected.push(key);
+    this.setData({ selectedKeys: selected });
+    this.refreshRowsAndResources();
+  },
+
+  handleRowTap(e) {
+    const key = e.currentTarget.dataset.key;
+    const now = Date.now();
+    if (this._lastTapKey === key && now - this._lastTapAt < 320) {
+      if (this._tapTimer) {
+        clearTimeout(this._tapTimer);
+        this._tapTimer = null;
+      }
+      this._lastTapKey = '';
+      this._lastTapAt = 0;
+      this.startEditByKey(key);
+      return;
+    }
+    this._lastTapKey = key;
+    this._lastTapAt = now;
+    if (this._tapTimer) clearTimeout(this._tapTimer);
+    this._tapTimer = setTimeout(() => {
+      this.toggleRow({ currentTarget: { dataset: { key } } });
+      this._tapTimer = null;
+    }, 220);
+  },
+
+  smartRouteSort() {
+    const selectedSet = new Set(this.data.selectedKeys);
+    const selected = this.data.pendingRows.filter((item) => selectedSet.has(item.key));
+    if (!selected.length) {
+      const pendingRows = this.sortPendingRows(this.data.pendingRows);
+      this.setData({ pendingRows, ...this.groupPendingRows(pendingRows), message: '已按日期、开始时间排序。' });
+      return;
+    }
+    const rest = this.data.pendingRows.filter((item) => !selectedSet.has(item.key));
+    const pendingRows = this.sortPendingRows(selected).concat(this.sortPendingRows(rest));
+    this.setData({
+      pendingRows,
+      ...this.groupPendingRows(pendingRows),
+      message: `已为 ${selected.length} 单做接龙排序。`
+    });
+  },
+
+  toggleSortMode() {
+    this.setData({ sortMode: !this.data.sortMode });
+  },
+
+  enterSortMode(e) {
+    const key = e.currentTarget.dataset.key;
+    if (!this.data.selectedKeys.includes(key)) {
+      this.setData({ selectedKeys: this.data.selectedKeys.concat(key) });
+    }
+    this.setData({ sortMode: true, message: '已进入排序模式，可用上移/下移调整派车顺序。' });
+    this.refreshRowsAndResources();
+  },
+
+  moveRow(e) {
+    const key = e.currentTarget.dataset.key;
+    const direction = e.currentTarget.dataset.direction;
+    const rows = this.data.pendingRows.slice();
+    const index = rows.findIndex((item) => item.key === key);
+    if (index < 0) return;
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= rows.length) return;
+    const current = rows[index];
+    rows[index] = rows[target];
+    rows[target] = current;
+    this.setData({ pendingRows: rows, ...this.groupPendingRows(rows) });
+  },
+
+  startEdit(e) {
+    const key = e.currentTarget.dataset.key;
+    this.startEditByKey(key);
+  },
+
+  startEditByKey(key) {
+    const row = this.data.pendingRows.find((item) => item.key === key);
+    if (!row) return;
+    this.setData({
+      editingKey: key,
+      editing: {
+        order_date: row.order_date || '',
+        start_time: row.start_time || '',
+        end_time: row.end_time || '',
+        pickup_location: row.pickup_location || '',
+        dropoff_location: row.dropoff_location || '',
+        order_type: row.order_type || '',
+        vehicle_type: row.vehicle_type || '',
+        price: row.price || '',
+        agency_name: row.agency_name || '',
+        remark: row.remark || ''
+      }
+    });
+  },
+
+  onEditField(e) {
+    const field = e.currentTarget.dataset.field;
+    this.setData({ [`editing.${field}`]: e.detail.value });
+  },
+
+  saveEdit() {
+    const row = this.data.pendingRows.find((item) => item.key === this.data.editingKey);
+    if (!row) return;
+    this.saveRow(row, this.data.editing)
+      .then(() => {
+        wx.showToast({ title: '已保存' });
+        this.setData({ editingKey: '', editing: {} });
+        this.loadAll();
       })
-      .slice(0, 16);
+      .catch(() => wx.showToast({ title: '保存失败', icon: 'none' }));
   },
 
-  getSelectedOrderWindows() {
-    return this.data.orders
-      .filter((item) => this.data.selectedOrderIds.includes(Number(item.id)))
-      .map((item) => this.toWindow(item))
-      .filter(Boolean);
+  cancelEdit() {
+    this.setData({ editingKey: '', editing: {} });
   },
 
-  hasResourceTimeConflict(assignments, key, resourceId, selectedWindows) {
+  confirmRow(e) {
+    const key = e.currentTarget.dataset.key;
+    const row = this.data.pendingRows.find((item) => item.key === key);
+    if (!row) return;
+    this.ensureOrder(row)
+      .then(() => {
+        wx.showToast({ title: '已确认入库' });
+        this.loadAll();
+      })
+      .catch(() => wx.showToast({ title: '确认失败', icon: 'none' }));
+  },
+
+  confirmSelectedDrafts() {
+    const rows = this.selectedRows().filter((item) => item.kind === 'draft');
+    if (!rows.length) {
+      wx.showToast({ title: '请选择需要入库的草稿', icon: 'none' });
+      return;
+    }
+    this.setData({ loading: true, conflictText: '', message: '' });
+    rows.reduce((chain, row) => chain.then(() => this.ensureOrder(row)), Promise.resolve())
+      .then(() => {
+        wx.showToast({ title: '批量入库完成' });
+        this.setData({
+          loading: false,
+          selectedKeys: this.data.selectedKeys.filter((key) => !rows.some((row) => row.key === key)),
+          message: `已确认入库 ${rows.length} 条草稿。`
+        });
+        this.loadAll();
+      })
+      .catch(() => {
+        this.setData({ loading: false, conflictText: '批量入库失败，请检查草稿字段。' });
+      });
+  },
+
+  selectDriver(e) {
+    const id = String(e.currentTarget.dataset.id);
+    const item = this.data.drivers.find((driver) => String(driver.id) === id);
+    if (item && item.disabled) {
+      wx.showToast({ title: '该司机与所选订单时间冲突', icon: 'none' });
+      return;
+    }
+    this.setData({ driverId: id });
+    this.refreshRowsAndResources();
+  },
+
+  selectVehicle(e) {
+    const id = String(e.currentTarget.dataset.id);
+    const item = this.data.vehicles.find((vehicle) => String(vehicle.id) === id);
+    if (item && item.disabled) {
+      wx.showToast({ title: '该车辆与所选订单时间冲突', icon: 'none' });
+      return;
+    }
+    this.setData({ vehicleId: id });
+    this.refreshRowsAndResources();
+  },
+
+  refreshRowsAndResources() {
+    const rows = this.data.pendingRows.map((row) => this.decoratePendingRow(row));
+    this.setData({
+      pendingRows: rows,
+      ...this.groupPendingRows(rows),
+      drivers: this.decorateDrivers(this.data.drivers, this.data.assignments),
+      vehicles: this.decorateVehicles(this.data.vehicles, this.data.assignments)
+    });
+    this.updatePreview();
+  },
+
+  updatePreview() {
+    const selectedRows = this.selectedRows();
+    const driver = this.data.drivers.find((item) => String(item.id) === String(this.data.driverId));
+    const vehicle = this.data.vehicles.find((item) => String(item.id) === String(this.data.vehicleId));
+    this.setData({
+      canAssign: Boolean(selectedRows.length && driver && vehicle),
+      preview: {
+        orderCount: selectedRows.length,
+        driverName: driver ? driver.name : '未选司机',
+        vehicleName: vehicle ? (vehicle.shortPlate || vehicle.plate_number) : '未选车辆'
+      }
+    });
+  },
+
+  selectedRows() {
+    const selected = new Set(this.data.selectedKeys);
+    return this.data.pendingRows.filter((item) => selected.has(item.key));
+  },
+
+  saveRow(row, payload) {
+    if (row.kind === 'draft') return api.updateDraft(row.id, payload);
+    return api.updateOrder(row.id, payload);
+  },
+
+  ensureOrder(row) {
+    if (row.kind === 'order') return Promise.resolve(row.id);
+    return api.confirmDraft(row.id).then((res) => res.order_id);
+  },
+
+  assignSelected() {
+    const rows = this.selectedRows();
+    if (!rows.length || !this.data.driverId || !this.data.vehicleId) {
+      wx.showToast({ title: '请先选择订单、司机和车辆', icon: 'none' });
+      return;
+    }
+    this.setData({ loading: true, conflictText: '', message: '' });
+    rows.reduce((chain, row) => {
+      return chain.then((ids) => {
+        const payload = row.key === this.data.editingKey ? this.data.editing : row;
+        return this.saveRow(row, payload)
+          .then(() => this.ensureOrder(row))
+          .then((id) => ids.concat(Number(id)));
+      });
+    }, Promise.resolve([]))
+      .then((orderIds) => api.assignOrders({
+        order_ids: orderIds,
+        driver_id: Number(this.data.driverId),
+        vehicle_id: Number(this.data.vehicleId)
+      }))
+      .then((res) => {
+        if (res && res.success === false) {
+          this.setData({ loading: false, conflictText: this.formatConflicts(res.conflicts || []) });
+          return;
+        }
+        wx.showToast({ title: '派车成功' });
+        this.setData({
+          loading: false,
+          selectedKeys: [],
+          driverId: '',
+          vehicleId: '',
+          editingKey: '',
+          editing: {},
+          message: '订单已派给司机和车辆，司机端将显示待确认任务。'
+        });
+        this.loadAll();
+      })
+      .catch(() => {
+        this.setData({ loading: false, conflictText: '派车失败，请检查冲突或后端连接。' });
+      });
+  },
+
+  getSelectedWindows() {
+    return this.selectedRows().map((row) => this.toWindow(row)).filter(Boolean);
+  },
+
+  hasConflict(assignments, key, resourceId, selectedWindows) {
     if (!selectedWindows.length) return false;
     return assignments
       .filter((item) => Number(item[key]) === Number(resourceId))
       .some((item) => {
         const activeWindow = this.toWindow(item);
-        return activeWindow && selectedWindows.some((selected) => this.windowsOverlap(selected, activeWindow));
+        return activeWindow && selectedWindows.some((selected) => selected.start < activeWindow.end && activeWindow.start < selected.end);
       });
   },
 
@@ -237,124 +509,8 @@ Page({
     return new Date(date[0], date[1] - 1, date[2], time[0], time[1], 0, 0).getTime();
   },
 
-  windowsOverlap(first, second) {
-    return first.start < second.end && second.start < first.end;
-  },
-
-  setResourceTab(e) {
-    this.setData({ activeResourceTab: e.currentTarget.dataset.tab || 'drivers' });
-  },
-
-  toggleOrder(e) {
-    const id = Number(e.currentTarget.dataset.id);
-    const selected = this.data.selectedOrderIds.slice();
-    const idx = selected.indexOf(id);
-    if (idx >= 0) selected.splice(idx, 1);
-    else selected.push(id);
-    this.setData({ selectedOrderIds: selected });
-    this.refreshDecorations();
-  },
-
-  selectDriver(e) {
-    this.setData({ driverId: String(e.currentTarget.dataset.id) });
-    this.refreshDecorations();
-  },
-
-  selectVehicle(e) {
-    this.setData({ vehicleId: String(e.currentTarget.dataset.id) });
-    this.refreshDecorations();
-  },
-
-  refreshDecorations() {
-    const decoratedOrders = this.decorateOrders(this.data.orders);
-    this.setData({
-      orders: decoratedOrders,
-      visibleOrders: this.filterVisibleOrders(decoratedOrders, this.data.activeTimeGroup),
-      pickupOrders: decoratedOrders.filter((item) => item.dispatchKind === 'pickup'),
-      dropoffOrders: decoratedOrders.filter((item) => item.dispatchKind === 'dropoff'),
-      charterOrders: decoratedOrders.filter((item) => item.dispatchKind === 'charter'),
-      drivers: this.decorateDrivers(this.data.drivers, this.data.assignments, this.data.locations),
-      vehicles: this.decorateVehicles(this.data.vehicles, this.data.assignments)
-    });
-    this.updatePreview();
-  },
-
-  smartRouteSort() {
-    const selectedSet = new Set(this.data.selectedOrderIds.map(Number));
-    const selected = this.data.orders.filter((item) => selectedSet.has(Number(item.id)));
-    if (!selected.length) {
-      this.setData({ orders: this.decorateOrders(this.sortOrders(this.data.orders)), message: '已按时间和起点排序订单池。' });
-      this.updatePreview();
-      return;
-    }
-    const sortedSelected = this.sortOrders(selected);
-    const rest = this.data.orders.filter((item) => !selectedSet.has(Number(item.id)));
-    this.setData({
-      orders: this.decorateOrders(sortedSelected.concat(this.sortOrders(rest))),
-      message: `已为 ${sortedSelected.length} 单按时间和起点接龙。`
-    });
-    this.updatePreview();
-  },
-
-  updatePreview() {
-    const selectedOrders = this.data.orders.filter((item) => this.data.selectedOrderIds.includes(Number(item.id)));
-    const driver = this.data.drivers.find((item) => String(item.id) === String(this.data.driverId));
-    const vehicle = this.data.vehicles.find((item) => String(item.id) === String(this.data.vehicleId));
-    let assignButtonText = '请选择订单';
-    if (selectedOrders.length && !driver) assignButtonText = '请选择司机';
-    else if (selectedOrders.length && driver && !vehicle) assignButtonText = '请选择车辆';
-    else if (selectedOrders.length && driver && vehicle) assignButtonText = '确认派车';
-
-    this.setData({
-      canAssign: Boolean(selectedOrders.length && driver && vehicle),
-      assignButtonText,
-      preview: {
-        orders: selectedOrders.length,
-        route: selectedOrders.length ? selectedOrders.map((item) => item.oid || item.id).join(' / ') : '请选择订单',
-        driver: driver ? driver.name : '未选择司机',
-        vehicle: vehicle ? vehicle.plate_number : '未选择车辆'
-      }
-    });
-  },
-
-  assign() {
-    if (!this.data.canAssign) {
-      wx.showToast({ title: this.data.assignButtonText, icon: 'none' });
-      return;
-    }
-    this.setData({ loading: true, conflictText: '', message: '' });
-    api.assignOrders({
-      order_ids: this.data.selectedOrderIds,
-      driver_id: Number(this.data.driverId),
-      vehicle_id: Number(this.data.vehicleId)
-    })
-      .then((res) => {
-        if (res && res.success === false) {
-          this.setData({
-            loading: false,
-            conflictText: this.formatConflicts(res.conflicts || [])
-          });
-          this.updatePreview();
-          return;
-        }
-        wx.showToast({ title: '已派发给司机' });
-        this.setData({
-          selectedOrderIds: [],
-          driverId: '',
-          vehicleId: '',
-          activeResourceTab: 'drivers',
-          message: '司机端会收到新订单通知。'
-        });
-        this.loadAll();
-      })
-      .catch(() => {
-        this.setData({ loading: false, message: '派车失败，请检查网络或后端服务。' });
-        this.updatePreview();
-      });
-  },
-
   formatConflicts(conflicts) {
-    if (!conflicts.length) return '存在冲突，请重新选择司机或车辆。';
+    if (!conflicts.length) return '存在时间冲突，未派车。';
     return conflicts.map((item) => {
       if (item.type === 'driver_time_overlap') return `司机时间冲突：订单 ${item.order_id}`;
       if (item.type === 'vehicle_time_overlap') return `车辆时间冲突：订单 ${item.order_id}`;

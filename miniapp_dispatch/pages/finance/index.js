@@ -28,6 +28,6 @@ Page({
           message: ''
         });
       })
-      .catch(() => this.setData({ message: '无法加载财务数据。' }));
+      .catch(() => this.setData({ message: '无法加载财务数据，请确认后端在线。' }));
   }
 });

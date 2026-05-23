@@ -1,0 +1,12 @@
+<cover-view class="custom-tabbar">
+  <cover-view
+    wx:for="{{list}}"
+    wx:key="pagePath"
+    data-index="{{index}}"
+    bindtap="switchTab"
+    class="tab-item {{selected === index ? 'active' : ''}}"
+  >
+    <cover-view class="tab-icon">{{item.icon}}</cover-view>
+    <cover-view class="tab-label">{{item.text}}</cover-view>
+  </cover-view>
+</cover-view>

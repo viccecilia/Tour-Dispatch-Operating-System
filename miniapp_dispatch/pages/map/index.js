@@ -63,7 +63,7 @@ Page({
   decorateAssignments(assignments) {
     return assignments.map((item) => ({
       ...item,
-      routeText: `${item.pickup_location || '-'} -> ${item.dropoff_location || '-'}`,
+      routeText: `${item.pickup_location || '-'} → ${item.dropoff_location || '-'}`,
       timeText: `${item.order_date || '-'} ${item.start_time || '--:--'}-${item.end_time || '--:--'}`,
       searchText: [
         item.oid,
@@ -118,10 +118,7 @@ Page({
     const filteredOrders = query
       ? this.data.assignments.filter((item) => item.searchText.includes(query))
       : this.data.assignments;
-    this.setData({
-      filteredDrivers,
-      filteredOrders
-    });
+    this.setData({ filteredDrivers, filteredOrders });
   },
 
   focusDriver(e) {

@@ -1,23 +1,32 @@
 <view class="page">
-  <view class="hero">
+  <view class="hero profile-hero">
     <view class="hero-eyebrow">DISPATCHER PROFILE</view>
-    <view class="hero-title">{{session.dispatcher.dispatcher_name || '未登录'}}</view>
+    <view class="hero-title">{{session.dispatcher.dispatcher_name || '未登录调度员'}}</view>
     <view class="hero-meta">{{session.dispatcher.dispatcher_code || '-'}} · {{session.dispatcher.dispatcher_role || '-'}}</view>
   </view>
 
   <view class="panel">
-    <view class="panel-title">共享数据库状态</view>
-    <view class="grid">
-      <view class="metric"><text>orders</text><strong>{{shared.tables.orders || 0}}</strong></view>
-      <view class="metric"><text>drafts</text><strong>{{shared.tables.drafts || 0}}</strong></view>
-      <view class="metric"><text>assignments</text><strong>{{shared.tables.assignments || 0}}</strong></view>
-      <view class="metric"><text>notifications</text><strong>{{shared.tables.notifications || 0}}</strong></view>
+    <view class="panel-title">调度员信息</view>
+    <view class="profile-list">
+      <view class="profile-row"><text>调度员</text><strong>{{session.dispatcher.dispatcher_name || '-'}}</strong></view>
+      <view class="profile-row"><text>代码</text><strong>{{session.dispatcher.dispatcher_code || '-'}}</strong></view>
+      <view class="profile-row"><text>角色</text><strong>{{session.dispatcher.dispatcher_role || '-'}}</strong></view>
+      <view class="profile-row"><text>接口</text><strong>{{baseUrl}}</strong></view>
     </view>
-    <view class="muted">API：{{baseUrl}}</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">共享数据库同步</view>
+    <view class="grid">
+      <view class="metric"><text>订单</text><strong>{{shared.tables.orders || 0}}</strong></view>
+      <view class="metric"><text>草稿</text><strong>{{shared.tables.drafts || 0}}</strong></view>
+      <view class="metric"><text>派车</text><strong>{{shared.tables.assignments || 0}}</strong></view>
+      <view class="metric"><text>通知</text><strong>{{shared.tables.notifications || 0}}</strong></view>
+    </view>
   </view>
 
   <view class="panel stack">
-    <button class="button-secondary" bindtap="loadShared">刷新共享状态</button>
+    <button class="button-secondary" bindtap="loadShared">刷新同步状态</button>
     <button class="button-primary" bindtap="logout">退出登录</button>
   </view>
 </view>

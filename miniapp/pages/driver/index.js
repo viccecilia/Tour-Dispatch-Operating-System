@@ -140,9 +140,9 @@ Page({
       api.driverExpenses(this.data.driverId),
       api.driverIncome(this.data.driverId),
       api.driverNotifications(this.data.driverId),
-      api.listDrivers(),
+      api.driverProfile(this.data.driverId),
       api.driverHistory(this.data.driverId, {})
-    ]).then(([workbench, assignmentRes, expenseRes, incomeRes, notificationRes, driversRes, historyRes]) => {
+    ]).then(([workbench, assignmentRes, expenseRes, incomeRes, notificationRes, profileRes, historyRes]) => {
       const assignments = this.normalizeAssignments((assignmentRes && assignmentRes.assignments) || []);
       const todayAssignments = assignments.filter((item) => this.isAssignmentOnDate(item, this.data.today));
       const tomorrowAssignments = assignments.filter((item) => item.order_date && this.getAssignmentStartDate(item) > this.data.today);
@@ -153,7 +153,7 @@ Page({
       const calendarMonth = this.data.calendarMonth || selectedDate.slice(0, 7);
       const selected = this.pickSelected(displayList);
       const pendingConfirmAssignments = todayAssignments.concat(tomorrowAssignments).filter((item) => (item.execution_status || 'assigned') === 'assigned');
-      const driver = this.pickDriver((driversRes && driversRes.drivers) || [], selected, workbench || {});
+      const driver = (profileRes && profileRes.driver) || this.pickDriver([], selected, workbench || {});
       this.setData({
         loading: false,
         isOnline: true,

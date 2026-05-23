@@ -88,6 +88,7 @@ module.exports = {
   driverAssignmentDetail: (driverId, assignmentId) => request(`/api/driver/assignments/${assignmentId}?driver_id=${driverId}`),
   driverReports: (driverId) => request(`/api/driver/reports?driver_id=${driverId}`),
   driverDashboard: (driverId) => request(`/api/driver/dashboard?driver_id=${driverId}`),
+  driverProfile: (driverId) => request(`/api/driver/profile?driver_id=${driverId}`),
   driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
   driverWorkflowEvents: (driverId) => request(`/api/driver/workflow-events?driver_id=${driverId}`),
   submitDriverWorkflowEvent: (data) => request('/api/driver/workflow-event', { method: 'POST', data }),
