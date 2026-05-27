@@ -1,51 +1,56 @@
 const api = require('../../utils/api');
 
 const STATUS_TEXT = {
-  assigned: '待确认',
-  confirmed: '已确认',
-  departed: '已出库',
-  arrived: '已到达',
-  in_service: '服务中',
-  completed: '已完成',
-  returned: '已归库'
+  assigned: '\u5f85\u786e\u8ba4',
+  confirmed: '\u5df2\u786e\u8ba4',
+  departed: '\u5df2\u51fa\u5e93',
+  arrived: '\u5df2\u5230\u8fbe',
+  in_service: '\u670d\u52a1\u4e2d',
+  completed: '\u5df2\u5b8c\u6210',
+  returned: '\u5df2\u5165\u5e93'
 };
 
 const TAB_ITEMS = [
-  { key: 'home', label: '首页' },
-  { key: 'task', label: '任务' },
-  { key: 'map', label: '地图' },
-  { key: 'expense', label: '费用' },
-  { key: 'mine', label: '我的' }
+  { key: 'home', label: '\u9996\u9875' },
+  { key: 'task', label: '\u4efb\u52a1' },
+  { key: 'map', label: '\u5730\u56fe' },
+  { key: 'expense', label: '\u8d39\u7528' },
+  { key: 'mine', label: '\u6211\u7684' }
 ];
 
 const PREFLIGHT_ITEMS = [
-  { key: 'light', label: '车灯正常' },
-  { key: 'brake', label: '刹车正常' },
-  { key: 'body', label: '车身无新增损伤' },
-  { key: 'license', label: '已携带驾照' },
-  { key: 'certificate', label: '已携带乘务员证' },
-  { key: 'alcohol', label: '出库前酒精确认' },
-  { key: 'sleep', label: '睡眠状态充足' }
+  { key: 'light', label: '\u8f66\u706f\u6b63\u5e38' },
+  { key: 'brake', label: '\u5239\u8f66\u6b63\u5e38' },
+  { key: 'body', label: '\u8f66\u8eab\u65e0\u65b0\u589e\u635f\u4f24' },
+  { key: 'license', label: '\u5df2\u643a\u5e26\u9a7e\u7167' },
+  { key: 'certificate', label: '\u5df2\u643a\u5e26\u4e58\u52a1\u5458\u8bc1' },
+  { key: 'alcohol', label: '\u51fa\u5e93\u524d\u9152\u7cbe\u786e\u8ba4' },
+  { key: 'sleep', label: '\u7761\u7720\u72b6\u6001\u5145\u8db3' }
 ];
 
 const RETURN_ITEMS = [
-  { key: 'clean', label: '车辆已清扫' },
-  { key: 'inspection', label: '入库点检完成' },
-  { key: 'alcohol', label: '入库后酒精确认' },
-  { key: 'roll_call', label: '点呼入库完成' }
+  { key: 'clean', label: '\u8f66\u8f86\u5df2\u6e05\u626b' },
+  { key: 'inspection', label: '\u5165\u5e93\u70b9\u68c0\u5b8c\u6210' },
+  { key: 'alcohol', label: '\u5165\u5e93\u540e\u9152\u7cbe\u786e\u8ba4' },
+  { key: 'roll_call', label: '\u70b9\u547c\u5165\u5e93\u5b8c\u6210' }
 ];
 
 const PHOTO_STEPS = [
-  { key: 'arrive_waiting_photo', label: '到达上车点拍照', allowedStatuses: ['arrived', 'in_service', 'completed', 'returned'], lockedHint: '先到达上车点' },
-  { key: 'pickup_photo', label: '接到客人拍照', allowedStatuses: ['arrived', 'in_service', 'completed', 'returned'], lockedHint: '先到达上车点' },
-  { key: 'waypoint_photo', label: '中途地点拍照', allowedStatuses: ['in_service', 'completed', 'returned'], lockedHint: '先接到客人并开始行程' },
-  { key: 'dropoff_photo', label: '送达目的地拍照', allowedStatuses: ['in_service', 'completed', 'returned'], lockedHint: '先开始行程' }
+  { key: 'arrive_waiting_photo', label: '\u5230\u8fbe\u4e0a\u8f66\u70b9\u62cd\u7167', allowedStatuses: ['arrived', 'in_service', 'completed', 'returned'], lockedHint: '\u5148\u5230\u8fbe\u4e0a\u8f66\u70b9' },
+  { key: 'pickup_photo', label: '\u63a5\u5230\u5ba2\u4eba\u62cd\u7167', allowedStatuses: ['arrived', 'in_service', 'completed', 'returned'], lockedHint: '\u5148\u5230\u8fbe\u4e0a\u8f66\u70b9' },
+  { key: 'waypoint_photo', label: '\u4e2d\u9014\u5730\u70b9\u62cd\u7167', allowedStatuses: ['in_service', 'completed', 'returned'], lockedHint: '\u5148\u63a5\u5230\u5ba2\u4eba\u5e76\u5f00\u59cb\u884c\u7a0b' },
+  { key: 'dropoff_photo', label: '\u9001\u8fbe\u76ee\u7684\u5730\u62cd\u7167', allowedStatuses: ['in_service', 'completed', 'returned'], lockedHint: '\u5148\u5f00\u59cb\u884c\u7a0b' }
 ];
 
 const ARRIVAL_RADIUS_METERS = 800;
 
 Page({
   data: {
+    authSession: null,
+    loginPhone: '',
+    loginPassword: '',
+    loginError: '',
+    loginLoading: false,
     tabItems: TAB_ITEMS,
     activeTab: 'home',
     driverId: 1,
@@ -82,6 +87,8 @@ Page({
     returnItems: RETURN_ITEMS,
     preflightChecked: {},
     returnChecked: {},
+    preflightReady: false,
+    returnReady: false,
     photoSteps: PHOTO_STEPS,
     currentPhotoStep: null,
     photoCollapsedText: '只显示下一次应该上传的位置。',
@@ -99,25 +106,34 @@ Page({
     expenseAmount: '',
     expenseNote: '',
     driverProfile: {},
+    contactPhone: '',
+    contactWechat: '',
+    contactWhatsapp: '',
+    contactLine: '',
+    contactKakao: '',
+    contactSaving: false,
     incomeSummary: { today: {}, monthly: {} },
     notifications: [],
     history: []
   },
 
   onLoad(options) {
-    const driverId = Number((options && options.driver_id) || wx.getStorageSync('driver_id') || 1);
+    const savedSession = wx.getStorageSync('driver_session');
+    const sessionUser = savedSession && savedSession.user ? savedSession.user : null;
+    const driverId = Number((options && options.driver_id) || (sessionUser && sessionUser.profile_id) || wx.getStorageSync('driver_id') || 1);
     wx.setStorageSync('driver_id', driverId);
     this.setData({
+      authSession: savedSession || null,
       driverId,
       today: this.formatDate(new Date()),
       nowText: this.formatTime(new Date())
     });
     this.startClock();
-    this.loadAll();
+    if (savedSession) this.loadAll();
   },
 
   onShow() {
-    this.loadAll({ silent: true });
+    if (this.data.authSession) this.loadAll({ silent: true });
   },
 
   onUnload() {
@@ -132,6 +148,7 @@ Page({
   },
 
   loadAll(options = {}) {
+    if (!this.data.authSession) return Promise.resolve();
     const silent = !!options.silent;
     this.setData({ loading: !silent });
     Promise.all([
@@ -146,8 +163,12 @@ Page({
       const assignments = this.normalizeAssignments((assignmentRes && assignmentRes.assignments) || []);
       const todayAssignments = assignments.filter((item) => this.isAssignmentOnDate(item, this.data.today));
       const tomorrowAssignments = assignments.filter((item) => item.order_date && this.getAssignmentStartDate(item) > this.data.today);
-      const todayOpenAssignments = todayAssignments.filter((item) => (item.execution_status || 'assigned') !== 'returned');
-      const displayList = todayOpenAssignments.length ? todayOpenAssignments : (tomorrowAssignments.length ? tomorrowAssignments : todayAssignments);
+      const vehicleReturnedToday = this.hasReturnedToday(workbench || {});
+      const todayActiveAssignments = todayAssignments.filter((item) => !['completed', 'returned'].includes(item.execution_status || 'assigned'));
+      const todayReturnAssignments = vehicleReturnedToday ? [] : todayAssignments.filter((item) => (item.execution_status || '') === 'completed');
+      const futureOpenAssignments = tomorrowAssignments.filter((item) => !['completed', 'returned'].includes(item.execution_status || 'assigned'));
+      const todayOpenAssignments = todayActiveAssignments.length ? todayActiveAssignments : todayReturnAssignments;
+      const displayList = todayOpenAssignments.length ? todayOpenAssignments : (futureOpenAssignments.length ? futureOpenAssignments : (vehicleReturnedToday ? [] : todayAssignments));
       const selectedDate = this.data.selectedDate || this.data.today;
       const selectedDateAssignments = this.filterAssignmentsByDate(assignments, selectedDate);
       const calendarMonth = this.data.calendarMonth || selectedDate.slice(0, 7);
@@ -175,6 +196,11 @@ Page({
         notifications: (notificationRes && notificationRes.notifications) || [],
         history: (historyRes && (historyRes.history || historyRes.items)) || [],
         driverProfile: driver,
+        contactPhone: driver.phone || '',
+        contactWechat: driver.wechat || '',
+        contactWhatsapp: driver.whatsapp || '',
+        contactLine: driver.line || '',
+        contactKakao: driver.kakao || '',
         driverName: driver.name || (selected && selected.driver_name) || `司机${this.data.driverId}`,
         driverInitial: this.firstChar(driver.name || (selected && selected.driver_name) || '司')
       });
@@ -469,12 +495,16 @@ Page({
     const action = this.computeNextAction(selected);
     const dock = this.computeDockState(selected, action, this.data.activeTab);
     const photoSteps = this.buildPhotoSteps(selected);
+    const preflightReady = this.shouldShowPreflight(selected);
+    const returnReady = this.shouldShowReturn(selected);
     this.setData({
       nextActionLabel: action.label,
       nextActionHint: action.hint,
       dockVisible: dock.visible,
       dockDisabled: dock.disabled,
       dockLabel: dock.label,
+      preflightReady,
+      returnReady,
       photoSteps,
       currentPhotoStep: this.pickCurrentPhotoStep(selected, photoSteps),
       photoCollapsedText: this.buildPhotoCollapsedText(photoSteps),
@@ -482,6 +512,24 @@ Page({
     });
     this.updateStatus(selected);
     this.updateMap(selected);
+  },
+
+  hasReturnedToday(workbench) {
+    const vehicleStatus = String((workbench && workbench.vehicle_status) || '');
+    if (vehicleStatus.includes('已入库')) return true;
+    const events = (workbench && workbench.workflow_events) || [];
+    return events.some((event) => ['return_yard', 'roll_call_in', 'vehicle_check_in'].includes(event.event_type));
+  },
+
+  shouldShowPreflight(selected) {
+    if (!selected) return false;
+    return (selected.execution_status || 'assigned') === 'confirmed';
+  },
+
+  shouldShowReturn(selected) {
+    if (!selected || this.hasReturnedToday(this.data.workbench || {})) return false;
+    const status = selected.execution_status || 'assigned';
+    return status === 'completed' && !this.findNextRunnable(selected);
   },
 
   buildPhotoSteps(selected) {
@@ -529,7 +577,7 @@ Page({
   },
 
   computeDockState(selected, action, activeTab) {
-    if (activeTab === 'expense' || activeTab === 'mine' || activeTab === 'task') {
+    if (activeTab === 'expense' || activeTab === 'mine') {
       return { visible: false, disabled: true, label: action.label };
     }
     if (!selected) {
@@ -538,7 +586,7 @@ Page({
     const status = selected.execution_status || 'assigned';
     if (activeTab === 'home') {
       if (this.data.pendingConfirmAssignments.length > 0) {
-        return { visible: true, disabled: false, label: `确认全部接单（${this.data.pendingConfirmAssignments.length}单）` };
+        return { visible: false, disabled: false, label: '确认接单' };
       }
       if (status === 'assigned') return { visible: true, disabled: false, label: '确认接单' };
       if (status === 'confirmed') return { visible: true, disabled: false, label: '点呼出库' };
@@ -597,6 +645,10 @@ Page({
     }
 
     const statuses = todayRows.map((item) => item.execution_status || 'assigned');
+    if (this.hasReturnedToday(this.data.workbench || {}) && !statuses.some((status) => ['departed', 'arrived', 'in_service'].includes(status))) {
+      this.setData({ statusMode: 'ready', statusText: '未出库' });
+      return;
+    }
     if (statuses.some((status) => ['departed', 'arrived', 'in_service'].includes(status))) {
       const inService = statuses.includes('in_service');
       this.setData({ statusMode: 'departed', statusText: inService ? '执行中' : '已出库' });
@@ -756,8 +808,21 @@ Page({
       return;
     }
     if (this.data.activeTab === 'home' && ['departed', 'arrived', 'in_service'].includes(status)) {
-      this.setData({ activeTab: 'map' });
+      this.setData({ activeTab: 'task' });
       this.refreshDerivedState();
+      wx.nextTick(() => wx.pageScrollTo({ selector: '.task-page', duration: 220 }));
+      return;
+    }
+    if (this.data.activeTab === 'home' && action.type === 'depart') {
+      this.setData({ activeTab: 'task' });
+      this.refreshDerivedState();
+      wx.nextTick(() => wx.pageScrollTo({ selector: '.preflight-panel', duration: 220 }));
+      return;
+    }
+    if (this.data.activeTab === 'home' && action.type === 'return') {
+      this.setData({ activeTab: 'task' });
+      this.refreshDerivedState();
+      wx.nextTick(() => wx.pageScrollTo({ selector: '.return-panel', duration: 220 }));
       return;
     }
     if (this.data.activeTab === 'map' && ['assigned', 'confirmed'].includes(status)) {
@@ -778,12 +843,14 @@ Page({
     }
     if (!action.reportType) return;
     if (action.type === 'depart' && !this.allChecked(this.data.preflightItems, this.data.preflightChecked)) {
-      this.setData({ activeTab: 'home' });
+      this.setData({ activeTab: 'task' });
+      wx.nextTick(() => wx.pageScrollTo({ selector: '.preflight-panel', duration: 220 }));
       wx.showToast({ title: '请先完成出库检查', icon: 'none' });
       return;
     }
     if (action.type === 'return' && !this.allChecked(this.data.returnItems, this.data.returnChecked)) {
-      this.setData({ activeTab: 'home' });
+      this.setData({ activeTab: 'task' });
+      wx.nextTick(() => wx.pageScrollTo({ selector: '.return-panel', duration: 220 }));
       wx.showToast({ title: '请先完成入库检查', icon: 'none' });
       return;
     }
@@ -1041,6 +1108,102 @@ Page({
 
   onInput(e) {
     this.setData({ [e.currentTarget.dataset.key]: e.detail.value });
+  },
+
+  onLoginInput(e) {
+    const key = e.currentTarget.dataset.key;
+    if (!key) return;
+    this.setData({ [key]: e.detail.value });
+  },
+
+  loginDriver() {
+    const phone = String(this.data.loginPhone || '').trim();
+    const password = String(this.data.loginPassword || '').trim();
+    if (!phone || !password) {
+      this.setData({ loginError: '请输入手机号和密码' });
+      return;
+    }
+    const wxOpenid = wx.getStorageSync('super_wechat_openid')
+      || wx.getStorageSync('driver_mock_openid')
+      || `driver-miniapp-${phone.replace(/\D/g, '')}`;
+    wx.setStorageSync('driver_mock_openid', wxOpenid);
+    this.setData({ loginLoading: true, loginError: '' });
+    api.loginPhone(phone, password, wxOpenid).then((res) => {
+      if (!res || !res.token || !res.user) {
+        throw new Error((res && (res.error || res.message)) || 'login_failed');
+      }
+      if (res.user.role !== 'driver') {
+        throw new Error('not_driver_account');
+      }
+      const driverId = Number(res.user.profile_id || 0);
+      if (!driverId) {
+        throw new Error('driver_profile_not_bound');
+      }
+      wx.setStorageSync('driver_session', res);
+      wx.setStorageSync('driver_id', driverId);
+      this.setData({
+        authSession: res,
+        driverId,
+        loginLoading: false,
+        loginPassword: '',
+        loginError: ''
+      });
+      wx.showToast({ title: '登录成功', icon: 'success' });
+      this.loadAll();
+    }).catch((err) => {
+      const message = err && err.message === 'wechat_binding_mismatch'
+        ? '该账号已绑定其他微信，请联系管理员解除绑定'
+        : err && err.message === 'not_driver_account'
+          ? '该账号不是司机角色'
+          : '登录失败，请检查手机号或密码';
+      this.setData({ loginLoading: false, loginError: message });
+    });
+  },
+
+  logoutDriver() {
+    wx.removeStorageSync('driver_session');
+    this.setData({
+      authSession: null,
+      allAssignments: [],
+      assignments: [],
+      tomorrowAssignments: [],
+      pendingConfirmAssignments: [],
+      selected: null,
+      activeTab: 'home',
+      dockVisible: false
+    });
+  },
+
+  onSaveContactProfile() {
+    if (this.data.contactSaving) return;
+    this.setData({ contactSaving: true });
+    api.updateDriverProfile({
+      driver_id: this.data.driverId,
+      phone: this.data.contactPhone,
+      wechat: this.data.contactWechat,
+      whatsapp: this.data.contactWhatsapp,
+      line: this.data.contactLine,
+      kakao: this.data.contactKakao
+    }).then((res) => {
+      this.setData({ contactSaving: false });
+      if (!res || res.success === false) {
+        wx.showToast({ title: '保存失败', icon: 'none' });
+        return;
+      }
+      const driver = res.driver || {};
+      this.setData({
+        driverProfile: driver,
+        contactPhone: driver.phone || '',
+        contactWechat: driver.wechat || '',
+        contactWhatsapp: driver.whatsapp || '',
+        contactLine: driver.line || '',
+        contactKakao: driver.kakao || ''
+      });
+      wx.showToast({ title: '已保存', icon: 'success' });
+    }).catch(() => {
+      this.setData({ contactSaving: false });
+      wx.showToast({ title: '网络异常', icon: 'none' });
+    });
   },
 
   onSubmitExpense() {

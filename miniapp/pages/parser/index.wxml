@@ -1,7 +1,7 @@
 <view class="page">
   <view class="section">
     <view class="title">粘贴订单文本</view>
-    <textarea class="textarea" placeholder="例如：5/7 10:00 成田->东京站 4人 2箱 ALPHARD 王先生" value="{{text}}" bindinput="onTextInput"></textarea>
+    <textarea class="textarea" placeholder="例如：5/24 14:10 关西接机大阪 10座600" value="{{text}}" bindinput="onTextInput"></textarea>
     <view class="actions">
       <button class="primary" bindtap="onParseText">粘贴生成草稿</button>
       <button class="secondary" bindtap="onVoiceEntry">语音转文字入口</button>

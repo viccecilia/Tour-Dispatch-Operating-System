@@ -223,6 +223,28 @@ def identify_vehicle_type(text: str) -> str | None:
     return " ".join(dict.fromkeys(parts)) or None
 
 
+def identify_vehicle_type(text: str) -> str | None:
+    raw = clean_text(text).lower()
+    parts = []
+    if any(token in raw for token in ["3代", "三代", "alphard", "埃尔法", "阿尔法", "アルファード", "vellfire", "ヴェルファイア"]):
+        parts.append("3代")
+    if any(token in raw for token in ["10座", "十座", "海狮", "海獅", "hiace", "ハイエース"]):
+        parts.append("10座")
+    if any(token in raw for token in ["7座", "七座", "gl8", "别克gl8"]):
+        parts.append("7座")
+    if any(token in raw for token in ["18座", "中巴", "マイクロバス"]):
+        parts.append("18座")
+    if any(token in raw for token in ["23座", "考斯特", "coaster"]):
+        parts.append("23座")
+    if any(token in raw for token in ["30系", "30アルファード", "30 alphard"]):
+        parts.append("30系")
+    if any(token in raw for token in ["绿牌", "绿", "绿色"]):
+        parts.append("绿牌")
+    if any(token in raw for token in ["白牌", "白色"]):
+        parts.append("白牌")
+    return " ".join(dict.fromkeys(parts)) or None
+
+
 def extract_note_tokens(raw_text: str) -> tuple[list[str], str]:
     raw = clean_text(raw_text)
     notes = []

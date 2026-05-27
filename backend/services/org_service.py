@@ -5,7 +5,7 @@ from backend.db.database import get_connection, hash_password
 from backend.services.tenant_context import get_current_tenant_id
 
 
-ROLES = {"admin", "dispatcher", "driver"}
+ROLES = {"admin", "dispatcher", "operations_manager", "driver"}
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     "admin": [
@@ -22,6 +22,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "manage_dispatch",
         "view_calendar",
         "view_driver_monitor",
+    ],
+    "operations_manager": [
+        "manage_resources",
+        "view_calendar",
+        "view_driver_monitor",
+        "view_fleet_map",
+        "view_incidents",
     ],
     "driver": [
         "driver_app",

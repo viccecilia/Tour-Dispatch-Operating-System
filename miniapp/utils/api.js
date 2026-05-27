@@ -1,16 +1,27 @@
+const API_STORAGE_KEY = 'wx_dispatch_api_base_url';
+const DEFAULT_BASE_URL = 'http://localhost:18765';
+const CLOUD_BASE_URL = 'https://api.example.com';
+
 const API_CONFIG = {
-  // 微信开发者工具本机预览默认使用本机地址。
-  // 真机预览时请改成电脑局域网地址。
-  // 如果后端端口被占用，可切换为 18765。
-  baseUrl: 'http://192.168.31.241:18765'
+  baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
 };
 
 function setBaseUrl(baseUrl) {
   API_CONFIG.baseUrl = String(baseUrl || '').replace(/\/$/, '');
+  wx.setStorageSync(API_STORAGE_KEY, API_CONFIG.baseUrl);
 }
 
 function getBaseUrl() {
   return API_CONFIG.baseUrl;
+}
+
+function useCloudBaseUrl(baseUrl = CLOUD_BASE_URL) {
+  setBaseUrl(baseUrl);
+}
+
+function resetBaseUrl() {
+  wx.removeStorageSync(API_STORAGE_KEY);
+  API_CONFIG.baseUrl = DEFAULT_BASE_URL;
 }
 
 function request(path, options = {}) {
@@ -33,10 +44,20 @@ module.exports = {
   API_CONFIG,
   setBaseUrl,
   getBaseUrl,
+  useCloudBaseUrl,
+  resetBaseUrl,
   request,
   login: (username, password) => request('/api/auth/login', {
     method: 'POST',
     data: { username, password }
+  }),
+  loginPhone: (phone, password, wxOpenid) => request('/api/auth/login-phone', {
+    method: 'POST',
+    data: { phone, password, wx_openid: wxOpenid, client_type: 'driver_miniapp' }
+  }),
+  registerPhone: (data) => request('/api/auth/register', {
+    method: 'POST',
+    data: { ...data, client_type: data.client_type || 'driver_miniapp' }
   }),
   dashboardSummary: () => request('/api/dashboard/summary'),
   financeSummary: () => request('/api/finance/summary'),
@@ -89,6 +110,7 @@ module.exports = {
   driverReports: (driverId) => request(`/api/driver/reports?driver_id=${driverId}`),
   driverDashboard: (driverId) => request(`/api/driver/dashboard?driver_id=${driverId}`),
   driverProfile: (driverId) => request(`/api/driver/profile?driver_id=${driverId}`),
+  updateDriverProfile: (data) => request('/api/driver/profile', { method: 'POST', data }),
   driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
   driverWorkflowEvents: (driverId) => request(`/api/driver/workflow-events?driver_id=${driverId}`),
   submitDriverWorkflowEvent: (data) => request('/api/driver/workflow-event', { method: 'POST', data }),

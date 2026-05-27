@@ -6,6 +6,8 @@ const SAMPLE_TEXT = [
   '5.29 13:30 京都酒店-关西机场 3代 儿童座椅 绿600'
 ].join('\n');
 
+const AIRPORT_WORDS = ['kix', '机场', '空港', '关西', '关空', '羽田', '成田', '伊丹', '神户机场'];
+
 Page({
   data: {
     importOpen: false,
@@ -68,7 +70,7 @@ Page({
         this.setData({
           loading: false,
           importOpen: false,
-          message: `已解析 ${res.count || 0} 条，已按包车/接机/送机分类。`
+          message: `已解析 ${res.count || 0} 条，系统已按包车、接机、送机分类。`
         });
         this.loadAll();
       })
@@ -91,7 +93,7 @@ Page({
           .filter((item) => item.parse_status !== 'confirmed' && item.parse_status !== 'discarded')
           .map((item) => this.decoratePendingRow({ ...item, kind: 'draft' }));
         const orders = (ordersRes.orders || []).map((item) => this.decoratePendingRow({ ...item, kind: 'order' }));
-        const pendingRows = this.sortPendingRows(drafts.concat(orders)).slice(0, 120);
+        const pendingRows = this.sortPendingRows(drafts.concat(orders)).slice(0, 160);
         const assignments = assignmentsRes.assignments || [];
         this.setData({
           pendingRows,
@@ -113,20 +115,38 @@ Page({
     const selected = this.data.selectedKeys.includes(key);
     const risks = this.getRowRisks(row);
     const dispatchKind = this.classifyOrder(row);
+    const oid = row.oid || this.formatDraftNo(row);
     return {
       ...row,
       key,
+      oid,
       selected,
       dispatchKind,
-      riskText: risks.join('、'),
+      riskText: risks.join(' / '),
       hasRisk: risks.length > 0,
       sourceText: row.kind === 'draft' ? '草稿' : '订单',
       typeText: dispatchKind === 'charter' ? '包车' : dispatchKind === 'dropoff' ? '送机' : '接机',
-      timeText: `${row.order_date || '缺日期'} ${row.start_time || '--:--'}-${row.end_time || '--:--'}`,
-      compactTimeText: `${row.start_time || '--:--'}-${row.end_time || '--:--'}`,
-      routeText: `${row.pickup_location || '缺起点'} → ${row.dropoff_location || '缺终点'}`,
-      priceText: row.price ? `¥${row.price}` : '缺价格'
+      timeText: `${row.order_date || '待确认日期'} ${row.start_time || '--:--'}-${row.end_time || '--:--'}`,
+      compactTimeText: `${row.order_date || '待确认日期'} ${row.start_time || '--:--'}`,
+      routeText: `${row.pickup_location || '待确认'} → ${row.dropoff_location || '待确认'}`,
+      priceText: row.price ? `¥${row.price}` : '',
+      charterDetailText: this.buildCharterDetail(row, risks)
     };
+  },
+
+  formatDraftNo(row) {
+    const day = String(row.order_date || '').replace(/-/g, '').slice(2) || 'TMP';
+    return `${day}-${String(row.id || '').padStart(3, '0')}`;
+  },
+
+  buildCharterDetail(row, risks) {
+    const parts = [];
+    if (row.vehicle_type) parts.push(row.vehicle_type);
+    if (row.guest_name) parts.push(`客人 ${row.guest_name}`);
+    if (row.guest_contact) parts.push(row.guest_contact);
+    if (row.agency_name) parts.push(row.agency_name);
+    if (row.remark) parts.push(row.remark);
+    return parts.join(' · ');
   },
 
   classifyOrder(row) {
@@ -139,12 +159,11 @@ Page({
     ].filter(Boolean).join(' ').toLowerCase();
     const pickup = String(row.pickup_location || '').toLowerCase();
     const dropoff = String(row.dropoff_location || '').toLowerCase();
-    const airportWords = ['kix', '机场', '空港', '关西', '关空', '羽田', '成田', '伊丹', '神户机场'];
     if (text.includes('包车') || text.includes('包車') || text.includes('charter')) return 'charter';
     if (text.includes('送机') || text.includes('送機') || text.includes('airport_dropoff')) return 'dropoff';
     if (text.includes('接机') || text.includes('接機') || text.includes('airport_pickup')) return 'pickup';
-    const pickupAirport = airportWords.some((word) => pickup.includes(word));
-    const dropoffAirport = airportWords.some((word) => dropoff.includes(word));
+    const pickupAirport = AIRPORT_WORDS.some((word) => pickup.includes(word));
+    const dropoffAirport = AIRPORT_WORDS.some((word) => dropoff.includes(word));
     if (dropoffAirport && !pickupAirport) return 'dropoff';
     return 'pickup';
   },
@@ -158,12 +177,7 @@ Page({
   },
 
   getRowRisks(row) {
-    const risks = [];
-    if (!row.order_date || !row.start_time) risks.push('缺时间');
-    if (!row.pickup_location || !row.dropoff_location) risks.push('缺地点');
-    if (!row.vehicle_type) risks.push('缺车型');
-    if (!row.price && row.price !== 0) risks.push('缺价格');
-    return risks;
+    return [];
   },
 
   sortPendingRows(rows) {
@@ -184,7 +198,7 @@ Page({
         displayName: this.formatDriverDisplayName(driver),
         selected: String(this.data.driverId) === String(driver.id),
         disabled: conflict,
-        statusText: conflict ? '冲突' : (active ? '忙' : '空'),
+        statusText: conflict ? '冲突' : (active ? '占用' : '空闲'),
         statusClass: conflict ? 'danger' : (active ? 'busy' : 'ok')
       };
     }).sort((a, b) => {
@@ -209,7 +223,7 @@ Page({
         selected: String(this.data.vehicleId) === String(vehicle.id),
         disabled: conflict,
         shortPlate: String(vehicle.plate_number || '').slice(-4) || vehicle.plate_number,
-        statusText: conflict ? '冲突' : (active ? '忙' : '空'),
+        statusText: conflict ? '冲突' : (active ? '占用' : '空闲'),
         statusClass: conflict ? 'danger' : (active ? 'busy' : 'ok')
       };
     }).sort((a, b) => {
@@ -219,8 +233,7 @@ Page({
     }).slice(0, 15);
   },
 
-  toggleRow(e) {
-    const key = e.currentTarget.dataset.key;
+  toggleRowByKey(key) {
     const selected = this.data.selectedKeys.slice();
     const index = selected.indexOf(key);
     if (index >= 0) selected.splice(index, 1);
@@ -246,7 +259,7 @@ Page({
     this._lastTapAt = now;
     if (this._tapTimer) clearTimeout(this._tapTimer);
     this._tapTimer = setTimeout(() => {
-      this.toggleRow({ currentTarget: { dataset: { key } } });
+      this.toggleRowByKey(key);
       this._tapTimer = null;
     }, 220);
   },
@@ -256,7 +269,7 @@ Page({
     const selected = this.data.pendingRows.filter((item) => selectedSet.has(item.key));
     if (!selected.length) {
       const pendingRows = this.sortPendingRows(this.data.pendingRows);
-      this.setData({ pendingRows, ...this.groupPendingRows(pendingRows), message: '已按日期、开始时间排序。' });
+      this.setData({ pendingRows, ...this.groupPendingRows(pendingRows), message: '已按日期、时间和起点排序。' });
       return;
     }
     const rest = this.data.pendingRows.filter((item) => !selectedSet.has(item.key));
@@ -264,7 +277,7 @@ Page({
     this.setData({
       pendingRows,
       ...this.groupPendingRows(pendingRows),
-      message: `已为 ${selected.length} 单做接龙排序。`
+      message: `已为 ${selected.length} 单按接龙顺序排序。`
     });
   },
 
@@ -296,8 +309,7 @@ Page({
   },
 
   startEdit(e) {
-    const key = e.currentTarget.dataset.key;
-    this.startEditByKey(key);
+    this.startEditByKey(e.currentTarget.dataset.key);
   },
 
   startEditByKey(key) {
@@ -314,6 +326,8 @@ Page({
         order_type: row.order_type || '',
         vehicle_type: row.vehicle_type || '',
         price: row.price || '',
+        guest_name: row.guest_name || '',
+        guest_contact: row.guest_contact || '',
         agency_name: row.agency_name || '',
         remark: row.remark || ''
       }

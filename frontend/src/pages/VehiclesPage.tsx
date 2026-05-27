@@ -1,6 +1,6 @@
-import { Fragment, FormEvent, KeyboardEvent, useMemo, useState } from "react";
+import { KeyboardEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CarFront, ChevronDown, ChevronRight, Plus, Search, UserRound } from "lucide-react";
+import { AlertTriangle, CarFront, ChevronDown, ChevronRight, Search, Trash2, UserRound } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -65,9 +65,6 @@ export function VehiclesPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ResourceTab>("vehicles");
   const [query, setQuery] = useState("");
-  const [vehicleForm, setVehicleForm] = useState<Partial<Vehicle>>(vehicleInitial);
-  const [showVehicleForm, setShowVehicleForm] = useState(false);
-  const [vehicleRecordsText, setVehicleRecordsText] = useState("");
   const [message, setMessage] = useState("");
 
   const drivers = useQuery({ queryKey: ["resource-drivers"], queryFn: api.resourceDrivers });
@@ -104,12 +101,18 @@ export function VehiclesPage() {
     onError: (error: Error) => setMessage(`保存司机失败：${error.message}`),
   });
 
+  const deleteDriver = useMutation({
+    mutationFn: api.deleteDriver,
+    onSuccess: async () => {
+      setMessage("司机已从台账中移除。");
+      await refreshResources();
+    },
+    onError: (error: Error) => setMessage(`删除司机失败：${error.message}`),
+  });
+
   const createVehicle = useMutation({
     mutationFn: api.createVehicle,
     onSuccess: async () => {
-      setVehicleForm(vehicleInitial);
-      setVehicleRecordsText("");
-      setShowVehicleForm(false);
       setMessage("车辆已新增。");
       await refreshResources();
     },
@@ -123,6 +126,15 @@ export function VehiclesPage() {
       await refreshResources();
     },
     onError: (error: Error) => setMessage(`保存车辆失败：${error.message}`),
+  });
+
+  const deleteVehicle = useMutation({
+    mutationFn: api.deleteVehicle,
+    onSuccess: async () => {
+      setMessage("车辆已从台账中移除。");
+      await refreshResources();
+    },
+    onError: (error: Error) => setMessage(`删除车辆失败：${error.message}`),
   });
 
   const filteredDrivers = useMemo(() => {
@@ -179,22 +191,6 @@ export function VehiclesPage() {
     );
   }, [query, vehicles.data]);
 
-  function submitVehicle(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!vehicleForm.plate_number?.trim()) {
-      setMessage("请填写车辆号码。");
-      return;
-    }
-    createVehicle.mutate(
-      cleanPayload({
-        ...normalizeDateFields(vehicleForm),
-        inspection_records: parseInspectionRecords(vehicleRecordsText, vehicleForm),
-        inspection_expires_at: normalizeFlexibleDate(vehicleForm.next_inspection_due_date),
-        insurance_expires_at: normalizeFlexibleDate(vehicleForm.insurance_due_date),
-      }),
-    );
-  }
-
   return (
     <div className="space-y-5">
       <Card>
@@ -214,12 +210,6 @@ export function VehiclesPage() {
                 <UserRound size={16} />
                 司机台账
               </Button>
-              {tab === "vehicles" ? (
-                <Button type="button" variant="secondary" onClick={() => setShowVehicleForm((value) => !value)}>
-                  <Plus size={16} />
-                  添加车辆
-                </Button>
-              ) : null}
             </div>
           </div>
         </CardHeader>
@@ -241,24 +231,30 @@ export function VehiclesPage() {
 
           {tab === "vehicles" ? (
             <div className="space-y-4">
-              {showVehicleForm ? (
-                <VehicleCreatePanel
-                  form={vehicleForm}
-                  recordsText={vehicleRecordsText}
-                  saving={createVehicle.isPending}
-                  onChange={setVehicleForm}
-                  onRecordsChange={setVehicleRecordsText}
-                  onCancel={() => setShowVehicleForm(false)}
-                  onSubmit={submitVehicle}
-                />
-              ) : null}
-              <VehicleTable rows={filteredVehicles} loading={vehicles.isLoading} saving={updateVehicle.isPending} onSave={(id, payload) => updateVehicle.mutate({ id, payload })} />
+              <VehicleTable
+                rows={filteredVehicles}
+                loading={vehicles.isLoading}
+                saving={createVehicle.isPending || updateVehicle.isPending || deleteVehicle.isPending}
+                onCreate={(payload) => createVehicle.mutate(payload)}
+                onSave={(id, payload) => updateVehicle.mutate({ id, payload })}
+                onDelete={(id) => {
+                  if (window.confirm("确认删除这台车辆？历史派车记录会保留。")) deleteVehicle.mutate(id);
+                }}
+              />
               <VehicleMaintenanceTable rows={filteredVehicles} loading={vehicles.isLoading} saving={updateVehicle.isPending} onSave={(id, payload) => updateVehicle.mutate({ id, payload })} />
             </div>
           ) : (
             <div className="space-y-4">
-              <DriverCreatePanel saving={createDriver.isPending} onCreate={(payload) => createDriver.mutate(payload)} />
-              <DriverTable rows={filteredDrivers} loading={drivers.isLoading} saving={updateDriver.isPending} onSave={(id, payload) => updateDriver.mutate({ id, payload })} />
+              <DriverTable
+                rows={filteredDrivers}
+                loading={drivers.isLoading}
+                saving={createDriver.isPending || updateDriver.isPending || deleteDriver.isPending}
+                onCreate={(payload) => createDriver.mutate(payload)}
+                onSave={(id, payload) => updateDriver.mutate({ id, payload })}
+                onDelete={(id) => {
+                  if (window.confirm("确认删除这名司机？历史派车和报备记录会保留。")) deleteDriver.mutate(id);
+                }}
+              />
             </div>
           )}
         </CardContent>
@@ -295,67 +291,23 @@ function ResourceReminderStrip({ alerts, loading }: { alerts: ResourceAlert[]; l
   );
 }
 
-function VehicleCreatePanel({
-  form,
-  recordsText,
+function VehicleTable({
+  rows,
+  loading,
   saving,
-  onChange,
-  onRecordsChange,
-  onCancel,
-  onSubmit,
+  onCreate,
+  onSave,
+  onDelete,
 }: {
-  form: Partial<Vehicle>;
-  recordsText: string;
+  rows: Vehicle[];
+  loading: boolean;
   saving: boolean;
-  onChange: (value: Partial<Vehicle>) => void;
-  onRecordsChange: (value: string) => void;
-  onCancel: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCreate: (payload: Partial<Vehicle>) => void;
+  onSave: (id: number, payload: Partial<Vehicle>) => void;
+  onDelete: (id: number) => void;
 }) {
-  return (
-    <form className="rounded-lg border border-border bg-slate-50 p-4" onSubmit={onSubmit}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-bold text-slate-950">新增车辆</h3>
-          <p className="text-sm text-slate-500">常用基础字段进入车辆基础表，低频维护日期进入维护表。</p>
-        </div>
-        <Button type="button" variant="ghost" onClick={onCancel}>收起</Button>
-      </div>
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-        <Field label="车种名" value={form.vehicle_type || ""} onChange={(value) => onChange({ ...form, vehicle_type: value })} />
-        <Field label="车両ナンバー" value={form.plate_number || ""} onChange={(value) => onChange({ ...form, plate_number: value })} />
-        <Field label="车辆简码" value={form.plate_short_code || ""} onChange={(value) => onChange({ ...form, plate_short_code: value })} />
-        <Field label="车辆类型代码" value={form.vehicle_type_code || ""} onChange={(value) => onChange({ ...form, vehicle_type_code: value })} />
-        <Field label="色" value={form.vehicle_color || ""} onChange={(value) => onChange({ ...form, vehicle_color: value })} />
-        <SelectField label="轮胎" value={form.snow_tire || "no"} onChange={(value) => onChange({ ...form, snow_tire: value })} options={[["no", "普通"], ["yes", "雪胎"]]} />
-        <SelectField label="状态" value={form.status || "available"} onChange={(value) => onChange({ ...form, status: value })} options={vehicleStatusOptions} />
-        <Field label="初登录日" type="date" value={form.first_registration_date || ""} onChange={(value) => onChange({ ...form, first_registration_date: value })} />
-        <Field label="到社登录日" type="date" value={form.company_registration_date || ""} onChange={(value) => onChange({ ...form, company_registration_date: value })} />
-        <Field label="最近点检日" type="date" value={form.last_inspection_date || ""} onChange={(value) => onChange({ ...form, last_inspection_date: value })} />
-        <Field label="下次点检到期日" type="date" value={form.next_inspection_due_date || ""} onChange={(value) => onChange({ ...form, next_inspection_due_date: value })} />
-        <Field label="车检到期日" type="date" value={form.shaken_due_date || ""} onChange={(value) => onChange({ ...form, shaken_due_date: value })} />
-        <Field label="保险到期日" type="date" value={form.insurance_due_date || ""} onChange={(value) => onChange({ ...form, insurance_due_date: value })} />
-        <Field label="维修状态" value={form.maintenance_status || ""} onChange={(value) => onChange({ ...form, maintenance_status: value })} />
-        <label className="grid gap-1 text-sm font-medium text-slate-600 md:col-span-3 xl:col-span-4">
-          历次点检/车检记录
-          <textarea
-            className="min-h-24 rounded-md border border-border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-primary"
-            value={recordsText}
-            placeholder={"每行一条，例如：\n2025-04-24 点检\n2026-01-26 车检"}
-            onChange={(event) => onRecordsChange(event.target.value)}
-          />
-        </label>
-        <Button type="submit" disabled={saving}>
-          <Plus size={16} />
-          新增车辆
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function VehicleTable({ rows, loading, saving, onSave }: { rows: Vehicle[]; loading: boolean; saving: boolean; onSave: (id: number, payload: Partial<Vehicle>) => void }) {
   const [editing, setEditing] = useState<EditingCell>(null);
+  const [draft, setDraft] = useState<Partial<Vehicle>>(vehicleInitial);
   const cols: Array<{ key: keyof Vehicle; label: string; width?: string }> = [
     { key: "vehicle_type", label: "车种名" },
     { key: "plate_number", label: "车牌号码" },
@@ -366,12 +318,16 @@ function VehicleTable({ rows, loading, saving, onSave }: { rows: Vehicle[]; load
     { key: "status", label: "状态" },
   ];
   if (loading) return <EmptyState title="正在加载车辆" detail="正在读取车辆基础信息。" />;
-  if (!rows.length) return <EmptyState title="暂无车辆" detail="新增车辆后会同步到派车工作台。" />;
+  function saveDraft() {
+    if (!draft.plate_number?.trim()) return;
+    onCreate(cleanPayload({ ...normalizeDateFields(draft), status: draft.status || "available" }));
+    setDraft(vehicleInitial);
+  }
   return (
     <section className="rounded-xl border border-border bg-white">
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-base font-bold text-slate-950">车辆基础信息</h3>
-        <p className="text-xs text-slate-500">双击单元格可修改，回车或点击空白处保存。</p>
+        <p className="text-xs text-slate-500">第一行快速新增；已有单元格双击修改，回车或点击空白处保存。</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[980px] text-center text-sm">
@@ -379,9 +335,11 @@ function VehicleTable({ rows, loading, saving, onSave }: { rows: Vehicle[]; load
             <tr>
               <th className="px-4 py-3 text-center">序号</th>
               {cols.map((col) => <th key={col.key} className="px-4 py-3 text-center">{col.label}</th>)}
+              <th className="px-4 py-3 text-center">删除</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
+            <VehicleQuickCreateRow draft={draft} saving={saving} onChange={setDraft} onSave={saveDraft} />
             {rows.map((row, index) => (
               <tr key={row.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 align-middle text-slate-500">{index + 1}</td>
@@ -397,12 +355,57 @@ function VehicleTable({ rows, loading, saving, onSave }: { rows: Vehicle[]; load
                     onSave={(id, field, value) => onSave(id, normalizeVehiclePatch(field, value))}
                   />
                 ))}
+                <td className="px-4 py-3 align-middle">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    className="mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    title="删除车辆"
+                    onClick={() => onDelete(row.id)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {!rows.length ? <div className="border-t border-border py-8"><EmptyState title="暂无车辆" detail="在表格第一行录入车牌后按回车新增。" /></div> : null}
       </div>
     </section>
+  );
+}
+
+function VehicleQuickCreateRow({
+  draft,
+  saving,
+  onChange,
+  onSave,
+}: {
+  draft: Partial<Vehicle>;
+  saving: boolean;
+  onChange: (payload: Partial<Vehicle>) => void;
+  onSave: () => void;
+}) {
+  function keySave(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") onSave();
+  }
+  return (
+    <tr className="bg-emerald-50/50">
+      <td className="px-4 py-3 text-xs font-bold text-emerald-700">新增</td>
+      <td className="px-2 py-2"><QuickInput value={draft.vehicle_type || ""} placeholder="ハイエース" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, vehicle_type: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.plate_number || ""} placeholder="なにわ300あ1001" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, plate_number: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.plate_short_code || ""} placeholder="1001" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, plate_short_code: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.vehicle_type_code || ""} placeholder="H/A" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, vehicle_type_code: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.vehicle_color || ""} placeholder="白/黑" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, vehicle_color: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.snow_tire || ""} placeholder="普通/雪胎" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, snow_tire: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={statusLabel(draft.status)} placeholder="正常" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, status: parseStatus(value, "vehicle") })} /></td>
+      <td className="px-4 py-3">
+        <button type="button" disabled={saving || !draft.plate_number?.trim()} onClick={onSave} className="inline-flex h-8 items-center rounded-full bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-40">
+          新增
+        </button>
+      </td>
+    </tr>
   );
 }
 
@@ -466,223 +469,140 @@ function VehicleMaintenanceTable({ rows, loading, saving, onSave }: { rows: Vehi
   );
 }
 
-function DriverCreatePanel({ saving, onCreate }: { saving: boolean; onCreate: (payload: Partial<Driver>) => void }) {
-  const [draft, setDraft] = useState<Partial<Driver>>(driverInitial);
-  const [open, setOpen] = useState(false);
-  function save() {
-    if (!draft.name?.trim()) return;
-    onCreate(cleanPayload({ ...normalizeDateFields(draft), driver_status: draft.status || draft.driver_status }));
-    setDraft(driverInitial);
-    setOpen(false);
-  }
-  return (
-    <section className="rounded-xl border border-emerald-100 bg-white">
-      <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={() => setOpen((value) => !value)}>
-        <div>
-          <h3 className="text-base font-bold text-slate-950">新增人员</h3>
-          <p className="text-sm text-slate-500">点击展开录入司机，保存后进入下方司机明细表。</p>
-        </div>
-        <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
-          {open ? "收起" : "展开新增"}
-          {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-        </div>
-      </button>
-      {open ? (
-        <div className="border-t border-emerald-100 bg-emerald-50/50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">日期可手写：2.05、2-5、2/5、2026/02/05，保存时会自动标准化。</p>
-            <Button type="button" className="h-8 px-3" disabled={saving || !draft.name?.trim()} onClick={save}>新增</Button>
-          </div>
-          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-            <Field label="運転手ID" value={draft.driver_external_id || ""} onChange={(value) => setDraft({ ...draft, driver_external_id: value })} />
-            <Field label="所属営業所" value={draft.office || ""} onChange={(value) => setDraft({ ...draft, office: value })} />
-            <Field label="運転手名" value={draft.name || ""} onChange={(value) => setDraft({ ...draft, name: value })} />
-            <Field label="司机代码" value={draft.driver_code || ""} onChange={(value) => setDraft({ ...draft, driver_code: value })} />
-            <Field label="语言" value={draft.driver_language || ""} onChange={(value) => setDraft({ ...draft, driver_language: value })} />
-            <Field label="免许有效期限" type="date" value={draft.license_due_date || ""} onChange={(value) => setDraft({ ...draft, license_due_date: value })} />
-            <Field label="免許番号" value={draft.license_number || ""} onChange={(value) => setDraft({ ...draft, license_number: value })} />
-            <Field label="在留资格" value={draft.residence_status || ""} onChange={(value) => setDraft({ ...draft, residence_status: value })} />
-            <Field label="再留期限有效日期" type="date" value={draft.residence_due_date || ""} onChange={(value) => setDraft({ ...draft, residence_due_date: value })} />
-            <Field label="健康诊断日期" type="date" value={draft.health_check_due_date || ""} onChange={(value) => setDraft({ ...draft, health_check_due_date: value })} />
-            <Field label="携帯電話番号" value={draft.phone || ""} onChange={(value) => setDraft({ ...draft, phone: value })} />
-            <SelectField label="状态" value={draft.status || "available"} onChange={(value) => setDraft({ ...draft, status: value, driver_status: value })} options={driverStatusOptions} />
-            <Field label="wechat" value={draft.wechat || ""} onChange={(value) => setDraft({ ...draft, wechat: value })} />
-            <Field label="line" value={draft.line || ""} onChange={(value) => setDraft({ ...draft, line: value })} />
-            <Field label="WhatsApp" value={draft.whatsapp || ""} onChange={(value) => setDraft({ ...draft, whatsapp: value })} />
-            <Field label="mail" value={draft.email || ""} onChange={(value) => setDraft({ ...draft, email: value })} />
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function DriverTable({ rows, loading, saving, onSave }: { rows: Driver[]; loading: boolean; saving: boolean; onSave: (id: number, payload: Partial<Driver>) => void }) {
+function DriverTable({
+  rows,
+  loading,
+  saving,
+  onCreate,
+  onSave,
+  onDelete,
+}: {
+  rows: Driver[];
+  loading: boolean;
+  saving: boolean;
+  onCreate: (payload: Partial<Driver>) => void;
+  onSave: (id: number, payload: Partial<Driver>) => void;
+  onDelete: (id: number) => void;
+}) {
   const [editing, setEditing] = useState<EditingCell>(null);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const cols: Array<{ key: keyof Driver | "health_remaining"; label: string }> = [
+  const [draft, setDraft] = useState<Partial<Driver>>(driverInitial);
+  const cols: Array<{ key: keyof Driver; label: string }> = [
+    { key: "driver_external_id", label: "運転手ID" },
+    { key: "office", label: "所属営業所" },
     { key: "name", label: "運転手名" },
     { key: "driver_code", label: "司机代码" },
     { key: "driver_language", label: "语言" },
     { key: "phone", label: "电话" },
     { key: "license_due_date", label: "免许有效期限" },
-    { key: "health_check_due_date", label: "健康诊断日期" },
-    { key: "health_remaining", label: "健康诊断剩余有效天数" },
-    { key: "status", label: "状态" },
-  ];
-  const detailCols: Array<{ key: keyof Driver; label: string }> = [
-    { key: "driver_external_id", label: "運転手ID" },
-    { key: "office", label: "所属営業所" },
     { key: "license_number", label: "免許番号" },
     { key: "residence_status", label: "在留资格" },
     { key: "residence_due_date", label: "再留期限有效日期" },
+    { key: "health_check_due_date", label: "健康诊断日期" },
     { key: "wechat", label: "wechat" },
     { key: "line", label: "line" },
     { key: "whatsapp", label: "WhatsApp" },
     { key: "email", label: "mail" },
+    { key: "status", label: "状态" },
   ];
-  function toggle(rowId: number) {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(rowId)) next.delete(rowId);
-      else next.add(rowId);
-      return next;
-    });
-  }
   if (loading) return <EmptyState title="正在加载司机" detail="正在读取司机台账。" />;
-  if (!rows.length) return <EmptyState title="暂无司机" detail="新增司机后会同步到派车工作台。" />;
+  function saveDraft() {
+    if (!draft.name?.trim()) return;
+    onCreate(cleanPayload({ ...normalizeDateFields(draft), status: draft.status || "available", driver_status: draft.status || draft.driver_status || "available" }));
+    setDraft(driverInitial);
+  }
   return (
     <section className="rounded-xl border border-border bg-white">
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-base font-bold text-slate-950">司机明细</h3>
-        <p className="text-xs text-slate-500">双击单元格可修改，回车或点击空白处保存。</p>
+        <p className="text-xs text-slate-500">第一行快速新增；已有单元格双击修改，回车或点击空白处保存。</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1120px] text-center text-sm">
+        <table className="w-full min-w-[1680px] text-center text-sm">
           <thead className="bg-slate-50 text-xs font-bold text-slate-500">
             <tr>
               <th className="px-4 py-3 text-center">序号</th>
-              <th className="px-4 py-3 text-center">详情</th>
               {cols.map((col) => <th key={col.key} className="px-4 py-3 text-center">{col.label}</th>)}
+              <th className="px-4 py-3 text-center">删除</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row, index) => {
-              const isOpen = expanded.has(row.id);
-              return (
-                <Fragment key={row.id}>
-                  <tr className="hover:bg-slate-50">
-                    <td className="px-4 py-3 align-middle text-slate-500">{index + 1}</td>
-                    <td className="px-4 py-3 align-middle">
-                      <button
-                        type="button"
-                        className="mx-auto inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs font-bold text-slate-600 hover:border-blue-300 hover:text-blue-700"
-                        onClick={() => toggle(row.id)}
-                      >
-                        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        {isOpen ? "收起" : "展开"}
-                      </button>
-                    </td>
-                    {cols.map((col) => {
-                      if (col.key === "health_remaining") {
-                        return <td key={`${row.id}-${col.key}`} className="px-4 py-3 text-center align-middle">{remainBadge(healthCheckRemain(row))}</td>;
-                      }
-                      return (
-                        <EditableTd
-                          key={`${row.id}-${col.key}`}
-                          rowId={row.id}
-                          field={col.key}
-                          value={String(row[col.key] || "")}
-                          editing={editing}
-                          saving={saving}
-                          onStart={setEditing}
-                          onSave={(id, field, value) => onSave(id, normalizeDriverPatch(field, value))}
-                          render={(value) => fieldLooksDate(String(col.key)) ? dateWithStatus(value) : value || "-"}
-                        />
-                      );
-                    })}
-                  </tr>
-                  {isOpen ? (
-                    <tr>
-                      <td colSpan={cols.length + 2} className="bg-slate-50 px-5 py-4">
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                          {detailCols.map((col) => (
-                            <EditableDetailItem
-                              key={`${row.id}-${col.key}`}
-                              rowId={row.id}
-                              field={col.key}
-                              label={col.label}
-                              value={String(row[col.key] || "")}
-                              editing={editing}
-                              saving={saving}
-                              onStart={setEditing}
-                              onSave={(id, field, value) => onSave(id, normalizeDriverPatch(field, value))}
-                              render={(value) => fieldLooksDate(String(col.key)) ? dateWithStatus(value) : value || "-"}
-                            />
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              );
-            })}
+            <DriverQuickCreateRow draft={draft} saving={saving} onChange={setDraft} onSave={saveDraft} />
+            {rows.map((row, index) => (
+              <tr key={row.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 align-middle text-slate-500">{index + 1}</td>
+                {cols.map((col) => (
+                  <EditableTd
+                    key={`${row.id}-${col.key}`}
+                    rowId={row.id}
+                    field={col.key}
+                    value={String(row[col.key] || "")}
+                    editing={editing}
+                    saving={saving}
+                    onStart={setEditing}
+                    onSave={(id, field, value) => onSave(id, normalizeDriverPatch(field, value))}
+                    render={(value) => fieldLooksDate(String(col.key)) ? dateWithStatus(value) : value || "-"}
+                  />
+                ))}
+                <td className="px-4 py-3 align-middle">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    className="mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    title="删除司机"
+                    onClick={() => onDelete(row.id)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
+        {!rows.length ? <div className="border-t border-border py-8"><EmptyState title="暂无司机" detail="在表格第一行录入姓名后按回车新增。" /></div> : null}
       </div>
     </section>
   );
 }
 
-function EditableDetailItem({
-  rowId,
-  field,
-  label,
-  value,
-  editing,
+function DriverQuickCreateRow({
+  draft,
   saving,
-  onStart,
+  onChange,
   onSave,
-  render,
 }: {
-  rowId: number;
-  field: string;
-  label: string;
-  value: string;
-  editing: EditingCell;
+  draft: Partial<Driver>;
   saving: boolean;
-  onStart: (cell: EditingCell) => void;
-  onSave: (id: number, field: string, value: string) => void;
-  render?: (value: string) => React.ReactNode;
+  onChange: (payload: Partial<Driver>) => void;
+  onSave: () => void;
 }) {
-  const active = editing?.id === rowId && editing.key === field;
-  function commit(nextValue = editing?.value || "") {
-    if (!active) return;
-    const normalizedValue = fieldLooksDate(field) ? normalizeFlexibleDate(nextValue) : nextValue;
-    onStart(null);
-    if (normalizedValue !== value) onSave(rowId, field, normalizedValue);
-  }
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") commit((event.currentTarget as HTMLInputElement).value);
-    if (event.key === "Escape") onStart(null);
+  function keySave(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") onSave();
   }
   return (
-    <div className="rounded-lg border border-border bg-white p-3 text-left" onDoubleClick={() => onStart({ id: rowId, key: field, value })}>
-      <div className="text-xs font-bold text-slate-500">{label}</div>
-      {active ? (
-        <input
-          autoFocus
-          disabled={saving}
-          className="mt-2 h-8 w-full rounded-md border border-blue-300 bg-white px-2 text-sm outline-none"
-          value={editing.value}
-          onChange={(event) => onStart({ id: rowId, key: field, value: event.target.value })}
-          onBlur={(event) => commit(event.target.value)}
-          onKeyDown={onKeyDown}
-        />
-      ) : (
-        <div className="mt-2 min-h-5 text-sm font-semibold text-slate-900">{render ? render(value) : value || "-"}</div>
-      )}
-    </div>
+    <tr className="bg-emerald-50/50">
+      <td className="px-4 py-3 text-xs font-bold text-emerald-700">新增</td>
+      <td className="px-2 py-2"><QuickInput value={draft.driver_external_id || ""} placeholder="ID" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, driver_external_id: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.office || ""} placeholder="本社" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, office: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.name || ""} placeholder="司机姓名" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, name: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.driver_code || ""} placeholder="代码" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, driver_code: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.driver_language || ""} placeholder="中文/日文" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, driver_language: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.phone || ""} placeholder="电话" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, phone: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.license_due_date || ""} placeholder="驾照到期" onBlurDate={(value) => onChange({ ...draft, license_due_date: value })} onKeyDown={keySave} onChange={(value) => onChange({ ...draft, license_due_date: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.license_number || ""} placeholder="驾照号" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, license_number: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.residence_status || ""} placeholder="在留" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, residence_status: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.residence_due_date || ""} placeholder="在留到期" onBlurDate={(value) => onChange({ ...draft, residence_due_date: value })} onKeyDown={keySave} onChange={(value) => onChange({ ...draft, residence_due_date: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.health_check_due_date || ""} placeholder="体检日期" onBlurDate={(value) => onChange({ ...draft, health_check_due_date: value })} onKeyDown={keySave} onChange={(value) => onChange({ ...draft, health_check_due_date: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.wechat || ""} placeholder="wechat" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, wechat: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.line || ""} placeholder="line" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, line: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.whatsapp || ""} placeholder="WhatsApp" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, whatsapp: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.email || ""} placeholder="mail" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, email: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={statusLabel(draft.status)} placeholder="正常" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, status: parseStatus(value, "driver"), driver_status: parseStatus(value, "driver") })} /></td>
+      <td className="px-4 py-3">
+        <button type="button" disabled={saving || !draft.name?.trim()} onClick={onSave} className="inline-flex h-8 items-center rounded-full bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-40">
+          新增
+        </button>
+      </td>
+    </tr>
   );
 }
 
@@ -735,35 +655,28 @@ function EditableTd({
   );
 }
 
-function Field({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (value: string) => void; type?: string; placeholder?: string }) {
-  const isDate = type === "date";
+function QuickInput({
+  value,
+  placeholder,
+  onChange,
+  onKeyDown,
+  onBlurDate,
+}: {
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
+  onBlurDate?: (value: string) => void;
+}) {
   return (
-    <label className="grid gap-1 text-sm font-medium text-slate-600">
-      {label}
-      <input
-        className="h-10 rounded-md border border-border bg-white px-3 text-sm text-slate-900 outline-none focus:border-primary"
-        type={isDate ? "text" : type}
-        inputMode={isDate ? "numeric" : undefined}
-        value={value}
-        placeholder={isDate ? "例：2026-05-20 / 2.05 / 2-5 / 260520" : placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={(event) => {
-          if (isDate) onChange(normalizeFlexibleDate(event.target.value));
-        }}
-      />
-      {isDate ? <span className="text-[11px] font-normal text-slate-400">可手写：2.05、2-5、2/5、2 05、260520</span> : null}
-    </label>
-  );
-}
-
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[][] }) {
-  return (
-    <label className="grid gap-1 text-sm font-medium text-slate-600">
-      {label}
-      <select className="h-10 rounded-md border border-border bg-white px-3 text-sm text-slate-900 outline-none focus:border-primary" value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map(([optionValue, labelText]) => <option key={optionValue} value={optionValue}>{labelText}</option>)}
-      </select>
-    </label>
+    <input
+      className="h-8 w-full min-w-24 rounded-md border border-emerald-100 bg-white px-2 text-center text-xs font-semibold text-slate-900 outline-none transition focus:border-emerald-400"
+      value={value}
+      placeholder={placeholder}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={(event) => onBlurDate?.(normalizeFlexibleDate(event.target.value))}
+      onKeyDown={onKeyDown}
+    />
   );
 }
 
@@ -778,24 +691,6 @@ function normalizeDateFields<T extends Record<string, unknown>>(payload: T): T {
       fieldLooksDate(key) && typeof value === "string" ? normalizeFlexibleDate(value) : value,
     ]),
   ) as T;
-}
-
-function parseInspectionRecords(text: string, vehicle: Partial<Vehicle>): VehicleInspectionRecord[] {
-  const rows = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(/(\d{2,4}[-/.\s]?\d{1,2}[-/.\s]?\d{1,2}|\d{1,2}[-/.\s]\d{1,2})\s*(.*)/);
-      const date = normalizeFlexibleDate(match?.[1] || line.slice(0, 10));
-      const note = match?.[2] || line;
-      const inspectionType = /车检|車検|shaken/i.test(note) ? "shaken" : "inspection";
-      return { inspection_date: date, inspection_type: inspectionType, note, source: "manual" };
-    });
-  if (!rows.length && vehicle.last_inspection_date) {
-    rows.push({ inspection_date: vehicle.last_inspection_date, inspection_type: "inspection", note: "最近点检", source: "manual" });
-  }
-  return rows;
 }
 
 function displayVehicleValue(row: Vehicle, key: keyof Vehicle) {
@@ -822,6 +717,17 @@ function normalizeDriverPatch(field: string, value: string): Partial<Driver> {
 function statusLabel(status?: string) {
   const found = [...driverStatusOptions, ...vehicleStatusOptions].find(([value]) => value === status);
   return found?.[1] || status || "-";
+}
+
+function parseStatus(value: string, kind: "driver" | "vehicle") {
+  const raw = value.trim().toLowerCase();
+  const options = kind === "driver" ? driverStatusOptions : vehicleStatusOptions;
+  const direct = options.find(([status, label]) => status.toLowerCase() === raw || label === value.trim());
+  if (direct) return direct[0];
+  if (raw.includes("休")) return "inactive";
+  if (raw.includes("运行") || raw.includes("busy")) return "busy";
+  if (raw.includes("修")) return kind === "vehicle" ? "maintenance" : "inactive";
+  return "available";
 }
 
 function fieldLooksDate(field: string) {
@@ -875,24 +781,6 @@ function dateWithStatus(value?: string) {
       </span>
     </span>
   );
-}
-
-function remainBadge(days: number | null) {
-  if (days === null) return "-";
-  const expired = days < 0;
-  return (
-    <span className={expired ? "font-semibold text-red-600" : days <= 30 ? "font-semibold text-amber-600" : "text-slate-700"}>
-      {expired ? `已过期 ${Math.abs(days)} 天` : `${days} 天`}
-    </span>
-  );
-}
-
-function healthCheckRemain(row: Driver) {
-  if (typeof row.health_check_remaining_days === "number") return row.health_check_remaining_days;
-  if (!row.health_check_due_date) return null;
-  const date = new Date(row.health_check_due_date);
-  if (Number.isNaN(date.getTime())) return null;
-  return Math.ceil((date.getTime() - Date.now()) / 86400000);
 }
 
 function formatInspectionRecords(records?: VehicleInspectionRecord[]) {

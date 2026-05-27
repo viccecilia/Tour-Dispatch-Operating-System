@@ -4,6 +4,28 @@
   background: linear-gradient(135deg, #153b92 0%, #246bfe 100%);
 }
 
+.login-panel {
+  gap: 22rpx;
+  padding: 30rpx;
+}
+
+.login-help {
+  margin-top: 8rpx;
+  color: var(--c-muted);
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.login-input {
+  min-height: 96rpx;
+  padding: 0 28rpx;
+  border-radius: 26rpx;
+  background: #ffffff;
+  font-size: 31rpx;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1rpx rgba(148, 163, 184, 0.14);
+}
+
 .ops-summary {
   display: grid;
   grid-template-columns: 1.18fr 0.82fr;
@@ -83,6 +105,11 @@
   border-color: #fed7aa;
 }
 
+.status-card.notice {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
 .panel-header-lite,
 .pressure-row {
   display: flex;
@@ -146,6 +173,75 @@
   color: var(--c-primary-dark);
   background: var(--c-primary-soft);
   font-size: 23rpx;
+  font-weight: 900;
+}
+
+.notification-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18rpx minmax(0, 1fr) auto;
+  gap: 12rpx;
+  align-items: center;
+  min-height: 92rpx;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #edf2f7;
+}
+
+.notification-row:last-child {
+  border-bottom: 0;
+}
+
+.notification-row.unread .row-title {
+  color: var(--c-primary-dark);
+}
+
+.notification-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 999rpx;
+  background: #3b82f6;
+  box-shadow: 0 0 0 7rpx rgba(59, 130, 246, 0.12);
+}
+
+.notification-dot.critical,
+.notification-dot.high {
+  background: #ef4444;
+  box-shadow: 0 0 0 7rpx rgba(239, 68, 68, 0.12);
+}
+
+.notification-dot.normal {
+  background: #f59e0b;
+  box-shadow: 0 0 0 7rpx rgba(245, 158, 11, 0.13);
+}
+
+.notification-dot.low {
+  background: #22c55e;
+  box-shadow: 0 0 0 7rpx rgba(34, 197, 94, 0.12);
+}
+
+.notification-main {
+  min-width: 0;
+}
+
+.notification-body {
+  margin-top: 6rpx;
+  color: #64748b;
+  font-size: 22rpx;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.notification-action {
+  flex: 0 0 auto;
+  padding: 7rpx 12rpx;
+  border-radius: 999rpx;
+  color: var(--c-primary-dark);
+  background: var(--c-primary-soft);
+  font-size: 21rpx;
   font-weight: 900;
 }
 

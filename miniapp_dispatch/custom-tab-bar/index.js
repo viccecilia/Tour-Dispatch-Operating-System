@@ -2,11 +2,11 @@ Component({
   data: {
     selected: 0,
     list: [
-      { pagePath: "/pages/index/index", text: "首页", icon: "首" },
-      { pagePath: "/pages/dispatch/index", text: "派车", icon: "派" },
-      { pagePath: "/pages/map/index", text: "地图", icon: "图" },
-      { pagePath: "/pages/finance/index", text: "财务", icon: "财" },
-      { pagePath: "/pages/profile/index", text: "我的", icon: "我" }
+      { pagePath: "/pages/index/index", text: "首页" },
+      { pagePath: "/pages/dispatch/index", text: "派车" },
+      { pagePath: "/pages/map/index", text: "地图" },
+      { pagePath: "/pages/finance/index", text: "财务" },
+      { pagePath: "/pages/profile/index", text: "我的" }
     ]
   },
 

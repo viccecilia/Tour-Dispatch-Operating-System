@@ -14,7 +14,12 @@ def list_available_drivers() -> list[dict[str, Any]]:
                 """
                 SELECT id, name, phone, status, driver_code, driver_language, office, created_at, updated_at
                 FROM drivers
-                WHERE status = 'available' AND tenant_id = ?
+                WHERE status = 'available'
+                  AND tenant_id = ?
+                  AND COALESCE(driver_code, '') != ''
+                  AND COALESCE(phone, '') LIKE '0%'
+                  AND name NOT LIKE 'R%'
+                  AND name NOT LIKE '财务验证%'
                 ORDER BY id
                 """
                 ,
@@ -31,11 +36,13 @@ def list_available_vehicles() -> list[dict[str, Any]]:
                 """
                 SELECT id, plate_number, vehicle_type, seat_count, status, plate_short_code, vehicle_type_code, vehicle_color, snow_tire, created_at, updated_at
                 FROM vehicles
-                WHERE status = 'available' AND tenant_id = ?
+                WHERE status = 'available'
+                  AND tenant_id = ?
+                  AND (plate_number LIKE ? OR plate_no LIKE ?)
                 ORDER BY id
                 """
                 ,
-                (get_current_tenant_id(),),
+                (get_current_tenant_id(), "\u306a\u306b\u308f%", "\u306a\u306b\u308f%"),
             ).fetchall()
         ]
 

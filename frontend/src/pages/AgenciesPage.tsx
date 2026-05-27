@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState, type FocusEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Plus, Search } from "lucide-react";
+import { Building2, Plus, Search, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -50,6 +50,15 @@ export function AgenciesPage() {
       await invalidate();
     },
     onError: (error: Error) => setMessage(`更新旅行社失败：${error.message}`),
+  });
+
+  const deleteAgency = useMutation({
+    mutationFn: api.deleteAgency,
+    onSuccess: async () => {
+      setMessage("旅行社已删除。");
+      await invalidate();
+    },
+    onError: (error: Error) => setMessage(`删除旅行社失败：${error.message}`),
   });
 
   const rows = useMemo(() => agencies.data || [], [agencies.data]);
@@ -107,7 +116,15 @@ export function AgenciesPage() {
               <EmptyState title="暂无旅行社资料" detail="直接在上方新增行录入旅行社。" />
             </div>
           ) : (
-            <AgencyInlineTable rows={rows} saving={createAgency.isPending || updateAgency.isPending} onCreate={(payload) => createAgency.mutate(payload)} onUpdate={(id, payload) => updateAgency.mutate({ id, payload })} />
+            <AgencyInlineTable
+              rows={rows}
+              saving={createAgency.isPending || updateAgency.isPending || deleteAgency.isPending}
+              onCreate={(payload) => createAgency.mutate(payload)}
+              onUpdate={(id, payload) => updateAgency.mutate({ id, payload })}
+              onDelete={(id) => {
+                if (window.confirm("确认删除这家旅行社？历史订单会保留。")) deleteAgency.mutate(id);
+              }}
+            />
           )}
         </CardContent>
       </Card>
@@ -115,7 +132,7 @@ export function AgenciesPage() {
   );
 }
 
-function AgencyInlineTable({ rows, saving, onCreate, onUpdate }: { rows: Agency[]; saving: boolean; onCreate: (payload: Partial<Agency>) => void; onUpdate: (id: number, payload: Partial<Agency>) => void }) {
+function AgencyInlineTable({ rows, saving, onCreate, onUpdate, onDelete }: { rows: Agency[]; saving: boolean; onCreate: (payload: Partial<Agency>) => void; onUpdate: (id: number, payload: Partial<Agency>) => void; onDelete: (id: number) => void }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Partial<Agency>>(agencyInitial);
 
@@ -170,7 +187,24 @@ function AgencyInlineTable({ rows, saving, onCreate, onUpdate }: { rows: Agency[
                 <td className="px-3 py-3">{isEditing ? <InlineInput value={String(draft.fax || "")} onChange={(value) => setDraft({ ...draft, fax: value })} /> : agency.fax || "-"}</td>
                 <td className="px-3 py-3">{isEditing ? <InlineInput value={String(draft.portal_code || "")} onChange={(value) => setDraft({ ...draft, portal_code: value })} /> : agency.portal_code || "未设置"}</td>
                 <td className="px-3 py-3">{isEditing ? <InlineSelect value={String(draft.status || "active")} onChange={(value) => setDraft({ ...draft, status: value })} options={[["active", "启用"], ["inactive", "停用"]]} /> : statusBadge(agency.status, agency.is_portal_enabled)}</td>
-                <td className="px-3 py-3">{isEditing ? <InlineStack><InlineInput value={String(draft.remark || "")} onChange={(value) => setDraft({ ...draft, remark: value })} placeholder="备注" /><span className="text-xs text-slate-400">回车/点击外面保存，Esc 取消</span></InlineStack> : <span className="text-xs text-slate-400">双击编辑</span>}</td>
+                <td className="px-3 py-3">
+                  {isEditing ? (
+                    <InlineStack><InlineInput value={String(draft.remark || "")} onChange={(value) => setDraft({ ...draft, remark: value })} placeholder="备注" /><span className="text-xs text-slate-400">回车/点击外面保存，Esc 取消</span></InlineStack>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      title="删除旅行社"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(agency.id);
+                      }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </td>
               </tr>
             );
           })}

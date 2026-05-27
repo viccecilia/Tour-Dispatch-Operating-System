@@ -14,6 +14,7 @@ Page({
     visibleDriverStats: [],
     pressureExpanded: false,
     notifications: [],
+    notificationExpanded: false,
     error: '',
     loading: false
   },
@@ -33,7 +34,14 @@ Page({
 
   login() {
     this.setData({ loading: true, error: '' });
-    api.login(this.data.username, this.data.password)
+    const account = String(this.data.username || '').trim();
+    const isPhone = /^\+?[\d\s-]{6,}$/.test(account);
+    const mockOpenid = wx.getStorageSync('super_wechat_openid')
+      || wx.getStorageSync('dispatch_mock_openid')
+      || `dispatch-miniapp-${account.replace(/\D/g, '')}`;
+    if (isPhone && !wx.getStorageSync('dispatch_mock_openid')) wx.setStorageSync('dispatch_mock_openid', mockOpenid);
+    const loginTask = isPhone ? api.loginPhone(account, this.data.password, mockOpenid) : api.login(account, this.data.password);
+    loginTask
       .then((res) => {
         api.setSession(res);
         this.setData({ session: res, loading: false });
@@ -52,9 +60,10 @@ Page({
     ])
       .then(([dashboard, notifications, assignments, drivers]) => {
         const driverStats = this.buildDriverStats(assignments.assignments || [], drivers.drivers || []);
+        const notificationRows = (notifications.notifications || []).slice(0, 8).map((item) => this.decorateNotification(item));
         this.setData({
           dashboard,
-          notifications: (notifications.notifications || []).slice(0, 5),
+          notifications: notificationRows,
           driverStats,
           visibleDriverStats: this.visibleDriverStats(driverStats, this.data.pressureExpanded),
           loading: false
@@ -69,6 +78,67 @@ Page({
 
   goFinance() {
     wx.switchTab({ url: '/pages/finance/index' });
+  },
+
+  scrollToNotifications() {
+    wx.pageScrollTo({ selector: '.notifications-panel', duration: 240 });
+  },
+
+  toggleNotifications() {
+    this.setData({ notificationExpanded: !this.data.notificationExpanded });
+  },
+
+  onNotificationTap(e) {
+    const id = Number(e.currentTarget.dataset.id);
+    const item = this.data.notifications.find((row) => Number(row.id) === id);
+    if (!item) return;
+    wx.showModal({
+      title: item.title || item.typeText || '通知详情',
+      content: [
+        item.body || '暂无详细内容',
+        '',
+        `类型：${item.typeText}`,
+        `级别：${item.priorityText}`,
+        `状态：${item.statusText}`,
+        item.created_at ? `时间：${item.created_at}` : ''
+      ].filter(Boolean).join('\n'),
+      showCancel: false,
+      confirmText: '知道了'
+    });
+  },
+
+  decorateNotification(item) {
+    return {
+      ...item,
+      typeText: this.notificationTypeText(item.notification_type),
+      priorityText: this.priorityText(item.priority),
+      statusText: item.status === 'read' ? '已读' : '未读',
+      isUnread: item.status !== 'read'
+    };
+  },
+
+  notificationTypeText(type) {
+    return {
+      dispatch_assigned: '派车通知',
+      driver_report: '司机报备',
+      incident: '异常通知',
+      resource_reminder: '到期提醒',
+      workflow_reminder: '规则提醒',
+      workflow_suggestion: '派车建议',
+      new_order: '新订单',
+      upcoming_start: '即将开始',
+      delay_risk: '延误风险',
+      system: '系统通知'
+    }[type] || type || '系统通知';
+  },
+
+  priorityText(priority) {
+    return {
+      critical: '紧急',
+      high: '高',
+      normal: '普通',
+      low: '低'
+    }[priority] || '普通';
   },
 
   togglePressureList() {

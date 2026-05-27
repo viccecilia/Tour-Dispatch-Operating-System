@@ -639,6 +639,7 @@ def get_driver_profile(driver_id: Any) -> dict[str, Any]:
         row = conn.execute(
             """
             SELECT id, name, driver_code, driver_language, office, phone, email,
+                   wechat, line, whatsapp, kakao,
                    license_due_date, health_check_due_date, driver_status, status
             FROM drivers
             WHERE tenant_id = ? AND id = ?
@@ -646,6 +647,31 @@ def get_driver_profile(driver_id: Any) -> dict[str, Any]:
             (get_current_tenant_id(), driver_id_int),
         ).fetchone()
     return {"driver": dict(row) if row else None}
+
+
+def update_driver_profile(driver_id: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    driver_id_int = _to_int(driver_id or payload.get("driver_id"))
+    if not driver_id_int:
+        return {"success": False, "error": "missing_driver_id"}
+    allowed = ("phone", "wechat", "line", "whatsapp", "kakao")
+    data = {key: str(payload.get(key) or "").strip() for key in allowed if key in payload}
+    if not data:
+        return {"success": False, "error": "empty_profile_update"}
+    assignments = ", ".join(f"{key} = ?" for key in data)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE drivers
+            SET {assignments}, updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            [*data.values(), get_current_tenant_id(), driver_id_int],
+        )
+        conn.commit()
+    if cursor.rowcount <= 0:
+        return {"success": False, "error": "driver_not_found"}
+    profile = get_driver_profile(driver_id_int).get("driver")
+    return {"success": True, "driver": profile}
 
 
 def upload_driver_evidence(payload: dict[str, Any]) -> dict[str, Any]:

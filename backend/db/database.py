@@ -79,6 +79,7 @@ DRIVER_COLUMNS: dict[str, str] = {
     "wechat": "TEXT",
     "line": "TEXT",
     "whatsapp": "TEXT",
+    "kakao": "TEXT",
     "email": "TEXT",
     "license_due_date": "TEXT",
     "health_check_due_date": "TEXT",
@@ -312,6 +313,15 @@ BILLING_TABLE_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 USER_COLUMNS: dict[str, str] = {
+    "phone": "TEXT",
+    "profile_type": "TEXT",
+    "profile_id": "INTEGER",
+    "wx_openid": "TEXT",
+    "wx_unionid": "TEXT",
+    "wx_bound_at": "TEXT",
+    "wx_bind_status": "TEXT NOT NULL DEFAULT 'unbound'",
+    "last_login_at": "TEXT",
+    "password_changed_at": "TEXT",
     "updated_at": "TEXT",
 }
 
@@ -399,6 +409,7 @@ def hash_password(password: str) -> str:
 def init_db(seed: bool = True) -> None:
     with get_connection() as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        ensure_user_schema(conn)
         ensure_order_schema(conn)
         ensure_driver_vehicle_schema(conn)
         ensure_assignment_schema(conn)
@@ -426,6 +437,76 @@ def init_db(seed: bool = True) -> None:
             seed_dispatch_resources(conn)
             seed_locations(conn)
         conn.commit()
+
+
+def ensure_user_schema(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+    ).fetchone()
+    create_sql = row["sql"] if row else ""
+    if create_sql and "operations_manager" not in create_sql:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute(
+            """
+            CREATE TABLE users_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NOT NULL DEFAULT 1,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin', 'dispatcher', 'operations_manager', 'driver')),
+                display_name TEXT NOT NULL,
+                phone TEXT,
+                profile_type TEXT,
+                profile_id INTEGER,
+                wx_openid TEXT,
+                wx_unionid TEXT,
+                wx_bound_at TEXT,
+                wx_bind_status TEXT NOT NULL DEFAULT 'unbound',
+                last_login_at TEXT,
+                password_changed_at TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+            )
+            """
+        )
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+        optional = [
+            "phone",
+            "profile_type",
+            "profile_id",
+            "wx_openid",
+            "wx_unionid",
+            "wx_bound_at",
+            "wx_bind_status",
+            "last_login_at",
+            "password_changed_at",
+        ]
+        select_optional = [
+            name if name in existing else ("'unbound'" if name == "wx_bind_status" else "NULL")
+            for name in optional
+        ]
+        conn.execute(
+            f"""
+            INSERT INTO users_new (
+                id, tenant_id, username, password_hash, role, display_name,
+                phone, profile_type, profile_id, wx_openid, wx_unionid, wx_bound_at,
+                wx_bind_status, last_login_at, password_changed_at,
+                is_active, created_at, updated_at
+            )
+            SELECT
+                id, COALESCE(tenant_id, 1), username, password_hash, role, display_name,
+                {", ".join(select_optional)},
+                COALESCE(is_active, 1), COALESCE(created_at, CURRENT_TIMESTAMP), COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+            FROM users
+            """
+        )
+        conn.execute("DROP TABLE users")
+        conn.execute("ALTER TABLE users_new RENAME TO users")
+        conn.execute("PRAGMA foreign_keys=ON")
+    _ensure_columns(conn, "users", USER_COLUMNS)
+    conn.execute("UPDATE users SET wx_bind_status = COALESCE(NULLIF(wx_bind_status, ''), 'unbound')")
 
 
 def ensure_order_schema(conn: sqlite3.Connection) -> None:
@@ -1143,6 +1224,7 @@ def seed_admin(conn: sqlite3.Connection) -> None:
     )
     for username, password, role, display_name in [
         ("dispatcher", "dispatcher123", "dispatcher", "调度员"),
+        ("operations_manager", "ops123", "operations_manager", "运行管理"),
         ("driver_demo", "driver123", "driver", "司机演示账号"),
         ("tenant2_admin", "admin123", "admin", "第二租户管理员"),
     ]:
@@ -1304,6 +1386,7 @@ def seed_organization(conn: sqlite3.Connection) -> None:
     role_defaults = {
         "admin": ("Back Office", "Admin Team", "Admin"),
         "dispatcher": ("Operations", "Dispatch Team", "Dispatcher"),
+        "operations_manager": ("Driver Operations", "Driver Team", "Operations Manager"),
         "driver": ("Driver Operations", "Driver Team", "Driver"),
     }
     users = conn.execute(
@@ -1438,7 +1521,9 @@ def seed_dispatch_resources(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             UPDATE drivers
-            SET status = 'inactive', updated_at = CURRENT_TIMESTAMP
+            SET status = 'deleted',
+                driver_status = 'deleted',
+                updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = 1
               AND phone = ?
               AND id NOT IN (SELECT MIN(id) FROM drivers WHERE tenant_id = 1 AND phone = ?)
@@ -1451,6 +1536,7 @@ def seed_dispatch_resources(conn: sqlite3.Connection) -> None:
         ("品川500あ1002", "中巴", 18, "available"),
         ("品川500あ1003", "商务车", 6, "maintenance"),
     ]
+    vehicles = []
     for plate_number, vehicle_type, seat_count, status in vehicles:
         exists = conn.execute(
             """

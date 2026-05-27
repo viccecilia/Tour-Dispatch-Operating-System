@@ -22,6 +22,7 @@ DRIVER_FIELDS = [
     "wechat",
     "line",
     "whatsapp",
+    "kakao",
     "email",
     "license_due_date",
     "health_check_due_date",
@@ -64,6 +65,7 @@ RESOURCE_COLUMNS = {
         "wechat": "TEXT",
         "line": "TEXT",
         "whatsapp": "TEXT",
+        "kakao": "TEXT",
         "email": "TEXT",
     },
     "vehicles": {
@@ -87,11 +89,11 @@ def list_drivers(status: str | None = None) -> list[dict[str, Any]]:
         """
         SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
                driver_external_id, license_number, residence_status, residence_due_date,
-               health_check_remaining_days, wechat, line, whatsapp, email,
+               health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at,
                created_at, updated_at
         FROM drivers
-        WHERE tenant_id = ?
+        WHERE tenant_id = ? AND COALESCE(status, '') != 'deleted'
         """
     ]
     params: list[Any] = [get_current_tenant_id()]
@@ -112,10 +114,10 @@ def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
             INSERT INTO drivers (
                 tenant_id, name, phone, status, driver_status, driver_code, driver_language, office,
                 driver_external_id, license_number, residence_status, residence_due_date,
-                health_check_remaining_days, wechat, line, whatsapp, email,
+                health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                 license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 get_current_tenant_id(),
@@ -134,6 +136,7 @@ def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
                 data.get("wechat"),
                 data.get("line"),
                 data.get("whatsapp"),
+                data.get("kakao"),
                 data.get("email"),
                 data.get("license_due_date"),
                 data.get("health_check_due_date"),
@@ -156,7 +159,7 @@ def get_driver(driver_id: str) -> Optional[dict[str, Any]]:
             """
             SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
                    driver_external_id, license_number, residence_status, residence_due_date,
-                   health_check_remaining_days, wechat, line, whatsapp, email,
+                   health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                    license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at,
                    created_at, updated_at
             FROM drivers
@@ -189,6 +192,22 @@ def update_driver(driver_id: str, payload: dict[str, Any]) -> Optional[dict[str,
     return get_driver(driver_id)
 
 
+def delete_driver(driver_id: str) -> bool:
+    if not get_driver(driver_id):
+        return False
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE drivers
+            SET status = 'deleted', driver_status = 'deleted', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (_to_int(driver_id), get_current_tenant_id()),
+        )
+        conn.commit()
+    return True
+
+
 def list_vehicles(status: str | None = None) -> list[dict[str, Any]]:
     _ensure_resource_columns()
     sql = [
@@ -199,7 +218,7 @@ def list_vehicles(status: str | None = None) -> list[dict[str, Any]]:
                insurance_due_date, inspection_expires_at, insurance_expires_at, maintenance_status,
                created_at, updated_at
         FROM vehicles
-        WHERE tenant_id = ?
+        WHERE tenant_id = ? AND COALESCE(status, '') != 'deleted'
         """
     ]
     params: list[Any] = [get_current_tenant_id()]
@@ -310,6 +329,22 @@ def update_vehicle(vehicle_id: str, payload: dict[str, Any]) -> Optional[dict[st
     if inspection_records is not None:
         _replace_vehicle_records(_to_int(vehicle_id), inspection_records)
     return get_vehicle(vehicle_id)
+
+
+def delete_vehicle(vehicle_id: str) -> bool:
+    if not get_vehicle(vehicle_id):
+        return False
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE vehicles
+            SET status = 'deleted', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (_to_int(vehicle_id), get_current_tenant_id()),
+        )
+        conn.commit()
+    return True
 
 
 def get_resource_reminders() -> dict[str, Any]:

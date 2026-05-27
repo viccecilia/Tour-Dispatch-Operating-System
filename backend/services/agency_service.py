@@ -47,7 +47,7 @@ def list_agencies(params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
                fax, status, remark, portal_code, is_portal_enabled,
                created_at, updated_at
         FROM agencies
-        WHERE tenant_id = ?
+        WHERE tenant_id = ? AND COALESCE(status, '') != 'deleted'
         """
     ]
     values: list[Any] = [get_current_tenant_id()]
@@ -131,6 +131,23 @@ def update_agency(agency_id: int | str, payload: dict[str, Any]) -> dict[str, An
         if cursor.rowcount == 0:
             return None
     return get_agency(agency_id)
+
+
+def delete_agency(agency_id: int | str) -> bool:
+    _ensure_agency_columns()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE agencies
+            SET status = 'deleted',
+                is_portal_enabled = 0,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (agency_id, get_current_tenant_id()),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def get_agency(agency_id: int | str) -> dict[str, Any] | None:

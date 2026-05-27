@@ -360,7 +360,10 @@ function FinanceOrdersTable({ rows, loading, saving, onSave }: { rows: FinanceOr
           {rows.map((row) => (
             <>
               <tr key={row.order_id || row.id}>
-                <td>{row.order_date || "-"}<small>{row.start_time || ""}-{row.end_time || ""}</small></td>
+                <td>
+                  <div className="font-semibold text-slate-950">{row.order_date || "-"}</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">{formatOrderTimeRange(row)}</div>
+                </td>
                 <td className="font-semibold text-slate-950">{row.oid || row.order_id || row.id}</td>
                 <td>{row.agency_name || "-"}</td>
                 <td>{row.driver_name || "-"}</td>
@@ -412,6 +415,13 @@ function FinanceOrdersTable({ rows, loading, saving, onSave }: { rows: FinanceOr
       </table>
     </div>
   );
+}
+
+function formatOrderTimeRange(row: FinanceOrder) {
+  const start = row.start_time || "--:--";
+  const endDate = row.end_date && row.end_date !== row.order_date ? `${row.end_date} ` : "";
+  const end = row.end_time || "--:--";
+  return `${start} - ${endDate}${end}`;
 }
 
 function EditableMoney({ row, field, editing, saving, onEdit, onCommit }: { row: FinanceOrder; field: keyof FinanceOrder; editing: { id: number; field: keyof FinanceOrder; value: string } | null; saving: boolean; onEdit: (value: { id: number; field: keyof FinanceOrder; value: string } | null) => void; onCommit: (row: FinanceOrder, field: keyof FinanceOrder, value: string) => void }) {

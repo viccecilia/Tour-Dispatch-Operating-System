@@ -3,14 +3,94 @@ export type ApiOk<T> = T & { ok?: boolean; success?: boolean };
 export type AuthUser = {
   id: number;
   username: string;
-  role: "admin" | "dispatcher" | "driver";
+  role: "admin" | "dispatcher" | "operations_manager" | "driver";
   display_name?: string;
+  phone?: string;
+  profile_type?: string;
+  profile_id?: number;
+  wx_bind_status?: string;
   tenant_id: number;
   tenant?: {
     id: number;
     name: string;
     slug: string;
   };
+};
+
+export type AccountRole = "admin" | "dispatcher" | "operations_manager" | "driver";
+
+export type ManagedAccount = {
+  id: number;
+  tenant_id?: number;
+  username: string;
+  display_name?: string;
+  phone?: string;
+  role: AccountRole;
+  role_label?: string;
+  profile_type?: "operator" | "driver" | string;
+  profile_id?: number;
+  profile_label?: string;
+  driver_code?: string;
+  is_active: boolean;
+  account_status?: "active" | "disabled" | string;
+  wx_bind_status?: "bound" | "unbound" | string;
+  wx_bound_at?: string;
+  last_login_at?: string;
+  password_changed_at?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type AccountRoleGroup = {
+  role: AccountRole;
+  label: string;
+  total: number;
+  active: number;
+  disabled: number;
+  wechat_bound: number;
+  wechat_unbound: number;
+  accounts: ManagedAccount[];
+};
+
+export type AccountOverview = {
+  roles: AccountRoleGroup[];
+  accounts: ManagedAccount[];
+};
+
+export type AttendanceRow = {
+  date: string;
+  driver_id: number;
+  driver_name?: string;
+  driver_code?: string;
+  driver_phone?: string;
+  vehicle_id?: number;
+  vehicle_plate?: string;
+  sleep_hours_reported?: number | null;
+  depart_call_time?: string | null;
+  depart_time?: string | null;
+  return_time?: string | null;
+  rest_hours_reported?: number | null;
+  return_call_time?: string | null;
+  constraint_hours?: number | null;
+  previous_return_time?: string | null;
+  rest_interval_hours?: number | null;
+  sleep_risk_level?: "ok" | "warning" | "danger" | string;
+  sleep_risk_message?: string;
+  report_status?: "reported" | "inferred" | "missing" | string;
+  assignment_count?: number;
+};
+
+export type AttendanceDaily = {
+  date: string;
+  summary: {
+    total_drivers: number;
+    departed: number;
+    returned: number;
+    sleep_risk: number;
+    missing_report: number;
+    average_constraint_hours: number;
+  };
+  rows: AttendanceRow[];
 };
 
 export type DashboardSummary = {
@@ -469,7 +549,7 @@ export type OrgMember = {
   id: number;
   tenant_id?: number;
   username: string;
-  role: "admin" | "dispatcher" | "driver";
+  role: AccountRole;
   display_name?: string;
   is_active?: number | boolean;
   profile_id?: number;

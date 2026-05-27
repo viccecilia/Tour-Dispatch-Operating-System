@@ -15,6 +15,14 @@ def normalize_source_code(value: Any = None, fallback: str = "D") -> str:
 
 def normalize_vehicle_type_code(*values: Any) -> str:
     text = " ".join(str(value or "") for value in values).lower()
+    if any(token in text for token in ["3代", "三代", "alphard", "埃尔法", "阿尔法", "アルファード", "vellfire", "ヴェルファイア"]):
+        return "A"
+    if any(token in text for token in ["10座", "十座", "海狮", "海獅", "hiace", "ハイエース"]):
+        return "H"
+    if any(token in text for token in ["18座", "中巴", "マイクロバス"]):
+        return "C"
+    if any(token in text for token in ["23座", "考斯特", "coaster", "bus"]):
+        return "B"
     if any(token in text for token in ["3代", "三代", "alphard", "埃尔法", "阿尔法", "vellfire", "威尔法"]):
         return "A"
     if any(token in text for token in ["10座", "十座", "海狮", "hiace"]):

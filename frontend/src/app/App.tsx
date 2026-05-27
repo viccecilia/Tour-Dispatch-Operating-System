@@ -8,6 +8,7 @@ import { AuditPage } from "@/pages/AuditPage";
 import { CopilotPage } from "@/pages/CopilotPage";
 import { CalendarPage } from "@/pages/CalendarPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
+import { AttendancePage } from "@/pages/AttendancePage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DispatchPage } from "@/pages/DispatchPage";
 import { DriverAppPreviewPage } from "@/pages/DriverAppPreviewPage";
@@ -80,6 +81,7 @@ export function App() {
     dispatch: <DispatchPage />,
     calendar: <CalendarPage />,
     "driver-monitor": <DriverMonitorPage />,
+    attendance: <AttendancePage />,
     map: <MapPage />,
     vehicles: <VehiclesPage />,
     agencies: <AgenciesPage />,

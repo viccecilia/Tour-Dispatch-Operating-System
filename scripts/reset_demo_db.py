@@ -33,11 +33,8 @@ TABLES = [
 
 
 def main() -> None:
-    if DB_PATH.exists():
-        try:
-            DB_PATH.unlink()
-        except PermissionError:
-            print(f"database file is locked, resetting tables in place: {DB_PATH}")
+    # Keep resource master data (drivers, vehicles, agencies, locations) intact.
+    # demo_seed only clears runtime transaction tables and then loads recent real orders.
     init_db(seed=True)
     demo_seed.main()
     print(f"database={DB_PATH}")

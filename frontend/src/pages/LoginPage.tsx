@@ -4,8 +4,12 @@ import { Button } from "@/components/ui/button";
 import { api, setAuthToken } from "@/services/apiClient";
 import type { AuthUser } from "@/types/api";
 
+function looksLikePhone(value: string) {
+  return /^\+?[\d\s-]{6,}$/.test(value.trim());
+}
+
 export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
-  const [username, setUsername] = useState("admin");
+  const [account, setAccount] = useState("admin");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -15,11 +19,14 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setLoading(true);
     setError("");
     try {
-      const result = await api.login(username, password);
+      const loginAccount = account.trim();
+      const result = looksLikePhone(loginAccount)
+        ? await api.loginPhone(loginAccount, password)
+        : await api.login(loginAccount, password);
       setAuthToken(result.token);
       onLogin(result.user);
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "登录失败");
+      setError(exc instanceof Error ? exc.message : "登录失败，请检查账号和密码");
     } finally {
       setLoading(false);
     }
@@ -34,13 +41,13 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-950">微信调度</h1>
-            <p className="text-sm text-slate-500">登录调度控制台</p>
+            <p className="text-sm text-slate-500">管理端 / 调度 / 运行管理登录</p>
           </div>
         </div>
         <div className="grid gap-4">
           <label className="grid gap-1 text-sm font-semibold text-slate-600">
-            用户名
-            <input className="h-11 rounded-md border border-border px-3 outline-none focus:border-primary" value={username} onChange={(event) => setUsername(event.target.value)} />
+            账号或手机号
+            <input className="h-11 rounded-md border border-border px-3 outline-none focus:border-primary" value={account} onChange={(event) => setAccount(event.target.value)} />
           </label>
           <label className="grid gap-1 text-sm font-semibold text-slate-600">
             密码
@@ -50,7 +57,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           <Button type="submit" className="h-11" disabled={loading}>
             {loading ? "登录中..." : "登录"}
           </Button>
-          <p className="text-xs text-slate-500">演示账号：admin / admin123。不同租户账号会看到隔离后的数据。</p>
+          <p className="text-xs text-slate-500">内部账号由管理员预先创建；手机号账号的重置密码为手机号后 4 位。</p>
         </div>
       </form>
     </div>

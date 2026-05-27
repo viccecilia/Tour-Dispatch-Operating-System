@@ -3,10 +3,17 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import datetime
 from typing import Optional
 
-from backend.config import JWT_EXPIRES_SECONDS, JWT_SECRET
+from backend.config import JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS
 from backend.db.database import get_connection, hash_password
+from backend.services.audit_service import record_audit
+from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
+
+
+ROLES = {"admin", "dispatcher", "operations_manager", "driver"}
+MINIAPP_CLIENTS = {"driver_miniapp", "dispatch_miniapp", "miniapp_driver", "miniapp_dispatch"}
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
@@ -20,6 +27,10 @@ def authenticate(username: str, password: str) -> Optional[dict]:
                 u.password_hash,
                 u.role,
                 u.display_name,
+                u.phone,
+                u.profile_type,
+                u.profile_id,
+                u.wx_bind_status,
                 u.is_active,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
@@ -34,11 +45,199 @@ def authenticate(username: str, password: str) -> Optional[dict]:
         return None
     if user["password_hash"] != hash_password(password):
         return None
-    if user["role"] not in {"admin", "dispatcher", "driver"}:
+    if user["role"] not in ROLES:
         return None
 
     public = public_user(dict(user))
+    _mark_login(public["id"])
     return {"token": create_jwt(public), "user": public}
+
+
+def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, wx_unionid: str | None = None, client_type: str = "web") -> Optional[dict]:
+    normalized = normalize_phone(phone)
+    with get_connection() as conn:
+        user = conn.execute(
+            """
+            SELECT
+                u.id,
+                u.tenant_id,
+                u.username,
+                u.password_hash,
+                u.role,
+                u.display_name,
+                u.phone,
+                u.profile_type,
+                u.profile_id,
+                u.wx_openid,
+                u.wx_unionid,
+                u.wx_bound_at,
+                u.wx_bind_status,
+                u.is_active,
+                t.name AS tenant_name,
+                t.slug AS tenant_slug
+            FROM users u
+            LEFT JOIN tenants t ON t.id = u.tenant_id
+            WHERE REPLACE(REPLACE(REPLACE(COALESCE(u.phone, ''), '-', ''), ' ', ''), '+', '') = ?
+               OR u.username = ?
+            ORDER BY u.is_active DESC, u.id ASC
+            LIMIT 1
+            """,
+            (normalized, phone),
+        ).fetchone()
+    if not user or not user["is_active"]:
+        _audit_auth("login_fail", {"phone": phone, "reason": "user_not_found_or_inactive"})
+        return None
+    if user["password_hash"] != hash_password(password):
+        _audit_auth("login_fail", {"phone": phone, "reason": "invalid_password"})
+        return None
+    user_data = dict(user)
+    if _requires_wechat(client_type, user_data["role"]):
+        if not wx_openid:
+            _audit_auth("login_fail", {"phone": phone, "reason": "wechat_openid_required"})
+            return {"error": "wechat_openid_required"}  # type: ignore[return-value]
+        bind_result = _ensure_wechat_binding(user_data, wx_openid, wx_unionid)
+        if bind_result == "mismatch":
+            _audit_auth("wechat_binding_mismatch", {"phone": phone, "user_id": user_data["id"], "client_type": client_type})
+            return {"error": "wechat_binding_mismatch"}  # type: ignore[return-value]
+        user_data = _load_user_public(user_data["id"]) or user_data
+    public = public_user(user_data)
+    _mark_login(public["id"])
+    _audit_auth("login_ok", {"phone": phone, "user_id": public["id"], "role": public["role"], "client_type": client_type})
+    return {"token": create_jwt(public), "user": public}
+
+
+def register_bound_account(payload: dict) -> dict:
+    phone = str(payload.get("phone") or "").strip()
+    password = str(payload.get("password") or "").strip()
+    role = str(payload.get("role") or "").strip()
+    display_name = str(payload.get("display_name") or "").strip()
+    wx_openid = str(payload.get("wx_openid") or "").strip()
+    wx_unionid = str(payload.get("wx_unionid") or "").strip()
+    client_type = str(payload.get("client_type") or "web").strip()
+    if not phone:
+        raise ValueError("phone_required")
+    if not password:
+        raise ValueError("password_required")
+    if role not in ROLES:
+        raise ValueError("invalid_role")
+    normalized = normalize_phone(phone)
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        existing = _find_user_by_phone(conn, normalized)
+        if existing and existing["is_active"] and existing["password_hash"]:
+            raise ValueError("account_already_registered")
+        if role == "driver":
+            profile = _find_driver_profile(conn, tenant_id, normalized)
+            if not profile:
+                raise ValueError("driver_phone_not_preloaded")
+            profile_type = "driver"
+            profile_id = profile["id"]
+            display_name = display_name or profile["name"] or phone
+            if profile["user_id"]:
+                existing = conn.execute("SELECT * FROM users WHERE id = ?", (profile["user_id"],)).fetchone()
+        else:
+            profile = _find_operator_profile(conn, tenant_id, normalized, role)
+            if not profile:
+                raise ValueError("operator_phone_not_preloaded")
+            profile_type = "operator"
+            profile_id = profile["profile_id"]
+            display_name = display_name or profile["display_name"] or phone
+            existing = conn.execute("SELECT * FROM users WHERE id = ?", (profile["user_id"],)).fetchone()
+
+        if existing:
+            user_id = existing["id"]
+            conn.execute(
+                """
+                UPDATE users
+                SET phone = ?,
+                    username = COALESCE(NULLIF(username, ''), ?),
+                    password_hash = ?,
+                    role = ?,
+                    display_name = ?,
+                    profile_type = ?,
+                    profile_id = ?,
+                    is_active = 1,
+                    password_changed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (phone, phone, hash_password(password), role, display_name, profile_type, profile_id, user_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO users (
+                    tenant_id, username, password_hash, role, display_name, phone,
+                    profile_type, profile_id, is_active, password_changed_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (tenant_id, phone, hash_password(password), role, display_name, phone, profile_type, profile_id),
+            )
+            user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        if profile_type == "driver":
+            conn.execute("UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, tenant_id, profile_id))
+        else:
+            conn.execute("UPDATE operator_profiles SET user_id = ?, phone = COALESCE(NULLIF(phone, ''), ?), updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, phone, tenant_id, profile_id))
+        conn.commit()
+    if _requires_wechat(client_type, role):
+        if not wx_openid:
+            raise ValueError("wechat_openid_required")
+        _ensure_wechat_binding(_load_user_public(user_id) or {"id": user_id}, wx_openid, wx_unionid)
+    user = _load_user_public(user_id)
+    if not user:
+        raise ValueError("account_not_found")
+    _audit_auth("register_bind", {"user_id": user_id, "phone": phone, "role": role, "profile_type": user.get("profile_type"), "profile_id": user.get("profile_id")})
+    public = public_user(user)
+    return {"token": create_jwt(public), "user": public}
+
+
+def reset_user_password_to_phone_tail(user_id: int | str, actor: str = "system") -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
+        if not row:
+            return None
+        tail = normalize_phone(row["phone"] or row["username"])[-4:]
+        if len(tail) < 4:
+            raise ValueError("phone_tail_unavailable")
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?,
+                password_changed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (hash_password(tail), user_id, get_current_tenant_id()),
+        )
+        conn.commit()
+    user = _load_user_public(int(user_id))
+    _audit_auth("password_reset", {"user_id": user_id, "reset_to": "phone_last_4"}, actor=actor)
+    return public_user(user) if user else None
+
+
+def unbind_user_wechat(user_id: int | str, actor: str = "system") -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
+        if not row:
+            return None
+        before = public_user(dict(row))
+        conn.execute(
+            """
+            UPDATE users
+            SET wx_openid = NULL,
+                wx_unionid = NULL,
+                wx_bound_at = NULL,
+                wx_bind_status = 'unbound',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (user_id, get_current_tenant_id()),
+        )
+        conn.commit()
+    after = _load_user_public(int(user_id))
+    record_audit("wechat_unbind", "user", user_id, before=before, after=after, actor=actor, source_path="/api/auth/admin/unbind-wechat")
+    return public_user(after) if after else None
 
 
 def get_user_by_token(token: str) -> Optional[dict]:
@@ -55,6 +254,10 @@ def get_user_by_token(token: str) -> Optional[dict]:
                 u.username,
                 u.role,
                 u.display_name,
+                u.phone,
+                u.profile_type,
+                u.profile_id,
+                u.wx_bind_status,
                 u.is_active,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
@@ -78,6 +281,8 @@ def create_jwt(user: dict) -> str:
         "username": user["username"],
         "role": user["role"],
         "tenant_id": user.get("tenant_id") or 1,
+        "profile_type": user.get("profile_type"),
+        "profile_id": user.get("profile_id"),
         "iat": now,
         "exp": now + JWT_EXPIRES_SECONDS,
     }
@@ -103,6 +308,8 @@ def verify_jwt(token: str) -> Optional[dict]:
 
 def public_user(user: dict) -> dict:
     user.pop("password_hash", None)
+    user.pop("wx_openid", None)
+    user.pop("wx_unionid", None)
     user["is_active"] = bool(user.get("is_active", 1))
     user["tenant_id"] = int(user.get("tenant_id") or 1)
     user["tenant"] = {
@@ -111,6 +318,119 @@ def public_user(user: dict) -> dict:
         "slug": user.pop("tenant_slug", None) or "demo",
     }
     return user
+
+
+def normalize_phone(phone: str | None) -> str:
+    return "".join(ch for ch in str(phone or "") if ch.isdigit())
+
+
+def _mark_login(user_id: int | str) -> None:
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
+        conn.commit()
+
+
+def _requires_wechat(client_type: str, role: str) -> bool:
+    return client_type in MINIAPP_CLIENTS and role in {"driver", "dispatcher", "operations_manager", "admin"}
+
+
+def _ensure_wechat_binding(user: dict, wx_openid: str, wx_unionid: str | None = None) -> str:
+    user_id = user["id"]
+    current = user.get("wx_openid")
+    if _is_super_wechat(wx_openid, wx_unionid):
+        _audit_auth("super_wechat_login", {"user_id": user_id, "wx_bind_status": user.get("wx_bind_status") or "unbound"})
+        return "ok"
+    if current and current != wx_openid:
+        return "mismatch"
+    if current == wx_openid:
+        return "ok"
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET wx_openid = ?,
+                wx_unionid = ?,
+                wx_bound_at = CURRENT_TIMESTAMP,
+                wx_bind_status = 'bound',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (wx_openid, wx_unionid or None, user_id),
+        )
+        conn.commit()
+    _audit_auth("wechat_bind", {"user_id": user_id, "wx_bind_status": "bound"})
+    return "bound"
+
+
+def _is_super_wechat(wx_openid: str | None = None, wx_unionid: str | None = None) -> bool:
+    return any(value and value in SUPER_WECHAT_IDS for value in (wx_openid, wx_unionid))
+
+
+def _load_user_public(user_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT u.*, t.name AS tenant_name, t.slug AS tenant_slug
+            FROM users u
+            LEFT JOIN tenants t ON t.id = u.tenant_id
+            WHERE u.id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _find_user_by_phone(conn, normalized: str):
+    return conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+           OR REPLACE(REPLACE(REPLACE(COALESCE(username, ''), '-', ''), ' ', ''), '+', '') = ?
+        ORDER BY is_active DESC, id ASC
+        LIMIT 1
+        """,
+        (normalized, normalized),
+    ).fetchone()
+
+
+def _find_driver_profile(conn, tenant_id: int, normalized: str):
+    return conn.execute(
+        """
+        SELECT *
+        FROM drivers
+        WHERE tenant_id = ?
+          AND REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (tenant_id, normalized),
+    ).fetchone()
+
+
+def _find_operator_profile(conn, tenant_id: int, normalized: str, role: str):
+    return conn.execute(
+        """
+        SELECT p.id AS profile_id, p.phone, u.id AS user_id, u.role, u.display_name
+        FROM operator_profiles p
+        JOIN users u ON u.id = p.user_id AND u.tenant_id = p.tenant_id
+        WHERE p.tenant_id = ?
+          AND u.role = ?
+          AND (
+              REPLACE(REPLACE(REPLACE(COALESCE(p.phone, ''), '-', ''), ' ', ''), '+', '') = ?
+              OR REPLACE(REPLACE(REPLACE(COALESCE(u.phone, ''), '-', ''), ' ', ''), '+', '') = ?
+          )
+        ORDER BY u.is_active ASC, u.id ASC
+        LIMIT 1
+        """,
+        (tenant_id, role, normalized, normalized),
+    ).fetchone()
+
+
+def _audit_auth(action: str, payload: dict, actor: str = "auth") -> None:
+    tenant_id = payload.get("tenant_id") or get_current_tenant_id()
+    set_current_tenant_id(tenant_id)
+    record_audit(action, "auth", payload.get("user_id") or payload.get("phone"), after=payload, actor=actor, source_path="/api/auth")
 
 
 def _b64_json(payload: dict) -> str:

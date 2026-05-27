@@ -4,19 +4,30 @@ from datetime import date
 from typing import Any
 
 from backend.db.database import get_connection
-from backend.services.auth_service import authenticate
+from backend.services.auth_service import authenticate, authenticate_phone
 from backend.services.dispatch_mobile_audit_service import record_dispatch_mobile_audit
 from backend.services.parser_service import get_draft, parse_batch_text_to_drafts, parse_text_to_draft, update_draft
 from backend.services.tenant_context import get_current_tenant_id
 
 
 def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
-    result = authenticate(payload.get("username", ""), payload.get("password", ""))
+    if payload.get("phone"):
+        result = authenticate_phone(
+            payload.get("phone", ""),
+            payload.get("password", ""),
+            payload.get("wx_openid"),
+            payload.get("wx_unionid"),
+            payload.get("client_type", "dispatch_miniapp"),
+        )
+    else:
+        result = authenticate(payload.get("username", ""), payload.get("password", ""))
     if not result:
         return None
+    if result.get("error"):
+        return result
 
     user = result["user"]
-    if user.get("role") not in {"admin", "dispatcher"}:
+    if user.get("role") not in {"admin", "dispatcher", "operations_manager"}:
         return None
 
     dispatcher = _dispatcher_from_user(user)

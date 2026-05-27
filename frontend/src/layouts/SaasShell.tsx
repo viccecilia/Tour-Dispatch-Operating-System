@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LucideIcon,
   MonitorCog,
+  TimerReset,
   Receipt,
   Route,
   Settings,
@@ -36,6 +37,7 @@ const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
   { key: "dispatch", labelKey: "nav.dispatch", icon: Route },
   { key: "calendar", labelKey: "nav.calendar", icon: CalendarDays },
   { key: "driver-monitor", labelKey: "nav.driver-monitor", icon: MonitorCog },
+  { key: "attendance", labelKey: "出勤台账", icon: TimerReset },
   { key: "map", labelKey: "nav.map", icon: MapPinned },
   { key: "vehicles", labelKey: "nav.vehicles", icon: Truck },
   { key: "agencies", labelKey: "nav.agencies", icon: Building2 },
@@ -48,6 +50,16 @@ const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
   { key: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
+function visibleNavItems(role: string) {
+  return navItems.filter((item) => {
+    const key = String(item.key);
+    if (key === "finance") return role === "admin";
+    if (role === "operations_manager") return !["parser", "orders", "finance", "analytics"].includes(key);
+    if (role === "dispatcher") return key !== "finance";
+    return true;
+  });
+}
+
 const titleKeys: Record<PageKey, string> = {
   dashboard: "page.dashboard",
   notifications: "notifications.title",
@@ -56,6 +68,7 @@ const titleKeys: Record<PageKey, string> = {
   dispatch: "page.dispatch",
   calendar: "page.calendar",
   "driver-monitor": "page.driver-monitor",
+  attendance: "出勤与拘束台账",
   map: "page.map",
   vehicles: "page.vehicles",
   agencies: "page.agencies",
@@ -99,7 +112,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {navItems.map((item) => {
+          {visibleNavItems(user.role).map((item) => {
             const Icon = item.icon;
             const active = item.key === activePage;
             return (
@@ -228,7 +241,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
 }
 
 function roleLabel(role: string) {
-  return { admin: "管理员", dispatcher: "调度员", driver: "司机" }[role] || role;
+  return { admin: "管理员", dispatcher: "调度员", operations_manager: "运行管理", driver: "司机" }[role] || role;
 }
 
 function priorityLabel(priority?: string) {

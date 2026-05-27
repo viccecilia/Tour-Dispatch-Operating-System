@@ -5,10 +5,13 @@
     <view class="hero-meta">{{session ? session.dispatcher.dispatcher_code + ' · ' + session.dispatcher.dispatcher_role : '移动调度运行入口'}}</view>
   </view>
 
-  <view wx:if="{{!session}}" class="panel stack">
-    <view class="panel-title">账号登录</view>
-    <input class="input" value="{{username}}" bindinput="onUsername" placeholder="用户名" />
-    <input class="input" value="{{password}}" password bindinput="onPassword" placeholder="密码" />
+  <view wx:if="{{!session}}" class="panel stack login-panel">
+    <view>
+      <view class="panel-title">账号登录</view>
+      <view class="login-help">测试账号：admin / admin123；手机号账号使用手机号和后 4 位密码。</view>
+    </view>
+    <input class="input login-input" value="{{username}}" bindinput="onUsername" placeholder="用户名或手机号" />
+    <input class="input login-input" value="{{password}}" password bindinput="onPassword" placeholder="密码" />
     <button class="button-primary" loading="{{loading}}" bindtap="login">进入移动调度</button>
     <view wx:if="{{error}}" class="muted">{{error}}</view>
   </view>
@@ -35,7 +38,7 @@
         <text>异常订单</text>
         <strong>{{dashboard.counts.exception_orders || dashboard.counts.incident_orders || 0}}</strong>
       </view>
-      <view class="status-card">
+      <view class="status-card notice" bindtap="scrollToNotifications">
         <text>未读通知</text>
         <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
       </view>
@@ -64,12 +67,23 @@
       <view wx:if="{{!driverStats.length}}" class="empty-state">暂无司机订单统计</view>
     </view>
 
-    <view class="panel">
-      <view class="panel-title">关键通知</view>
+    <view class="panel notifications-panel">
+      <view class="panel-header-lite">
+        <view>
+          <view class="panel-title">关键通知</view>
+          <view class="muted">派车、司机报备、异常、到期提醒和规则提醒会显示在这里。</view>
+        </view>
+        <view class="soft-count" bindtap="toggleNotifications">{{notificationExpanded ? '收起' : '查看'}}</view>
+      </view>
       <view class="list">
-        <view wx:for="{{notifications}}" wx:key="id" class="row">
-          <view class="row-title">{{item.title}}</view>
-          <view class="muted">{{item.notification_type}} · {{item.priority}} · {{item.status}}</view>
+        <view wx:for="{{notifications}}" wx:key="id" wx:if="{{notificationExpanded || index < 3}}" data-id="{{item.id}}" bindtap="onNotificationTap" class="row notification-row {{item.isUnread ? 'unread' : ''}}">
+          <view class="notification-dot {{item.priority}}"></view>
+          <view class="notification-main">
+            <view class="row-title">{{item.title || item.typeText}}</view>
+            <view class="muted">{{item.typeText}} · {{item.priorityText}} · {{item.statusText}}</view>
+            <view wx:if="{{item.body}}" class="notification-body">{{item.body}}</view>
+          </view>
+          <view class="notification-action">详情</view>
         </view>
         <view wx:if="{{!notifications.length}}" class="empty-state">暂无关键通知</view>
       </view>

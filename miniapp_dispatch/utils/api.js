@@ -1,13 +1,27 @@
+const API_STORAGE_KEY = 'wx_dispatch_api_base_url';
+const DEFAULT_BASE_URL = 'http://localhost:18765';
+const CLOUD_BASE_URL = 'https://api.example.com';
+
 const API_CONFIG = {
-  baseUrl: 'http://127.0.0.1:18765'
+  baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
 };
 
 function setBaseUrl(baseUrl) {
   API_CONFIG.baseUrl = String(baseUrl || '').replace(/\/$/, '');
+  wx.setStorageSync(API_STORAGE_KEY, API_CONFIG.baseUrl);
 }
 
 function getBaseUrl() {
   return API_CONFIG.baseUrl;
+}
+
+function useCloudBaseUrl(baseUrl = CLOUD_BASE_URL) {
+  setBaseUrl(baseUrl);
+}
+
+function resetBaseUrl() {
+  wx.removeStorageSync(API_STORAGE_KEY);
+  API_CONFIG.baseUrl = DEFAULT_BASE_URL;
 }
 
 function getSession() {
@@ -61,12 +75,16 @@ module.exports = {
   API_CONFIG,
   setBaseUrl,
   getBaseUrl,
+  useCloudBaseUrl,
+  resetBaseUrl,
   getSession,
   setSession,
   clearSession,
   withDispatcher,
   request,
-  login: (username, password) => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password } }),
+  login: (username, password, wxOpenid = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_openid: wxOpenid, client_type: wxOpenid ? 'dispatch_miniapp' : 'web' } }),
+  loginPhone: (phone, password, wxOpenid) => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_openid: wxOpenid, client_type: 'dispatch_miniapp' } }),
+  registerPhone: (data) => request('/api/auth/register', { method: 'POST', data: { ...data, client_type: data.client_type || 'dispatch_miniapp' } }),
   context: () => request('/api/dispatch-mobile/context'),
   dashboard: () => {
     const session = getSession();
@@ -76,10 +94,10 @@ module.exports = {
   },
   sharedState: () => request('/api/dispatch-mobile/shared-state'),
   parseText: (text) => request('/api/dispatch-mobile/parser/text', { method: 'POST', data: withDispatcher({ text, batch: true }) }),
-  drafts: () => request('/api/parser/drafts'),
+  drafts: () => request('/api/dispatch-mobile/drafts'),
   updateDraft: (id, data) => request(`/api/dispatch-mobile/drafts/${id}`, { method: 'PUT', data: withDispatcher(data) }),
-  updateOrder: (id, data) => request(`/api/orders/${id}`, { method: 'PUT', data: withDispatcher(data) }),
-  confirmDraft: (id) => request(`/api/parser/drafts/${id}/confirm`, { method: 'POST', data: withDispatcher({}) }),
+  updateOrder: (id, data) => request(`/api/dispatch-mobile/orders/${id}/update`, { method: 'POST', data: withDispatcher(data) }),
+  confirmDraft: (id) => request(`/api/dispatch-mobile/drafts/${id}/confirm`, { method: 'POST', data: withDispatcher({}) }),
   unassignedOrders: () => {
     const session = getSession();
     const dispatcher = session && session.dispatcher ? session.dispatcher : {};
@@ -93,11 +111,11 @@ module.exports = {
     const query = dispatcher.dispatcher_id ? `?dispatcher_id=${dispatcher.dispatcher_id}` : '';
     return request(`/api/dispatch-mobile/audit-logs${query}`);
   },
-  drivers: () => request('/api/dispatch/drivers'),
-  vehicles: () => request('/api/dispatch/vehicles'),
-  assignOrders: (payload) => request('/api/dispatch/assign', { method: 'POST', data: withDispatcher(payload) }),
-  assignments: () => request('/api/dispatch/assignments'),
-  fleetLocations: () => request('/api/fleet/latest-locations'),
-  financeSummary: () => request('/api/finance/summary'),
-  financeLedger: () => request('/api/finance/ledger')
+  drivers: () => request('/api/dispatch-mobile/drivers'),
+  vehicles: () => request('/api/dispatch-mobile/vehicles'),
+  assignOrders: (payload) => request('/api/dispatch-mobile/dispatch/assign', { method: 'POST', data: withDispatcher(payload) }),
+  assignments: () => request('/api/dispatch-mobile/assignments'),
+  fleetLocations: () => request('/api/dispatch-mobile/fleet/latest-locations'),
+  financeSummary: () => request('/api/dispatch-mobile/finance/summary'),
+  financeLedger: () => request('/api/dispatch-mobile/finance/ledger')
 };

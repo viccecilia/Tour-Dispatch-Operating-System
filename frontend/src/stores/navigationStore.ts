@@ -8,6 +8,7 @@ export type PageKey =
   | "dispatch"
   | "calendar"
   | "driver-monitor"
+  | "attendance"
   | "map"
   | "vehicles"
   | "agencies"
@@ -34,6 +35,7 @@ function pageFromHash(): PageKey {
     "dispatch",
     "calendar",
     "driver-monitor",
+    "attendance",
     "map",
     "vehicles",
     "agencies",

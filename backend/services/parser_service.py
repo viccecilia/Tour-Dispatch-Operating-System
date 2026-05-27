@@ -200,6 +200,9 @@ def analyze_parse_quality(raw_text: str, parsed: dict[str, Any]) -> dict[str, An
 
 def split_batch_order_text(raw_text: str) -> list[str]:
     text = normalize_parser_input(raw_text).replace("。", "。\n")
+    real_order_lines = _split_real_order_text(text)
+    if real_order_lines:
+        return real_order_lines
     text = re.sub(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\b\d{1,2}[./-]\d{1,2}\s)", "\n", text)
     text = re.sub(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\d{1,2}月\d{1,2}日?\s)", "\n", text)
     order_lines: list[str] = []
@@ -429,7 +432,315 @@ def parse_chinese_order(text: str) -> dict[str, Any]:
         remark_parts.append("备注标签：" + "；".join(notes))
     remark_parts.append(raw)
     parsed["remark"] = "\n".join(remark_parts)
+    _enhance_real_order_parse(raw, parsed)
     return parsed
+
+
+REAL_LOCATION_ALIASES = {
+    "关西": "KIX",
+    "关空": "KIX",
+    "关西机场": "KIX",
+    "関西": "KIX",
+    "関空": "KIX",
+    "kix": "KIX",
+    "KIX": "KIX",
+    "伊丹": "ITM",
+    "伊丹机场": "ITM",
+    "神户机场": "神户机场",
+    "大阪": "大阪市内",
+    "大阪市内": "大阪市内",
+    "新大阪": "新大阪站",
+    "新大阪站": "新大阪站",
+    "京都": "京都市内",
+    "京都市内": "京都市内",
+    "奈良": "奈良",
+    "宇治": "宇治",
+    "神户": "神户",
+    "名古屋": "名古屋",
+    "环球": "USJ",
+    "环球影城": "USJ",
+    "USJ": "USJ",
+    "心斋桥": "心斋桥",
+    "心斋桥微笑酒店": "心斋桥微笑酒店",
+    "门真": "门真",
+    "铃鹿": "铃鹿",
+    "大津": "大津",
+    "美山": "美山",
+    "龟岗": "龟岗",
+    "胜尾寺": "胜尾寺",
+    "关西酒店": "关西酒店",
+    "机场": "机场",
+}
+
+REAL_NOTE_PATTERNS = [
+    ("儿童座椅", r"儿童[座坐]椅\s*[*xX×]?\s*(\d+)?|儿童坐垫\s*[*xX×]?\s*(\d+)?"),
+    ("举牌", r"举牌|接机牌"),
+    ("绿牌", r"绿牌|(?<![一-龥])绿(?![一-龥])"),
+    ("夜班", r"深夜|夜班|加班"),
+    ("额外费用", r"[+＋]\s*\d{3,6}\s*(?:日元|円|jpy)?"),
+]
+
+
+def _split_real_order_text(text: str) -> list[str]:
+    """Split high-volume WeChat/LINE pasted real orders without dropping raw content."""
+    if not text or not re.search(r"\d{1,2}[./-]\d{1,2}\s+\d{1,2}[:：]\d{2}", text):
+        return []
+    normalized = text.replace("\u3000", " ").replace("；", "\n")
+    normalized = re.sub(r"^[\s\-=—_]+$", "", normalized, flags=re.MULTILINE)
+    normalized = re.sub(
+        r"(?<!^)(?<!\n)(?<![\d./-])(?=\s*\d{1,2}[./-]\d{1,2}\s+\d{1,2}[:：]\d{2})",
+        "\n",
+        normalized,
+    )
+    lines: list[str] = []
+    customer_context: str | None = None
+    for raw_line in normalized.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip(" -—_")
+        if not line:
+            continue
+        if re.fullmatch(r"[-—_=]{2,}", line):
+            continue
+        if _looks_like_real_order_line(line):
+            lines.append(_attach_real_customer_context(line, customer_context))
+            continue
+        if _looks_like_real_customer_context(line):
+            customer_context = line
+            continue
+        if lines:
+            lines[-1] = f"{lines[-1]} {line}".strip()
+    return lines
+
+
+def _looks_like_real_order_line(text: str) -> bool:
+    return bool(re.search(r"\b\d{1,2}[./-]\d{1,2}\s+\d{1,2}[:：]\d{2}", text))
+
+
+def _looks_like_real_customer_context(text: str) -> bool:
+    if _looks_like_real_order_line(text):
+        return False
+    if any(token in text for token in ["接机", "送机", "单送", "包车", "往返", "关西", "大阪", "京都"]):
+        return False
+    return bool(re.search(r"[A-Za-z\u4e00-\u9fa5]", text)) and len(text) <= 50
+
+
+def _attach_real_customer_context(order_text: str, customer_context: str | None) -> str:
+    if customer_context and customer_context not in order_text:
+        return f"{order_text} 客户:{customer_context}"
+    return order_text
+
+
+def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
+    """Overlay clean real-order rules from the legacy parser onto the current parser output."""
+    if not raw:
+        return
+    date_value = _real_extract_date(raw)
+    start_time, end_time = _real_extract_times(raw)
+    if date_value:
+        parsed["order_date"] = date_value
+        parsed["end_date"] = parsed.get("end_date") or date_value
+    if start_time:
+        parsed["start_time"] = start_time
+    if end_time:
+        parsed["end_time"] = end_time
+
+    order_type = _real_extract_order_type(raw)
+    pickup, dropoff, route_chain = _real_extract_route(raw, order_type)
+    if pickup:
+        parsed["pickup_location"] = pickup
+    if dropoff:
+        parsed["dropoff_location"] = dropoff
+    if order_type:
+        parsed["order_type"] = order_type
+
+    vehicle_type = _real_identify_vehicle_type(raw)
+    if vehicle_type:
+        parsed["vehicle_type"] = vehicle_type
+        parsed["vehicle_class"] = vehicle_type
+        parsed["vehicle_type_code"] = normalize_vehicle_type_code(vehicle_type)
+
+    color = _real_extract_vehicle_color(raw)
+    if color:
+        parsed["vehicle_color"] = color
+    price, fee_remark = _real_extract_price_and_fee(raw)
+    if price is not None:
+        parsed["price"] = price
+        parsed["price_rmb"] = price
+    if parsed.get("price_jpy") is None:
+        parsed["price_jpy"] = _real_extract_explicit_jpy(raw)
+    if parsed.get("other_fee_jpy") is None:
+        parsed["other_fee_jpy"] = _real_extract_other_fee(raw)
+
+    note_tokens = _real_extract_note_tokens(raw)
+    remarks = [item for item in [fee_remark, "；".join(note_tokens)] if item]
+    if route_chain and len(route_chain) > 2:
+        remarks.append("完整路线：" + " -> ".join(route_chain))
+    if remarks:
+        parsed["fee_remark"] = _merge_remark(parsed.get("fee_remark"), "；".join(remarks))
+    parsed["remark"] = _merge_remark(parsed.get("remark"), raw)
+
+
+def _real_extract_date(text: str) -> str | None:
+    match = re.search(r"\b(\d{1,2}[./-]\d{1,2}|\d{6}|\d{8})\b", text)
+    return normalize_date_token(match.group(1)) if match else None
+
+
+def _real_extract_times(text: str) -> tuple[str | None, str | None]:
+    work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
+    values = re.findall(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", work)
+    if not values:
+        return None, None
+    normalized = [normalize_time_token(item.replace("：", ":")) for item in values]
+    normalized = [item for item in normalized if item]
+    return (normalized[0], normalized[1] if len(normalized) > 1 else None) if normalized else (None, None)
+
+
+def _real_extract_order_type(text: str) -> str | None:
+    if "包车" in text or "往返" in text:
+        return "包车"
+    if "接机" in text:
+        return "接机"
+    if "送机" in text:
+        return "送机"
+    if "接站" in text:
+        return "接站"
+    if "单送" in text:
+        return "单送"
+    return None
+
+
+def _real_extract_route(text: str, order_type: str | None) -> tuple[str | None, str | None, list[str]]:
+    core = _real_strip_noise(text)
+    compact = re.sub(r"\s+", "", core)
+    route_text = compact
+    for token in ["包车", "接送", "送迎"]:
+        route_text = route_text.replace(token, "")
+
+    if "接机" in route_text:
+        left, right = route_text.split("接机", 1)
+        return _real_endpoint(left, "KIX"), _real_endpoint(right, "待确认"), [_real_endpoint(left, "KIX"), _real_endpoint(right, "待确认")]
+    if "送机" in route_text:
+        left, right = route_text.split("送机", 1)
+        return _real_endpoint(left, "待确认"), _real_endpoint(right, "KIX"), [_real_endpoint(left, "待确认"), _real_endpoint(right, "KIX")]
+    for keyword in ["单送", "送到", "到"]:
+        if keyword in route_text:
+            left, right = route_text.split(keyword, 1)
+            return _real_endpoint(left, "待确认"), _real_endpoint(right, "待确认"), [_real_endpoint(left, "待确认"), _real_endpoint(right, "待确认")]
+
+    parts = [part for part in re.split(r"[-－—→>]+", route_text) if part]
+    if len(parts) >= 2:
+        chain = [_real_endpoint(part, "") for part in parts]
+        chain = [item for item in chain if item]
+        if len(chain) >= 2:
+            return chain[0], chain[-1], chain
+
+    known = _real_known_locations(route_text)
+    if order_type == "包车" and "往返" in text and len(known) == 1:
+        return known[0], known[0], known
+    if len(known) >= 2:
+        return known[0], known[-1], known
+    if len(known) == 1:
+        return known[0], None, known
+    return None, None, []
+
+
+def _real_strip_noise(text: str) -> str:
+    work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d(?:/(?:[01]?\d|2[0-3])[:：][0-5]\d)?\b", " ", work)
+    work = re.sub(r"\b(?:2代|3代|10座|十座|7座|18座|23座|海狮|GL8|グランエース)(?:[×xX]\d+)?\b", " ", work, flags=re.I)
+    work = re.sub(r"儿童[座坐]椅\s*[*xX×]?\s*\d*|儿童坐垫", " ", work)
+    work = re.sub(r"绿牌|绿|白牌|雪胎|举牌|接机牌", " ", work)
+    work = re.sub(r"\d{3,6}(?:\s*[*xX×]\s*\d+)?(?:\s*[-+＋]|\s*(?:日元|円|jpy))?", " ", work, flags=re.I)
+    work = re.sub(r"客户:[A-Za-z\u4e00-\u9fa5 ._-]+", " ", work)
+    return re.sub(r"\s+", " ", work).strip()
+
+
+def _real_endpoint(value: str, fallback: str) -> str:
+    cleaned = re.sub(r"\s+", "", value or "")
+    for key in sorted(REAL_LOCATION_ALIASES, key=len, reverse=True):
+        if key and key.lower() in cleaned.lower():
+            return REAL_LOCATION_ALIASES[key]
+    return cleaned or fallback
+
+
+def _real_known_locations(value: str) -> list[str]:
+    result = []
+    for key in sorted(REAL_LOCATION_ALIASES, key=len, reverse=True):
+        if key and key.lower() in value.lower():
+            loc = REAL_LOCATION_ALIASES[key]
+            if loc not in result:
+                result.append(loc)
+    return result
+
+
+def _real_identify_vehicle_type(text: str) -> str | None:
+    parts = []
+    if re.search(r"(?:2代|二代)", text):
+        parts.append("2代")
+    if re.search(r"(?:3代|三代|ALPHARD|阿尔法|埃尔法|VELLFIRE)", text, re.I):
+        parts.append("3代")
+    if re.search(r"(?:10座|十座|海狮|HIACE|グランエース)", text, re.I):
+        parts.append("10座")
+    if re.search(r"(?:7座|GL8|别克)", text, re.I):
+        parts.append("7座")
+    if re.search(r"(?:18座|中巴)", text):
+        parts.append("18座")
+    if re.search(r"(?:23座|考斯特|COASTER)", text, re.I):
+        parts.append("23座")
+    count = re.search(r"(?:2代|3代|10座|十座|海狮)\s*[×xX]\s*(\d+)", text)
+    if count:
+        parts.append(f"{count.group(1)}台")
+    return " ".join(dict.fromkeys(parts)) or None
+
+
+def _real_extract_vehicle_color(text: str) -> str | None:
+    if "绿" in text:
+        return "绿"
+    if "白" in text:
+        return "白"
+    if "黑" in text or "黒" in text:
+        return "黑"
+    return None
+
+
+def _real_extract_price_and_fee(text: str) -> tuple[float | None, str | None]:
+    work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", " ", work)
+    fee_parts = []
+    for fee in re.findall(r"[+＋]\s*(\d{3,6})\s*(?:日元|円|jpy)?", work, re.I):
+        fee_parts.append(f"追加费用{fee}")
+    multiply = re.search(r"(\d{3,6})\s*[*xX×]\s*(\d+)", work)
+    if multiply:
+        unit = int(multiply.group(1))
+        count = int(multiply.group(2))
+        fee_parts.append(f"单价{unit}×{count}")
+        return float(unit * count), "；".join(fee_parts)
+    candidates = []
+    for match in re.finditer(r"(?:2代|3代|10座|十座|海狮|GL8|绿牌|绿)\s*([0-9]{3,6})(?:-|$|\s|[+＋])", work, re.I):
+        candidates.append(int(match.group(1)))
+    for match in re.finditer(r"(?<![\d:])([0-9]{3,6})(?:-|$|\s|[+＋])", work):
+        value = int(match.group(1))
+        if value >= 300:
+            candidates.append(value)
+    return (float(candidates[0]) if candidates else None), ("；".join(fee_parts) if fee_parts else None)
+
+
+def _real_extract_explicit_jpy(text: str) -> float | None:
+    match = re.search(r"([0-9,]{3,})\s*(?:日元|円|JPY)", text, re.I)
+    return float(match.group(1).replace(",", "")) if match else None
+
+
+def _real_extract_other_fee(text: str) -> float | None:
+    fees = [int(item) for item in re.findall(r"[+＋]\s*(\d{3,6})", text)]
+    return float(sum(fees)) if fees else None
+
+
+def _real_extract_note_tokens(text: str) -> list[str]:
+    notes = []
+    for label, pattern in REAL_NOTE_PATTERNS:
+        for match in re.finditer(pattern, text, re.I):
+            count = next((group for group in match.groups() if group), None)
+            notes.append(f"{label}×{count}" if count and label == "儿童座椅" else label)
+    return list(dict.fromkeys(notes))
 
 
 def _extract_order_note_code(text: str) -> str:

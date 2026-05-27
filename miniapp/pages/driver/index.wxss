@@ -11,6 +11,117 @@
   font-weight: 400;
 }
 
+.driver-login {
+  min-height: calc(100vh - 226rpx);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24rpx;
+}
+
+.login-hero {
+  overflow: hidden;
+  position: relative;
+  padding: 34rpx 32rpx;
+  border-radius: 30rpx;
+  color: #ffffff;
+  background: linear-gradient(135deg, #07111f 0%, #123e78 58%, #2563eb 100%);
+  box-shadow: 0 22rpx 46rpx rgba(15, 23, 42, 0.18);
+}
+
+.login-hero::after {
+  content: "";
+  position: absolute;
+  right: -48rpx;
+  top: -60rpx;
+  width: 190rpx;
+  height: 190rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.login-eyebrow {
+  font-size: 21rpx;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.login-title {
+  position: relative;
+  z-index: 1;
+  margin-top: 12rpx;
+  font-size: 46rpx;
+  font-weight: 900;
+}
+
+.login-subtitle {
+  position: relative;
+  z-index: 1;
+  margin-top: 8rpx;
+  font-size: 25rpx;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.login-card {
+  padding: 30rpx;
+  border: 1rpx solid #dce5ef;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 30rpx rgba(15, 23, 42, 0.08);
+}
+
+.login-label {
+  margin: 16rpx 0 8rpx;
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #334155;
+}
+
+.login-input {
+  height: 84rpx;
+  box-sizing: border-box;
+  padding: 0 24rpx;
+  border: 1rpx solid #d9e3ef;
+  border-radius: 18rpx;
+  background: #f8fafc;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.login-button {
+  height: 88rpx;
+  margin-top: 28rpx;
+  border-radius: 22rpx;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 900;
+  box-shadow: 0 16rpx 32rpx rgba(22, 163, 74, 0.22);
+}
+
+.login-error {
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.login-help {
+  margin-top: 18rpx;
+  color: #64748b;
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
+.logout-button {
+  width: 100%;
+  margin-bottom: 22rpx;
+}
+
 .driver-hero {
   position: sticky;
   top: 0;
@@ -166,6 +277,10 @@
   margin-bottom: 14rpx;
 }
 
+.mine-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .yard-grid {
   grid-template-columns: repeat(3, 1fr);
 }
@@ -293,6 +408,21 @@
 
 .timeline-panel {
   padding-bottom: 14rpx;
+}
+
+.yard-panel.folded {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.folded-note {
+  margin-top: 14rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  color: #475569;
+  background: #ffffff;
+  font-size: 24rpx;
+  font-weight: 650;
 }
 
 .panel-header.compact {
@@ -938,6 +1068,31 @@
   font-size: 23rpx;
 }
 
+.contact-panel {
+  padding-bottom: 26rpx;
+}
+
+.contact-grid {
+  display: grid;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.field-group text {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #64748b;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.save-contact-button {
+  width: 100%;
+  margin-top: 18rpx;
+  min-height: 78rpx;
+  border-radius: 20rpx;
+}
+
 .metrics-grid.calm {
   grid-template-columns: repeat(2, 1fr);
 }
@@ -949,35 +1104,39 @@
 
 .bottom-tabs {
   position: fixed;
-  left: 24rpx;
-  right: 24rpx;
-  bottom: 22rpx;
+  left: 28rpx;
+  right: 28rpx;
+  bottom: 16rpx;
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8rpx;
-  padding: 10rpx;
+  gap: 0;
+  height: 88rpx;
+  box-sizing: border-box;
+  padding: 8rpx calc(8rpx + env(safe-area-inset-right)) calc(8rpx + env(safe-area-inset-bottom)) calc(8rpx + env(safe-area-inset-left));
   border: 1rpx solid #dce4ef;
   border-radius: 28rpx;
   background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 16rpx 38rpx rgba(15, 23, 42, 0.13);
+  box-shadow: 0 14rpx 34rpx rgba(30, 54, 92, 0.12);
 }
 
 .bottom-tab {
-  min-height: 78rpx;
+  min-height: 0;
+  height: 64rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 20rpx;
-  color: #64748b;
-  font-size: 24rpx;
+  color: #6b7890;
+  font-size: 22rpx;
   font-weight: 800;
+  line-height: 1;
 }
 
 .bottom-tab.active {
   color: #ffffff;
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.22);
+  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.24);
 }
 
 .primary-dock {

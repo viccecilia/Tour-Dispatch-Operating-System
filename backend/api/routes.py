@@ -7,15 +7,31 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from backend.services.auth_service import authenticate, get_user_by_token
+from backend.services.auth_service import (
+    authenticate,
+    authenticate_phone,
+    get_user_by_token,
+    register_bound_account,
+    reset_user_password_to_phone_tail,
+    unbind_user_wechat,
+)
 from backend.services.agency_portal_service import (
     agency_portal_login,
     create_agency_order,
     list_agency_orders,
     list_public_agencies,
 )
-from backend.services.agency_service import create_agency, list_agencies, update_agency
+from backend.services.agency_service import create_agency, delete_agency, list_agencies, update_agency
+from backend.services.account_service import (
+    create_account,
+    disable_account,
+    get_account_overview,
+    reset_account_password,
+    unbind_account_wechat,
+    update_account,
+)
 from backend.services.analytics_service import get_analytics_summary
+from backend.services.attendance_service import get_driver_attendance_daily
 from backend.services.audit_service import (
     get_entity_history,
     list_anomaly_scans,
@@ -76,6 +92,7 @@ from backend.services.driver_service import (
     submit_driver_location,
     submit_driver_report,
     submit_driver_workflow_event,
+    update_driver_profile,
     upload_driver_evidence,
 )
 from backend.services.finance_service import (
@@ -129,6 +146,8 @@ from backend.services.parser_service import (
 from backend.services.resource_service import (
     create_driver,
     create_vehicle,
+    delete_driver,
+    delete_vehicle,
     get_resource_reminders,
     list_drivers,
     list_vehicles,
@@ -207,6 +226,33 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/dispatch-mobile/unassigned-orders":
             self.send_json({"orders": list_dispatcher_unassigned_orders(params)})
             return
+        if path == "/api/dispatch-mobile/drafts":
+            self.send_json({"drafts": list_drafts()})
+            return
+        if path == "/api/dispatch-mobile/drivers":
+            self.send_json({"drivers": list_available_drivers()})
+            return
+        if path == "/api/dispatch-mobile/vehicles":
+            self.send_json({"vehicles": list_available_vehicles()})
+            return
+        if path == "/api/dispatch-mobile/assignments":
+            self.send_json({"assignments": list_assignments(params.get("status", "active"))})
+            return
+        if path == "/api/dispatch-mobile/fleet/latest-locations":
+            self.send_json({
+                "locations": get_latest_locations(
+                    params.get("driver_id"),
+                    int(params.get("limit") or 50),
+                    params.get("online_status"),
+                )
+            })
+            return
+        if path == "/api/dispatch-mobile/finance/summary":
+            self.send_json(get_finance_summary(params))
+            return
+        if path == "/api/dispatch-mobile/finance/ledger":
+            self.send_json(get_finance_ledger(params))
+            return
         if path == "/api/dispatch-mobile/notifications":
             self.send_json(get_dispatcher_notifications(params))
             return
@@ -251,6 +297,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/copilot/summary":
             self.send_json(get_copilot_summary(params))
             return
+        if path == "/api/attendance/daily":
+            self.send_json(get_driver_attendance_daily(params.get("date")))
+            return
         if path == "/api/notifications":
             self.send_json({"notifications": list_notifications(params)})
             return
@@ -293,34 +342,49 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/org/roles":
             self.send_json({"role_permissions": get_role_permissions()})
             return
+        if path == "/api/accounts/overview":
+            if not self.require_role({"admin"}):
+                return
+            self.send_json(get_account_overview())
+            return
         if path == "/api/agencies":
             self.send_json({"agencies": list_agencies(params)})
             return
         if path == "/api/finance/summary":
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
             self.send_json(get_finance_summary(params))
             return
         if path == "/api/finance/ledger":
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
             self.send_json(get_finance_ledger(params))
             return
         if path == "/api/finance/driver-stats":
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
             self.send_json(get_driver_settlement_stats(params))
             return
         if path == "/api/finance/driver-expenses":
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
             self.send_json(list_finance_driver_expenses(params))
             return
         if path == "/api/finance/export":
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
@@ -460,19 +524,82 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/dispatch-mobile/login":
             result = login_dispatcher(payload)
-            log_operation("DISPATCHER_MOBILE_LOGIN_OK" if result else "DISPATCHER_MOBILE_LOGIN_FAIL", path, {"username": payload.get("username", "")}, payload.get("username", ""))
-            self.send_json(result if result else {"error": "invalid_dispatcher_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
+            ok = bool(result and not result.get("error"))
+            log_operation("DISPATCHER_MOBILE_LOGIN_OK" if ok else "DISPATCHER_MOBILE_LOGIN_FAIL", path, {"username": payload.get("username", ""), "phone": payload.get("phone", ""), "error": result.get("error") if result else "invalid_dispatcher_credentials"}, payload.get("username", "") or payload.get("phone", ""))
+            self.send_json(result if result else {"error": "invalid_dispatcher_credentials"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
-        if path.startswith("/api/") and path != "/api/auth/login" and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
+        public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/register"}
+        if path.startswith("/api/") and path not in public_auth_paths and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
             user = self.require_api_user()
             if not user:
                 return
-        if path != "/api/auth/login":
+        if path not in public_auth_paths:
             log_operation("POST", path, payload, self.actor_label())
         if path == "/api/auth/login":
             result = authenticate(payload.get("username", ""), payload.get("password", ""))
             log_operation("LOGIN_OK" if result else "LOGIN_FAIL", path, {"username": payload.get("username", "")}, payload.get("username", ""))
             self.send_json(result if result else {"error": "invalid_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
+            return
+        if path == "/api/auth/login-phone":
+            result = authenticate_phone(
+                payload.get("phone", ""),
+                payload.get("password", ""),
+                payload.get("wx_openid"),
+                payload.get("wx_unionid"),
+                payload.get("client_type", "web"),
+            )
+            ok = bool(result and not result.get("error"))
+            log_operation("PHONE_LOGIN_OK" if ok else "PHONE_LOGIN_FAIL", path, {"phone": payload.get("phone", ""), "error": result.get("error") if result else "invalid_credentials"}, payload.get("phone", ""))
+            self.send_json(result if result else {"error": "invalid_credentials"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
+            return
+        if path == "/api/auth/register":
+            try:
+                result = register_bound_account(payload)
+            except ValueError as exc:
+                log_operation("REGISTER_BIND_FAIL", path, {"phone": payload.get("phone", ""), "error": str(exc)}, payload.get("phone", ""))
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            log_operation("REGISTER_BIND_OK", path, {"phone": payload.get("phone", ""), "role": payload.get("role")}, payload.get("phone", ""))
+            self.send_json(result, HTTPStatus.CREATED)
+            return
+        if path == "/api/auth/admin/unbind-wechat":
+            if not self.require_role({"admin"}):
+                return
+            user = unbind_user_wechat(payload.get("user_id"), self.actor_label())
+            self.send_json({"user": user} if user else {"error": "user_not_found"}, HTTPStatus.OK if user else HTTPStatus.NOT_FOUND)
+            return
+        if path == "/api/auth/admin/reset-password":
+            if not self.require_role({"admin"}):
+                return
+            try:
+                user = reset_user_password_to_phone_tail(payload.get("user_id"), self.actor_label())
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"user": user} if user else {"error": "user_not_found"}, HTTPStatus.OK if user else HTTPStatus.NOT_FOUND)
+            return
+        if path == "/api/accounts":
+            if not self.require_role({"admin"}):
+                return
+            self.safe_create(lambda: {"account": create_account(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        account_disable_id = self._match_action_path(path, "/api/accounts/", "/disable")
+        if account_disable_id:
+            if not self.require_role({"admin"}):
+                return
+            self.safe_update(lambda: disable_account(account_disable_id, self.actor_label()), "account", "account_not_found")
+            return
+        account_reset_id = self._match_action_path(path, "/api/accounts/", "/reset-password")
+        if account_reset_id:
+            if not self.require_role({"admin"}):
+                return
+            self.safe_update(lambda: reset_account_password(account_reset_id, self.actor_label()), "account", "account_not_found")
+            return
+        account_unbind_id = self._match_action_path(path, "/api/accounts/", "/unbind-wechat")
+        if account_unbind_id:
+            if not self.require_role({"admin"}):
+                return
+            self.safe_update(lambda: unbind_account_wechat(account_unbind_id, self.actor_label()), "account", "account_not_found")
             return
         if path == "/api/orders":
             self.create_order_with_audit(payload, path)
@@ -548,6 +675,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/dispatch/reassign":
             self.dispatch_reassign_with_audit(payload, path)
             return
+        if path == "/api/driver/profile":
+            self.send_json(update_driver_profile(payload.get("driver_id"), payload))
+            return
         if path == "/api/parser/text":
             if payload.get("batch"):
                 drafts = parse_batch_text_to_drafts(payload.get("text", ""), "text")
@@ -563,6 +693,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             order = mark_order_dispatcher_context(payload.get("order_id"), payload, bool(payload.get("update_only")))
             self.send_json({"ok": bool(order), "order": order} if order else {"ok": False, "error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
+        if path == "/api/dispatch-mobile/dispatch/assign":
+            self.dispatch_assign_with_audit(payload, path)
+            return
         if path == "/api/parser/excel":
             drafts = parse_excel_to_drafts(payload)
             self.send_json({"drafts": drafts, "count": len(drafts)}, HTTPStatus.CREATED)
@@ -575,6 +708,40 @@ class ApiHandler(BaseHTTPRequestHandler):
         if mobile_draft_id:
             draft = update_dispatcher_draft(mobile_draft_id, payload)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
+            return
+        mobile_confirm_id = self.match_dispatch_mobile_confirm_path(path)
+        if mobile_confirm_id:
+            result = confirm_draft(mobile_confirm_id)
+            if result and result.get("order_id"):
+                result["order"] = mark_order_dispatcher_context(result["order_id"], payload) or result.get("order")
+                record_dispatch_mobile_audit(
+                    "mobile_confirm_order",
+                    payload,
+                    entity_type="order",
+                    entity_id=result.get("order_id"),
+                    after=result,
+                    summary=f"Mobile confirmed draft {mobile_confirm_id} to order {result.get('order_id')}",
+                    source_path=path,
+                )
+            self.send_json(result if result else {"error": "draft_not_found"}, HTTPStatus.OK if result else HTTPStatus.NOT_FOUND)
+            return
+        mobile_order_update_id = self.match_dispatch_mobile_order_update_path(path)
+        if mobile_order_update_id:
+            before = get_order(mobile_order_update_id)
+            order = update_order(mobile_order_update_id, payload)
+            if order:
+                mark_order_dispatcher_context(order["id"], payload, True)
+                record_dispatch_mobile_audit(
+                    "mobile_order_update",
+                    payload,
+                    entity_type="order",
+                    entity_id=order.get("id"),
+                    before=before,
+                    after=order,
+                    summary=f"Mobile updated order {order.get('oid') or order.get('id')}",
+                    source_path=path,
+                )
+            self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/driver/report":
             result = submit_driver_report(payload)
@@ -633,6 +800,11 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         path = urlparse(self.path).path
         payload = self.read_json()
+        mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
+        if mobile_draft_id:
+            draft = update_dispatcher_draft(mobile_draft_id, payload)
+            self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
+            return
         user = self.require_api_user()
         if not user:
             return
@@ -646,6 +818,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin"}):
                 return
             self.safe_update(lambda: update_member(org_member_id, payload), "member", "member_not_found")
+            return
+        account_id = self._match_prefixed_id(path, "/api/accounts/")
+        if account_id:
+            if not self.require_role({"admin"}):
+                return
+            self.safe_update(lambda: update_account(account_id, payload, self.actor_label()), "account", "account_not_found")
             return
         driver_id = self.match_resource_path(path, "drivers")
         if driver_id:
@@ -677,6 +855,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         finance_expense_id = self._match_prefixed_id(path, "/api/finance/driver-expenses/")
         if finance_expense_id:
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
@@ -684,6 +864,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         finance_order_id = self._match_prefixed_id(path, "/api/finance/orders/")
         if finance_order_id:
+            if not self.require_role({"admin"}):
+                return
             if not is_feature_enabled("finance"):
                 self.send_json({"error": "feature_not_enabled", "feature": "finance"}, HTTPStatus.FORBIDDEN)
                 return
@@ -719,9 +901,27 @@ class ApiHandler(BaseHTTPRequestHandler):
                 )
             self.send_json({"deleted": True} if deleted else {"error": "order_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
             return
+        driver_id = self.match_resource_path(path, "drivers")
+        if driver_id:
+            deleted = delete_driver(driver_id)
+            self.send_json({"deleted": True} if deleted else {"error": "driver_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
+            return
+        vehicle_id = self.match_resource_path(path, "vehicles")
+        if vehicle_id:
+            deleted = delete_vehicle(vehicle_id)
+            self.send_json({"deleted": True} if deleted else {"error": "vehicle_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
+            return
+        agency_id = self.match_agency_path(path)
+        if agency_id:
+            deleted = delete_agency(agency_id)
+            self.send_json({"deleted": True} if deleted else {"error": "agency_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
+            return
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def driver_id(self, params: dict) -> int:
+        user = get_user_by_token(self.bearer_token())
+        if user and user.get("role") == "driver":
+            return int(user.get("profile_id") or 0)
         return int(params.get("driver_id") or self.headers.get("X-Driver-Id") or 0)
 
     def actor_label(self) -> str:
@@ -1026,6 +1226,18 @@ class ApiHandler(BaseHTTPRequestHandler):
     def match_dispatch_mobile_draft_path(self, path: str) -> str:
         return self._match_prefixed_id(path, "/api/dispatch-mobile/drafts/")
 
+    def match_dispatch_mobile_confirm_path(self, path: str) -> str:
+        prefix, suffix = "/api/dispatch-mobile/drafts/", "/confirm"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
+    def match_dispatch_mobile_order_update_path(self, path: str) -> str:
+        prefix, suffix = "/api/dispatch-mobile/orders/", "/update"
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
     def match_incident_close_path(self, path: str) -> str:
         prefix, suffix = "/api/incidents/", "/close"
         if not path.startswith(prefix) or not path.endswith(suffix):
@@ -1078,6 +1290,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not path.startswith(prefix) or not path.endswith(suffix):
             return ""
         return path.removeprefix(prefix).removesuffix(suffix).strip("/")
+
+    def _match_action_path(self, path: str, prefix: str, suffix: str) -> str:
+        if not path.startswith(prefix) or not path.endswith(suffix):
+            return ""
+        value = path.removeprefix(prefix).removesuffix(suffix).strip("/")
+        return value if value and "/" not in value else ""
 
     def _match_prefixed_id(self, path: str, prefix: str) -> str:
         if not path.startswith(prefix):
@@ -1392,7 +1610,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         <div class="panel">
           <h2>批量输入订单 <small>一行一单，先生成草稿</small></h2>
           <textarea id="batchText" placeholder="例如：
-5/7 10:00 成田->东京站 4人 2箱 ALPHARD 王先生
+5/24 14:10 关西接机大阪 10座600
 5月7日 关西机场送大阪市内 6人 丰田海狮
 羽田接机 15:30 银座 2位客人"></textarea>
           <div class="btns"><button onclick="parseBatch()">批量解析</button><button class="secondary" onclick="loadAll()">刷新数据</button></div>
@@ -1489,7 +1707,7 @@ loadAll().catch(e=>{console.error(e);$('status').textContent='API 加载失败';
         <div class="panel" id="calendar"><h2>日历摘要 <small>今天车辆排班卡片</small></h2><div class="cards" id="calendarCards"></div></div>
       </div>
       <div>
-        <div class="panel" id="input"><h2>快速批量录单 <small>粘贴后生成草稿</small></h2><textarea id="batchText" placeholder="一行一单，例如：5/7 10:00 成田->东京站 4人 2箱 ALPHARD 王先生"></textarea><div class="toolbar"><button onclick="parseBatch()">批量解析</button><button class="secondary" onclick="loadAll()">刷新</button></div></div>
+        <div class="panel" id="input"><h2>快速批量录单 <small>粘贴后生成草稿</small></h2><textarea id="batchText" placeholder="一行一单，例如：5/24 14:10 关西接机大阪 10座600"></textarea><div class="toolbar"><button onclick="parseBatch()">批量解析</button><button class="secondary" onclick="loadAll()">刷新</button></div></div>
         <div class="panel"><h2>待处理池 <small>需要调度员动作</small></h2><div class="cards" id="actionCards"></div></div>
         <div class="panel"><h2>草稿预览 <small>点击展开看完整草稿表</small></h2><div class="matrix" id="draftMatrix"></div><div class="toolbar"><button class="secondary" onclick="toggle('draftDetail')">展开草稿明细</button></div><div class="details" id="draftDetail"><table><thead><tr><th>原文</th><th>时间</th><th>路线</th><th>状态</th></tr></thead><tbody id="draftRows"></tbody></table></div></div>
       </div>
@@ -1553,7 +1771,7 @@ loadAll().catch(e=>{console.error(e);$('status').textContent='API 加载失败';
     <section class="kpis" id="kpis"></section>
     <section class="panel" id="parse">
       <h2>1. 批量解析订单 <small>一行一单，先保留原文生成草稿</small></h2>
-      <textarea id="batchText" placeholder="5/7 10:00 成田->东京站 4人 2箱 ALPHARD 王先生
+      <textarea id="batchText" placeholder="5/24 14:10 关西接机大阪 10座600
 5月7日 关西机场送大阪市内 6人 丰田海狮
 羽田接机 15:30 银座 2位客人"></textarea>
       <div class="toolbar"><button onclick="parseBatch()">批量解析订单</button><button class="secondary" onclick="loadAll()">刷新</button><span class="hint">解析结果会进入下面的“待派订单”，可以直接改字段并派单。</span></div>
@@ -1929,7 +2147,7 @@ $('baseDate').value=today();setView('day');
   <main class="main">
     <div class="top" id="dashboard"><div><div class="eyebrow">WX Dispatch MVP</div><div class="title">运营总览</div></div><div class="date-pill" id="todayText">-</div></div>
     <div class="kpis" id="kpis"></div>
-    <section class="section" id="parser"><div class="section-head"><div class="section-title"><span class="step">1</span>订单解析</div><div class="tools"><button class="btn secondary" onclick="toggleParse()">展开/收起</button><button class="btn secondary" onclick="loadAll()">刷新</button></div></div><div class="body hidden" id="parseBox"><textarea class="textarea" id="batchText" placeholder="粘贴订单文本，每行一单：5/20 08:00 首都机场->酒店 4人 2箱 丰田埃尔法 张先生 600"></textarea><div class="tools" style="margin-top:10px"><button class="btn" onclick="parseBatch()">解析草稿</button><span class="muted">不做聊天 UI，解析后进入待确认订单表。</span></div></div></section>
+    <section class="section" id="parser"><div class="section-head"><div class="section-title"><span class="step">1</span>订单解析</div><div class="tools"><button class="btn secondary" onclick="toggleParse()">展开/收起</button><button class="btn secondary" onclick="loadAll()">刷新</button></div></div><div class="body hidden" id="parseBox"><textarea class="textarea" id="batchText" placeholder="粘贴订单文本，每行一单：5/24 08:20 京都送机关西 3代 绿800"></textarea><div class="tools" style="margin-top:10px"><button class="btn" onclick="parseBatch()">解析草稿</button><span class="muted">不做聊天 UI，解析后进入待确认订单表。</span></div></div></section>
     <section class="section" id="pending"><div class="section-head"><div class="section-title"><span class="step">2</span>待确认订单</div><div class="tools"><input class="input" type="date"><input class="input" type="date"><input class="input" placeholder="订单号/客户/手机号"><select class="select"><option>全部状态</option><option>parsed</option><option>failed</option></select><button class="btn success" onclick="assignSelected()">一键排单</button><button class="btn warning" onclick="confirmSelected()">原地确认</button></div></div><div class="body"><div class="tools" style="margin-bottom:10px"><button class="btn secondary" onclick="selectAllPending()">全选</button><button class="btn secondary" onclick="clearSelected()">清空选择</button><span class="muted" id="selectedHint">已选择 0 单</span></div><div class="table-wrap compact"><table><thead><tr><th>选择</th><th>编号</th><th>开始日期/时间</th><th>结束日期/时间</th><th>路线</th><th>类型</th><th>车型</th><th>价格</th><th>备注</th><th>操作</th></tr></thead><tbody id="pendingRows"></tbody></table></div></div></section>
     <section class="section" id="dispatch"><div class="section-head"><div class="section-title"><span class="step">3</span>分配资源</div><span class="muted">选订单、司机、车辆后确认分配</span></div><div class="body grid-4"><div class="card"><h3>订单选择</h3><div class="chips" id="orderChips"></div></div><div class="card"><h3>选择司机</h3><div class="pick-list" id="driverList"></div></div><div class="arrow">→</div><div class="card"><h3>选择车辆</h3><div class="pick-list" id="vehicleList"></div></div><div class="card preview"><h3>分配预览</h3><div id="assignPreview" class="muted">请选择订单、司机、车辆</div><button class="btn success" style="width:100%;margin-top:12px" onclick="assignSelected()">确认分配</button></div></div></section>
     <section class="section" id="assigned"><div class="section-head"><div class="section-title"><span class="step">4</span>已分配订单池</div><div class="tools"><input class="input" type="date"><input class="input" placeholder="搜索订单号/客户"><button class="btn secondary">导出</button></div></div><div class="body"><div class="table-wrap assigned-wrap"><table><thead><tr><th>编号</th><th>开始日期/时间</th><th>结束日期/时间</th><th>路线</th><th>类型</th><th>车型</th><th>司机</th><th>车辆</th><th>价格</th><th>状态</th><th>备注</th></tr></thead><tbody id="assignedRows"></tbody></table></div></div></section>

@@ -1,4 +1,6 @@
 from backend.config import (  # noqa: F401
+    API_HOST,
+    API_PORT,
     BACKUP_DIR,
     BASE_DIR,
     BASE_URL,
@@ -13,5 +15,6 @@ from backend.config import (  # noqa: F401
     PORT,
     RESET_DEMO_ON_START,
     RUNTIME_DIR,
+    TRIAL_MODE,
     ensure_runtime_dirs,
 )

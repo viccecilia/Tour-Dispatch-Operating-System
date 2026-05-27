@@ -81,10 +81,7 @@ export function OrdersPage() {
             {filtered.slice(0, 30).map((order) => (
               <tr key={order.id}>
                 <td className="font-semibold text-slate-950">{order.oid || order.id}</td>
-                <td>
-                  <span className="font-semibold">{order.order_note_code || "-"}</span>
-                  <span className="ml-2 text-slate-500">{order.order_source || order.agency_name || ""}</span>
-                </td>
+                <td className="font-semibold">{formatSourceCode(order)}</td>
                 <td>
                   {order.order_date || "-"} {order.start_time || ""}
                 </td>
@@ -122,6 +119,15 @@ export function OrdersPage() {
       </CardContent>
     </Card>
   );
+}
+
+function formatSourceCode(order: import("@/types/api").Order) {
+  const noteCode = String(order.order_note_code || "").trim();
+  const sourceCode = String(order.order_source || "").trim();
+  if (noteCode && sourceCode && noteCode.toUpperCase() !== sourceCode.toUpperCase()) {
+    return `${noteCode} / ${sourceCode}`;
+  }
+  return noteCode || sourceCode || order.agency_name || "-";
 }
 
 function OrderEvidencePanel({ chain, loading }: { chain?: import("@/types/api").AssignmentEvidenceChain; loading: boolean }) {

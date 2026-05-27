@@ -34,7 +34,7 @@
 
 .toolbar {
   display: grid;
-  grid-template-columns: 1.15fr 1fr 0.75fr;
+  grid-template-columns: 1.15fr 1fr;
   gap: 12rpx;
   margin: 16rpx 0;
 }
@@ -150,8 +150,17 @@
   background: #ffffff;
 }
 
+.row-shell {
+  margin-bottom: 8rpx;
+}
+
 .charter-row {
   min-height: 76rpx;
+}
+
+.airport-row {
+  min-height: 74rpx;
+  padding: 9rpx;
 }
 
 .compact-row.selected {
@@ -278,11 +287,29 @@
   text-align: center;
 }
 
-.edit-panel {
+.edit-panel,
+.inline-edit {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10rpx;
   margin-top: 14rpx;
+}
+
+.inline-edit {
+  margin: -2rpx 4rpx 10rpx 28rpx;
+  padding: 12rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid #dbeafe;
+  background: #f8fbff;
+}
+
+.compact-edit {
+  grid-template-columns: 1fr;
+  margin-left: 20rpx;
+}
+
+.input.full {
+  grid-column: 1 / -1;
 }
 
 .input {

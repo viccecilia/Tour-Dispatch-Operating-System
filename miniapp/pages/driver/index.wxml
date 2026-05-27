@@ -1,4 +1,22 @@
 <view class="page">
+  <view wx:if="{{!authSession}}" class="driver-login">
+    <view class="login-hero">
+      <view class="login-eyebrow">DRIVER APP</view>
+      <view class="login-title">司机登录</view>
+      <view class="login-subtitle">手机号登录后自动绑定当前微信</view>
+    </view>
+    <view class="login-card">
+      <view class="login-label">手机号</view>
+      <input class="login-input" type="number" value="{{loginPhone}}" data-key="loginPhone" bindinput="onLoginInput" placeholder="请输入已录入的手机号" />
+      <view class="login-label">密码</view>
+      <input class="login-input" password value="{{loginPassword}}" data-key="loginPassword" bindinput="onLoginInput" placeholder="初始密码为手机号后 4 位" />
+      <view wx:if="{{loginError}}" class="login-error">{{loginError}}</view>
+      <button class="login-button" loading="{{loginLoading}}" bindtap="loginDriver">进入司机工作台</button>
+      <view class="login-help">如果更换手机或微信，请联系管理员解除微信绑定。</view>
+    </view>
+  </view>
+
+  <block wx:else>
   <view wx:if="{{activeTab === 'home' || activeTab === 'expense' || activeTab === 'mine'}}" class="driver-hero status-{{statusMode}}">
     <view class="hero-top">
       <view class="hero-main">
@@ -79,6 +97,23 @@
   </view>
 
   <view wx:if="{{activeTab === 'task'}}" class="tab-page task-page">
+    <view class="panel yard-panel preflight-panel {{!preflightReady ? 'folded' : ''}}">
+      <view class="panel-header">
+        <view>
+          <view class="panel-title">出库点呼</view>
+          <view class="panel-desc">每天第一单开始前完成检查，点呼出库后进入第一个任务。</view>
+        </view>
+        <view class="count">{{preflightReady ? '待出库' : '已折叠'}}</view>
+      </view>
+      <view wx:if="{{preflightReady}}">
+        <view wx:for="{{preflightItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onTogglePreflight">
+          <view class="check-dot {{preflightChecked[item.key] ? 'checked' : ''}}"></view>
+          <view>{{item.label}}</view>
+        </view>
+      </view>
+      <view wx:else class="folded-note">出库点呼会在第一单开始前显示，已出库后自动折叠。</view>
+    </view>
+
     <view class="panel">
       <view class="panel-header">
         <view>
@@ -99,6 +134,24 @@
           <view class="badge">{{item.status_label}}</view>
         </view>
       </view>
+    </view>
+
+
+    <view class="panel yard-panel return-panel {{!returnReady ? 'folded' : ''}}">
+      <view class="panel-header">
+        <view>
+          <view class="panel-title">入库点呼</view>
+          <view class="panel-desc">今日订单全部完成后，完成清扫、入库点检、酒测和点呼入库。</view>
+        </view>
+        <view class="count">收工前</view>
+      </view>
+      <view wx:if="{{returnReady}}">
+        <view wx:for="{{returnItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onToggleReturn">
+          <view class="check-dot {{returnChecked[item.key] ? 'checked' : ''}}"></view>
+          <view>{{item.label}}</view>
+        </view>
+      </view>
+      <view wx:else class="folded-note">最后一单完成后显示入库点呼。</view>
     </view>
 
     <view class="panel">
@@ -185,17 +238,10 @@
   </view>
 
   <view wx:if="{{activeTab === 'mine'}}" class="tab-page">
-    <view class="profile-card">
-      <view class="profile-avatar">{{driverInitial}}</view>
-      <view>
-        <view class="profile-name">{{driverName}}</view>
-        <view class="profile-meta">司机ID {{driverId}} · {{isOnline ? '在线' : '离线'}}</view>
-      </view>
-    </view>
-
-    <view class="metrics-grid calm">
+    <view class="metrics-grid calm mine-stats">
       <view class="metric"><text>本月订单</text><strong>{{incomeSummary.monthly.order_count || 0}}</strong></view>
-      <view class="metric"><text>本月收入</text><strong>¥{{incomeSummary.monthly.salary_amount || 0}}</strong></view>
+      <view class="metric"><text>接送</text><strong>{{incomeSummary.monthly.airport_order_count || 0}}</strong></view>
+      <view class="metric"><text>包车</text><strong>{{incomeSummary.monthly.charter_order_count || 0}}</strong></view>
     </view>
 
     <view class="panel">
@@ -205,13 +251,34 @@
       <view class="profile-row"><text>电话</text><strong>{{driverProfile.phone || '-'}}</strong></view>
     </view>
 
-    <view class="panel">
-      <view class="panel-title">设置</view>
-      <view class="driver-switch">
-        <input class="field" type="number" value="{{driverId}}" data-key="driverId" bindinput="onInput" />
-        <button class="secondary-button" bindtap="onSwitchDriver">切换</button>
+    <view class="panel contact-panel">
+      <view class="panel-title">联系方式</view>
+      <view class="panel-desc">司机可自行更新，后台司机资料会同步记录。</view>
+      <view class="contact-grid">
+        <view class="field-group">
+          <text>电话</text>
+          <input class="field" value="{{contactPhone}}" data-key="contactPhone" bindinput="onInput" placeholder="手机号" />
+        </view>
+        <view class="field-group">
+          <text>WeChat</text>
+          <input class="field" value="{{contactWechat}}" data-key="contactWechat" bindinput="onInput" placeholder="微信号" />
+        </view>
+        <view class="field-group">
+          <text>WhatsApp</text>
+          <input class="field" value="{{contactWhatsapp}}" data-key="contactWhatsapp" bindinput="onInput" placeholder="WhatsApp" />
+        </view>
+        <view class="field-group">
+          <text>LINE</text>
+          <input class="field" value="{{contactLine}}" data-key="contactLine" bindinput="onInput" placeholder="LINE ID" />
+        </view>
+        <view class="field-group">
+          <text>Kakao</text>
+          <input class="field" value="{{contactKakao}}" data-key="contactKakao" bindinput="onInput" placeholder="KakaoTalk" />
+        </view>
       </view>
+      <button class="secondary-button save-contact-button" loading="{{contactSaving}}" bindtap="onSaveContactProfile">保存联系方式</button>
     </view>
+    <button class="secondary-button logout-button" bindtap="logoutDriver">退出登录</button>
   </view>
 
   <view class="bottom-tabs">
@@ -225,4 +292,5 @@
       {{submitting ? '提交中...' : dockLabel}}
     </button>
   </view>
+  </block>
 </view>

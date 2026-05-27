@@ -2,9 +2,11 @@ import type {
   Agency,
   AgencyPortalAgency,
   AgencyPortalSession,
+  AccountOverview,
   Assignment,
   AssignmentEvidenceChain,
   AnalyticsSummary,
+  AttendanceDaily,
   AuditLog,
   AuthUser,
   BillingOverview,
@@ -31,6 +33,7 @@ import type {
   Order,
   OrgMember,
   OrgOverview,
+  ManagedAccount,
   ReminderSettings,
   ResourceAlert,
   Team,
@@ -137,6 +140,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  deleteAgency: (id: number) =>
+    request<{ deleted: boolean }>(`/api/agencies/${id}`, {
+      method: "DELETE",
+    }),
   agencyPortalAgencies: async () =>
     listFrom<AgencyPortalAgency>(await request<unknown>("/api/agency-portal/agencies"), ["agencies", "items", "data"]),
   agencyPortalLogin: (agencyId: number, portalCode: string) =>
@@ -176,6 +183,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  loginPhone: (phone: string, password: string) =>
+    request<{ token: string; user: AuthUser }>("/api/auth/login-phone", {
+      method: "POST",
+      body: JSON.stringify({ phone, password, client_type: "web" }),
+    }),
   me: () => request<{ user: AuthUser }>("/api/auth/me"),
   dashboardSummary: () => request<DashboardSummary>("/api/dashboard/summary"),
   copilotSummary: (date?: string) => request<CopilotSummary>(`/api/copilot/summary${date ? `?date=${date}` : ""}`),
@@ -186,6 +198,7 @@ export const api = {
     });
     return request<AnalyticsSummary>(`/api/analytics/summary${search.toString() ? `?${search}` : ""}`);
   },
+  attendanceDaily: (date?: string) => request<AttendanceDaily>(`/api/attendance/daily${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   auditLogs: async (params?: { action?: string; entity_type?: string; entity_id?: string; keyword?: string; limit?: number }) => {
     const search = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {
@@ -232,6 +245,29 @@ export const api = {
       body: JSON.stringify({ plan_code: planCode, status: "active" }),
     }),
   orgOverview: () => request<OrgOverview>("/api/org/overview"),
+  accountOverview: () => request<AccountOverview>("/api/accounts/overview"),
+  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; password?: string }) =>
+    request<{ account: ManagedAccount }>("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateAccount: (id: number, payload: Partial<ManagedAccount> & { confirm_driver_role_change?: boolean }) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  disableAccount: (id: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/disable`, {
+      method: "POST",
+    }),
+  resetAccountPassword: (id: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/reset-password`, {
+      method: "POST",
+    }),
+  unbindAccountWechat: (id: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/unbind-wechat`, {
+      method: "POST",
+    }),
   inviteMember: (payload: {
     username: string;
     password: string;
@@ -383,6 +419,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  deleteDriver: (id: number) =>
+    request<{ deleted: boolean }>(`/api/resources/drivers/${id}`, {
+      method: "DELETE",
+    }),
   createVehicle: (payload: Partial<Vehicle>) =>
     request<{ vehicle: Vehicle }>("/api/resources/vehicles", {
       method: "POST",
@@ -392,6 +432,10 @@ export const api = {
     request<{ vehicle: Vehicle }>(`/api/resources/vehicles/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
+    }),
+  deleteVehicle: (id: number) =>
+    request<{ deleted: boolean }>(`/api/resources/vehicles/${id}`, {
+      method: "DELETE",
     }),
   assign: (orderIds: number[], driverId: number, vehicleId: number) =>
     request<{ success: boolean; assignment_ids?: number[]; updated_order_ids?: number[]; conflicts?: unknown[]; conflict?: unknown }>("/api/dispatch/assign", {
