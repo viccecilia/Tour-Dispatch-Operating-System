@@ -480,10 +480,3 @@
   font-size: 21rpx;
   font-weight: 900;
 }
-
-.quick-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14rpx;
-  margin-top: 20rpx;
-}

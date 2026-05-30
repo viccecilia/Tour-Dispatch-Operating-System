@@ -521,6 +521,40 @@ Page({
     });
   },
 
+  publishSelectedToAuction() {
+    const rows = this.selectedRows();
+    if (!rows.length) {
+      wx.showToast({ title: '请先选择订单', icon: 'none' });
+      return;
+    }
+    wx.showModal({
+      title: '放入订单大厅',
+      content: `确认将 ${rows.length} 单放入订单大厅？下一步填写起拍价和一口价。`,
+      confirmText: '继续',
+      success: (modal) => {
+        if (!modal.confirm) return;
+        this.setData({ loading: true, conflictText: '', message: '' });
+        rows.reduce((chain, row) => {
+          return chain.then((items) => {
+            const payload = row.key === this.data.editingKey ? this.data.editing : row;
+            return this.saveRow(row, payload)
+              .then(() => this.ensureOrder(row))
+              .then((id) => items.concat({ ...payload, id: Number(id), kind: 'order' }));
+          });
+        }, Promise.resolve([]))
+          .then((orders) => {
+            wx.setStorageSync('auction_publish_draft', {
+              order_ids: orders.map((item) => item.id),
+              orders
+            });
+            this.setData({ loading: false, selectedKeys: [], editingKey: '', editing: {} });
+            wx.reLaunch({ url: '/pages/auction/index' });
+          })
+          .catch(() => this.setData({ loading: false, conflictText: '放入订单大厅失败，请检查订单或后端连接。' }));
+      }
+    });
+  },
+
   getSelectedWindows() {
     return this.selectedRows().map((row) => this.toWindow(row)).filter(Boolean);
   },

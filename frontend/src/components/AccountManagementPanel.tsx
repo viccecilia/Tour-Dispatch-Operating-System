@@ -50,7 +50,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
     mutationFn: api.createAccount,
     onSuccess: () => {
       setForm(emptyForm);
-      setMessage("账号已新增，初始密码为手机号后 6 位。");
+      setMessage("账号已新增：登录名为 DAITORA-手机号，初始密码为手机号后 6 位。");
       invalidate();
     },
   });
@@ -66,7 +66,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
   const disableMutation = useMutation({
     mutationFn: api.disableAccount,
     onSuccess: () => {
-      setMessage("账号已停用，历史数据已保留。");
+      setMessage("账号已停用。");
       invalidate();
     },
   });
@@ -82,7 +82,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
   const resetMutation = useMutation({
     mutationFn: api.resetAccountPassword,
     onSuccess: () => {
-      setMessage("密码已重置为手机号后 6 位。");
+      setMessage("密码已重置为手机号后 6 位，Web 下次登录必须修改密码。");
       invalidate();
     },
   });
@@ -90,7 +90,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
   const unbindMutation = useMutation({
     mutationFn: api.unbindAccountWechat,
     onSuccess: () => {
-      setMessage("微信绑定已解除，下次小程序登录会重新绑定。");
+      setMessage("微信绑定已解除，下次小程序登录会重新绑定当前微信。");
       invalidate();
     },
   });
@@ -106,13 +106,8 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
         <CardHeader>
           <p className="text-xs font-bold uppercase tracking-normal text-blue-600">ACCOUNT CONTROL</p>
           <h2 className="mt-1 text-lg font-black text-slate-950">账号管理</h2>
-          <p className="mt-1 text-sm text-slate-500">账号新增、修改、停用、启用和密码重置只允许管理员操作。</p>
+          <p className="mt-1 text-sm text-slate-500">只有公司主账户可以新增、修改、停用和启用下属账户。</p>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-            当前登录角色是 {roleLabels[currentUser.role as AccountRole] || currentUser.role}，没有账号管理权限。请使用管理员账号登录。
-          </div>
-        </CardContent>
       </Card>
     );
   }
@@ -127,7 +122,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
           <div>
             <p className="text-xs font-bold uppercase tracking-normal text-blue-600">ACCOUNT CONTROL</p>
             <h2 className="mt-1 text-lg font-black text-slate-950">账号管理</h2>
-            <p className="mt-1 text-sm text-slate-500">所有端统一用手机号登录；管理员、调度、运行管理账号需要录入短代码，用于订单来源和操作追踪。</p>
+            <p className="mt-1 text-sm text-slate-500">统一使用公司账号登录：DAITORA-手机号。主账户可以在这里维护下属账号，暂不限制数量。</p>
           </div>
           <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">仅管理员可见</div>
         </div>
@@ -139,52 +134,26 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
             新增账号
           </div>
           <div className="grid gap-3 xl:grid-cols-[160px_1fr_180px_1fr_auto]">
-            <select
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-semibold text-slate-800"
-              value={form.role}
-              onChange={(event) => setForm({ ...form, role: event.target.value as AccountRole })}
-            >
+            <select className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-semibold text-slate-800" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as AccountRole })}>
               {roleOptions.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabels[role]}
-                </option>
+                <option key={role} value={role}>{roleLabels[role]}</option>
               ))}
             </select>
-            <input
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500"
-              placeholder="姓名"
-              value={form.display_name}
-              onChange={(event) => setForm({ ...form, display_name: event.target.value })}
-            />
-            <input
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm uppercase outline-none focus:border-blue-500 disabled:bg-slate-100"
-              placeholder={isDriver ? "司机不用填代码" : "账号代码"}
-              value={form.operator_code}
-              disabled={isDriver}
-              onChange={(event) => setForm({ ...form, operator_code: event.target.value.toUpperCase() })}
-            />
-            <input
-              className="h-10 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500"
-              placeholder="手机号"
-              value={form.phone}
-              onChange={(event) => setForm({ ...form, phone: event.target.value })}
-            />
+            <input className="h-10 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500" placeholder="姓名" value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} />
+            <input className="h-10 rounded-lg border border-border bg-white px-3 text-sm uppercase outline-none focus:border-blue-500 disabled:bg-slate-100" placeholder={isDriver ? "司机沿用台账代码" : "账号代码"} value={form.operator_code} disabled={isDriver} onChange={(event) => setForm({ ...form, operator_code: event.target.value.toUpperCase() })} />
+            <input className="h-10 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500" placeholder="手机号" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             <Button disabled={createMutation.isPending || !canCreate} onClick={() => createMutation.mutate(form)}>
               <UserPlus size={16} />
               新增
             </Button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">司机账号必须匹配司机台账手机号；非司机账号会建立管理人员资料。初始密码默认手机号后 6 位，可后台重置。</p>
+          <p className="mt-2 text-xs text-slate-500">司机账号必须匹配司机台账手机号。新增后初始密码固定为手机号后 6 位，Web 首次登录必须修改；小程序首次登录会绑定微信，之后可自动登录。</p>
         </div>
 
         {message ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</div> : null}
         {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
-        {overview.isError ? (
-          <ErrorPanel title="账号列表加载失败" description="请检查后台账号管理 API 是否正常。" requestPath="/api/accounts/overview" onRetry={() => overview.refetch()} />
-        ) : null}
-        {overview.isLoading ? (
-          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">正在加载账号列表...</div>
-        ) : null}
+        {overview.isError ? <ErrorPanel title="账号列表加载失败" description="请检查账号管理 API 是否正常。" requestPath="/api/accounts/overview" onRetry={() => overview.refetch()} /> : null}
+        {overview.isLoading ? <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">正在加载账号列表...</div> : null}
 
         <div className="grid gap-4 2xl:grid-cols-2">
           {(overview.data?.roles || []).map((group) => (
@@ -192,7 +161,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
               <div className="border-b border-border bg-slate-50 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-base font-black text-slate-950">{group.label}</h3>
+                    <h3 className="text-base font-black text-slate-950">{roleLabels[group.role] || group.label}</h3>
                     <p className="mt-1 text-xs text-slate-500">总 {group.total} 人 · 启用 {group.active} · 停用 {group.disabled}</p>
                   </div>
                   <div className="flex gap-2 text-xs font-bold">
@@ -208,7 +177,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
                       key={account.id}
                       account={account}
                       onDisable={() => {
-                        if (window.confirm(`确认停用 ${account.display_name || account.username}？历史数据会保留。`)) disableMutation.mutate(account.id);
+                        if (window.confirm(`确认停用 ${account.display_name || account.username}？`)) disableMutation.mutate(account.id);
                       }}
                       onEnable={() => {
                         if (window.confirm(`确认启用 ${account.display_name || account.username}？`)) enableMutation.mutate(account.id);
@@ -217,7 +186,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
                         if (window.confirm("确认将密码重置为手机号后 6 位？")) resetMutation.mutate(account.id);
                       }}
                       onUnbind={() => {
-                        if (window.confirm("确认解除微信绑定？下次小程序登录会重新绑定当前微信。")) unbindMutation.mutate(account.id);
+                        if (window.confirm("确认解除微信绑定？")) unbindMutation.mutate(account.id);
                       }}
                       onCodeChange={(operator_code) => updateMutation.mutate({ id: account.id, payload: { operator_code } })}
                       onProfileChange={(payload) => updateMutation.mutate({ id: account.id, payload })}
@@ -261,37 +230,23 @@ function AccountRow({
     <div className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_1fr_1fr_auto] xl:items-center">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            className="h-9 min-w-[180px] rounded-lg border border-border bg-white px-3 text-sm font-black text-slate-950 outline-none focus:border-blue-500"
-            value={nameDraft}
-            placeholder="姓名"
-            onChange={(event) => setNameDraft(event.target.value)}
-            onBlur={() => {
-              const nextName = nameDraft.trim();
-              if ((account.display_name || account.username || "") !== nextName) {
-                onProfileChange({ display_name: nextName, phone: phoneDraft.trim() });
-              }
-            }}
-          />
+          <input className="h-9 min-w-[180px] rounded-lg border border-border bg-white px-3 text-sm font-black text-slate-950 outline-none focus:border-blue-500" value={nameDraft} placeholder="姓名" onChange={(event) => setNameDraft(event.target.value)} onBlur={() => {
+            const nextName = nameDraft.trim();
+            if ((account.display_name || account.username || "") !== nextName) onProfileChange({ display_name: nextName, phone: phoneDraft.trim() });
+          }} />
           <StatusBadge status={account.is_active ? "active" : "disabled"} />
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${account.wx_bind_status === "bound" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
             {account.wx_bind_status === "bound" ? "微信已绑定" : "微信未绑定"}
           </span>
+          {account.must_change_password ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">Web需改密</span> : null}
         </div>
-        <div className="mt-2 grid max-w-[360px] gap-1">
+        <div className="mt-2 grid max-w-[420px] gap-1">
+          <div className="text-xs font-bold text-slate-700">登录名：{account.account_login || account.username}</div>
           <label className="text-[11px] font-bold text-slate-500">手机号</label>
-          <input
-            className="h-9 rounded-lg border border-border bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
-            value={phoneDraft}
-            placeholder="可留空，留空后不能用手机号登录"
-            onChange={(event) => setPhoneDraft(event.target.value)}
-            onBlur={() => {
-              const nextPhone = phoneDraft.trim();
-              if ((account.phone || "") !== nextPhone) {
-                onProfileChange({ display_name: nameDraft.trim(), phone: nextPhone });
-              }
-            }}
-          />
+          <input className="h-9 rounded-lg border border-border bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-blue-500" value={phoneDraft} placeholder="手机号可修改或清空" onChange={(event) => setPhoneDraft(event.target.value)} onBlur={() => {
+            const nextPhone = phoneDraft.trim();
+            if ((account.phone || "") !== nextPhone) onProfileChange({ display_name: nameDraft.trim(), phone: nextPhone });
+          }} />
           <div className="text-xs text-slate-500">{profileLabel(account.profile_type)} #{account.profile_id || "-"}</div>
         </div>
       </div>
@@ -299,25 +254,17 @@ function AccountRow({
         {isOperator ? (
           <label className="grid gap-1">
             <span className="font-bold text-slate-500">账号代码</span>
-            <input
-              className="h-9 rounded-lg border border-border bg-white px-3 text-xs font-bold uppercase text-slate-800"
-              value={codeDraft}
-              placeholder="如 OP01"
-              onChange={(event) => setCodeDraft(event.target.value.toUpperCase())}
-              onBlur={() => {
-                if ((account.operator_code || "") !== codeDraft.trim()) onCodeChange(codeDraft.trim());
-              }}
-            />
+            <input className="h-9 rounded-lg border border-border bg-white px-3 text-xs font-bold uppercase text-slate-800" value={codeDraft} placeholder="如 OP01" onChange={(event) => setCodeDraft(event.target.value.toUpperCase())} onBlur={() => {
+              if ((account.operator_code || "") !== codeDraft.trim()) onCodeChange(codeDraft.trim());
+            }} />
           </label>
         ) : (
           <div>司机代码：{account.driver_code || "-"}</div>
         )}
         <div>最近登录：{formatDate(account.last_login_at)}</div>
       </div>
-      <div>
-        <div className="inline-flex h-9 w-full items-center rounded-lg border border-border bg-slate-50 px-3 text-xs font-bold text-slate-700">
-          {roleLabels[account.role] || account.role}
-        </div>
+      <div className="inline-flex h-9 w-full items-center rounded-lg border border-border bg-slate-50 px-3 text-xs font-bold text-slate-700">
+        {roleLabels[account.role] || account.role}
       </div>
       <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
         {account.is_active ? (

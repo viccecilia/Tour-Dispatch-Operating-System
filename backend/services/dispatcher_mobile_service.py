@@ -4,16 +4,19 @@ from datetime import date
 from typing import Any
 
 from backend.db.database import get_connection
-from backend.services.auth_service import authenticate, authenticate_phone, authenticate_wechat
+from backend.services.auth_service import authenticate, authenticate_phone, authenticate_wechat, normalize_phone, split_company_account
 from backend.services.dispatch_mobile_audit_service import record_dispatch_mobile_audit
 from backend.services.parser_service import get_draft, parse_batch_text_to_drafts, parse_text_to_draft, update_draft
 from backend.services.tenant_context import get_current_tenant_id
 
 
 def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
-    if payload.get("phone"):
+    username = str(payload.get("username") or "").strip()
+    company_code, phone_part = split_company_account(username)
+    username_is_phone = bool(company_code and normalize_phone(phone_part))
+    if payload.get("phone") or username_is_phone:
         result = authenticate_phone(
-            payload.get("phone", ""),
+            payload.get("phone") or username,
             payload.get("password", ""),
             payload.get("wx_openid"),
             payload.get("wx_unionid"),

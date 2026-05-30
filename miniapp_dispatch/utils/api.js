@@ -53,6 +53,7 @@ function canAccess(feature, session = getSession()) {
   const role = getRole(session);
   const rules = {
     dispatch: ['admin', 'dispatcher'],
+    auction: ['admin', 'dispatcher'],
     map: ['admin', 'dispatcher', 'operations_manager', 'driver'],
     finance: ['admin'],
     profile: ['admin', 'dispatcher', 'operations_manager', 'driver']
@@ -156,6 +157,8 @@ module.exports = {
   vehicles: () => request('/api/dispatch-mobile/vehicles'),
   assignOrders: (payload) => request('/api/dispatch-mobile/dispatch/assign', { method: 'POST', data: withDispatcher(payload) }),
   assignments: () => request('/api/dispatch-mobile/assignments'),
+  auctionListings: () => request('/api/auction/listings?status=listed'),
+  createAuctionListing: (payload) => request('/api/auction/listings', { method: 'POST', data: withDispatcher(payload) }),
   fleetLocations: () => request('/api/dispatch-mobile/fleet/latest-locations'),
   financeSummary: () => request('/api/dispatch-mobile/finance/summary'),
   financeLedger: () => request('/api/dispatch-mobile/finance/ledger')

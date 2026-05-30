@@ -4,7 +4,7 @@ from typing import Any
 
 from backend.db.database import get_connection, hash_password
 from backend.services.audit_service import record_audit
-from backend.services.auth_service import normalize_phone, phone_password_tail, reset_user_password_to_phone_tail, unbind_user_wechat
+from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail, reset_user_password_to_phone_tail, unbind_user_wechat
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -72,6 +72,7 @@ def list_accounts() -> list[dict[str, Any]]:
                 u.wx_bound_at,
                 u.last_login_at,
                 u.password_changed_at,
+                u.must_change_password,
                 u.is_active,
                 u.created_at,
                 u.updated_at,
@@ -135,7 +136,7 @@ def ensure_driver_accounts(actor: str = "system") -> int:
                         (existing["id"], tenant_id, driver["id"]),
                     )
                 continue
-            username = _unique_username(conn, tenant_id, normalized)
+            username = _unique_username(conn, tenant_id, company_login_name(normalized))
             password = phone_password_tail(driver["phone"])
             if not password:
                 continue
@@ -145,9 +146,9 @@ def ensure_driver_accounts(actor: str = "system") -> int:
                 INSERT INTO users (
                     tenant_id, username, password_hash, role, display_name, phone,
                     profile_type, profile_id, wx_bind_status, is_active,
-                    password_changed_at, updated_at
+                    password_changed_at, must_change_password, updated_at
                 )
-                VALUES (?, ?, ?, 'driver', ?, ?, 'driver', ?, 'unbound', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, 'driver', ?, ?, 'driver', ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)
                 """,
                 (tenant_id, username, hash_password(password), display_name, driver["phone"], driver["id"]),
             )
@@ -176,7 +177,6 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
     display_name = str(payload.get("display_name") or payload.get("name") or "").strip()
     phone = str(payload.get("phone") or "").strip()
     operator_code = str(payload.get("operator_code") or payload.get("code") or "").strip().upper()
-    password = str(payload.get("password") or "").strip()
     if role not in ROLES:
         raise ValueError("invalid_role")
     if not phone:
@@ -184,8 +184,7 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
     normalized = normalize_phone(phone)
     if len(normalized) < 6:
         raise ValueError("phone_tail_unavailable")
-    if not password:
-        password = phone_password_tail(phone)
+    password = phone_password_tail(phone)
     if not display_name:
         display_name = phone
     tenant_id = get_current_tenant_id()
@@ -207,17 +206,17 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
         else:
             profile_type = "operator"
             profile_id = None
-        username = _unique_username(conn, tenant_id, normalized or phone)
+        username = _unique_username(conn, tenant_id, company_login_name(normalized or phone))
         conn.execute(
             """
             INSERT INTO users (
                 tenant_id, username, password_hash, role, display_name, phone,
                 profile_type, profile_id, wx_bind_status, is_active,
-                password_changed_at, updated_at
+                password_changed_at, must_change_password, created_by_user_id, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unbound', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, ?, CURRENT_TIMESTAMP)
             """,
-            (tenant_id, username, hash_password(password), role, display_name, phone, profile_type, profile_id),
+            (tenant_id, username, hash_password(password), role, display_name, phone, profile_type, profile_id, _actor_user_id(conn, tenant_id, actor)),
         )
         user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
         if role == "driver":
@@ -261,7 +260,7 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
                 existing = _find_user_by_phone(conn, tenant_id, normalized)
                 if existing and str(existing["id"]) != str(user_id):
                     raise ValueError("account_phone_exists")
-                username = _unique_username(conn, tenant_id, normalized, user_id)
+                username = _unique_username(conn, tenant_id, company_login_name(normalized), user_id)
             else:
                 username = _unique_username(conn, tenant_id, f"account-{user_id}", user_id)
             updates.append("phone = ?")
@@ -454,6 +453,18 @@ def _unique_username(conn: sqlite3.Connection, tenant_id: int, base: str, exclud
         username = f"{base}-{suffix}"
 
 
+def _actor_user_id(conn: sqlite3.Connection, tenant_id: int, actor: str) -> int | None:
+    text = str(actor or "")
+    if ":" not in text:
+        return None
+    role, username = text.split(":", 1)
+    row = conn.execute(
+        "SELECT id FROM users WHERE tenant_id = ? AND role = ? AND username = ? LIMIT 1",
+        (tenant_id, role, username),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
+
 def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | str):
     return conn.execute(
         """
@@ -470,6 +481,7 @@ def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | st
             u.wx_bound_at,
             u.last_login_at,
             u.password_changed_at,
+            u.must_change_password,
             u.is_active,
             u.created_at,
             u.updated_at,
@@ -497,6 +509,7 @@ def _public_account(row: dict[str, Any]) -> dict[str, Any]:
         "id": row.get("id"),
         "tenant_id": row.get("tenant_id"),
         "username": row.get("username"),
+        "account_login": company_login_name(phone or row.get("username")),
         "display_name": row.get("display_name") or row.get("driver_name") or row.get("username"),
         "phone": phone,
         "role": row.get("role"),
@@ -513,6 +526,7 @@ def _public_account(row: dict[str, Any]) -> dict[str, Any]:
         "wx_bound_at": row.get("wx_bound_at"),
         "last_login_at": row.get("last_login_at"),
         "password_changed_at": row.get("password_changed_at"),
+        "must_change_password": bool(row.get("must_change_password", 0)),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }

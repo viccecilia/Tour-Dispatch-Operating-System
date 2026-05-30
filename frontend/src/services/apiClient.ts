@@ -9,6 +9,7 @@ import type {
   AttendanceDaily,
   AttendanceLedger,
   AuditLog,
+  AuctionListing,
   AuthUser,
   BillingOverview,
   CalendarResponse,
@@ -438,6 +439,13 @@ export const api = {
     ),
   unassignedOrders: async () =>
     listFrom<Order>(await request<unknown>("/api/dispatch/unassigned-orders"), ["orders", "items", "data"]),
+  auctionListings: async (status = "listed") =>
+    listFrom<AuctionListing>(await request<unknown>(`/api/auction/listings?status=${encodeURIComponent(status)}`), ["listings", "items", "data"]),
+  createAuctionListing: (payload: { order_ids: number[]; start_price_jpy: number; buyout_price_jpy: number; note?: string }) =>
+    request<{ success: boolean; count: number; listings: Array<{ listing_id: number; order_id: number; oid?: string }> }>("/api/auction/listings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   assignments: async () =>
     listFrom<Assignment>(await request<unknown>("/api/dispatch/assignments"), ["assignments", "items", "data"]),
   assignmentEvidence: async (assignmentId: number) =>

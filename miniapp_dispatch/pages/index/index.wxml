@@ -146,12 +146,6 @@
       </view>
     </view>
 
-    <view wx:if="{{!isOperationsManager}}" class="quick-actions">
-      <button wx:if="{{canDispatch}}" class="button-secondary" bindtap="goDispatch">去派车</button>
-      <button wx:if="{{canFinance}}" class="button-secondary" bindtap="goFinance">看财务</button>
-      <button wx:if="{{canDriverTasks}}" class="button-secondary" bindtap="goTask">确认任务</button>
-      <button class="button-secondary" bindtap="goMap">看地图</button>
-    </view>
   </view>
 
   <custom-tab-bar />

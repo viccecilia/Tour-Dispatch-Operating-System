@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS users (
     wx_bind_status TEXT NOT NULL DEFAULT 'unbound',
     last_login_at TEXT,
     password_changed_at TEXT,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    created_by_user_id INTEGER,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -295,6 +297,33 @@ CREATE TABLE IF NOT EXISTS assignments (
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (driver_id) REFERENCES drivers(id),
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
+);
+
+CREATE TABLE IF NOT EXISTS auction_listings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    owner_tenant_id INTEGER NOT NULL,
+    seller_tenant_id INTEGER NOT NULL,
+    buyer_tenant_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'listed',
+    start_price_jpy REAL NOT NULL DEFAULT 0,
+    buyout_price_jpy REAL NOT NULL DEFAULT 0,
+    current_bid_jpy REAL,
+    bid_count INTEGER NOT NULL DEFAULT 0,
+    published_by_user_id INTEGER,
+    published_by_name TEXT,
+    published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT,
+    sold_at TEXT,
+    cancelled_at TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (owner_tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (seller_tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (buyer_tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (published_by_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS driver_reports (

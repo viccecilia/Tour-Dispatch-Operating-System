@@ -55,6 +55,37 @@
         <view class="profile-row"><text>手机号</text><strong>{{session.user.phone || session.dispatcher.phone || '-'}}</strong></view>
       </view>
     </view>
+
+    <view wx:if="{{canFinance}}" class="panel finance-card">
+      <view class="panel-title">财务概览</view>
+      <view class="finance-focus-grid">
+        <view class="finance-focus">
+          <text>今日金额</text>
+          <strong>¥{{financeSummary.today_amount || 0}}</strong>
+        </view>
+        <view class="finance-focus warning">
+          <text>待确认费用</text>
+          <strong>¥{{financeSummary.pending_amount || 0}}</strong>
+        </view>
+        <view class="finance-focus">
+          <text>司机垫付</text>
+          <strong>¥{{financeSummary.driver_advance_total || 0}}</strong>
+        </view>
+        <view class="finance-focus success">
+          <text>司机代收</text>
+          <strong>¥{{financeSummary.driver_collect_total || 0}}</strong>
+        </view>
+      </view>
+      <view class="finance-list">
+        <view wx:for="{{financeOrders}}" wx:key="order_id" class="finance-row">
+          <view>
+            <view class="row-title">{{item.oid || item.order_id}}</view>
+            <view class="muted">{{item.order_date}} {{item.start_time || ''}} · {{item.driver_name || '未派司机'}}</view>
+          </view>
+          <view class="amount">¥{{item.price || 0}}</view>
+        </view>
+      </view>
+    </view>
   </block>
 
   <view wx:if="{{message}}" class="panel muted">{{message}}</view>

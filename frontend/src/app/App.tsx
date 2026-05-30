@@ -5,6 +5,7 @@ import { AgenciesPage } from "@/pages/AgenciesPage";
 import { AgencyPortalPage } from "@/pages/AgencyPortalPage";
 import { AutomationPage } from "@/pages/AutomationPage";
 import { AuditPage } from "@/pages/AuditPage";
+import { AuctionHallPage } from "@/pages/AuctionHallPage";
 import { CopilotPage } from "@/pages/CopilotPage";
 import { CalendarPage } from "@/pages/CalendarPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
@@ -40,7 +41,14 @@ export function App() {
     }
     api
       .me()
-      .then((result) => setUser(result.user))
+      .then((result) => {
+        if (result.user.must_change_password) {
+          clearAuthToken();
+          setUser(null);
+          return;
+        }
+        setUser(result.user);
+      })
       .catch(() => {
         clearAuthToken();
         setUser(null);
@@ -80,6 +88,7 @@ export function App() {
     parser: <ParserPage />,
     orders: <OrdersPage />,
     dispatch: <DispatchPage />,
+    auction: <AuctionHallPage />,
     calendar: <CalendarPage />,
     "driver-monitor": <DriverMonitorPage />,
     attendance: <AttendancePage />,
@@ -110,7 +119,7 @@ function canAccessPage(role: string, page: string) {
   if (page === "system") return role === "admin";
   if (page === "finance") return role === "admin";
   if (page === "analytics") return role === "admin";
-  if (role === "operations_manager") return !["parser", "orders", "dispatch", "finance", "analytics", "system"].includes(page);
+  if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system"].includes(page);
   if (role === "dispatcher") return !["finance", "analytics", "system"].includes(page);
   return true;
 }

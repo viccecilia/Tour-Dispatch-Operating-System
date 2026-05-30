@@ -324,6 +324,8 @@ USER_COLUMNS: dict[str, str] = {
     "wx_bind_status": "TEXT NOT NULL DEFAULT 'unbound'",
     "last_login_at": "TEXT",
     "password_changed_at": "TEXT",
+    "must_change_password": "INTEGER NOT NULL DEFAULT 0",
+    "created_by_user_id": "INTEGER",
     "updated_at": "TEXT",
 }
 
@@ -467,6 +469,8 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
                 wx_bind_status TEXT NOT NULL DEFAULT 'unbound',
                 last_login_at TEXT,
                 password_changed_at TEXT,
+                must_change_password INTEGER NOT NULL DEFAULT 0,
+                created_by_user_id INTEGER,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -485,9 +489,11 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
             "wx_bind_status",
             "last_login_at",
             "password_changed_at",
+            "must_change_password",
+            "created_by_user_id",
         ]
         select_optional = [
-            name if name in existing else ("'unbound'" if name == "wx_bind_status" else "NULL")
+            name if name in existing else ("'unbound'" if name == "wx_bind_status" else ("0" if name == "must_change_password" else "NULL"))
             for name in optional
         ]
         conn.execute(
@@ -496,6 +502,7 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
                 id, tenant_id, username, password_hash, role, display_name,
                 phone, profile_type, profile_id, wx_openid, wx_unionid, wx_bound_at,
                 wx_bind_status, last_login_at, password_changed_at,
+                must_change_password, created_by_user_id,
                 is_active, created_at, updated_at
             )
             SELECT
@@ -1243,14 +1250,31 @@ def seed_admin(conn: sqlite3.Connection) -> None:
 
 
 def seed_tenants(conn: sqlite3.Connection) -> None:
-    for name, slug in [("Demo Travel Company", "demo"), ("Second Demo Company", "tenant2")]:
+    legacy = conn.execute("SELECT id FROM tenants WHERE slug = 'demo' ORDER BY id ASC LIMIT 1").fetchone()
+    if legacy:
+        conn.execute(
+            """
+            UPDATE tenants
+            SET name = 'DAITORA',
+                slug = 'daitora',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (legacy["id"],),
+        )
+    else:
         conn.execute(
             """
             INSERT OR IGNORE INTO tenants (name, slug, status)
-            VALUES (?, ?, 'active')
-            """,
-            (name, slug),
+            VALUES ('DAITORA', 'daitora', 'active')
+            """
         )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO tenants (name, slug, status)
+        VALUES ('Second Demo Company', 'tenant2', 'active')
+        """
+    )
 
 
 def seed_plans(conn: sqlite3.Connection) -> None:

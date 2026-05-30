@@ -42,6 +42,7 @@ from backend.services.audit_service import (
     record_audit,
     scan_data_anomalies,
 )
+from backend.services.auction_service import create_auction_listings, list_auction_listings
 from backend.services.billing_service import (
     get_billing_overview,
     get_feature_flags,
@@ -473,6 +474,11 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/orders":
             self.send_json({"orders": list_orders(params)})
             return
+        if path == "/api/auction/listings":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"listings": list_auction_listings(params.get("status", "listed"))})
+            return
         if path == "/api/calendar/dispatch":
             self.send_json(get_dispatch_calendar(params))
             return
@@ -861,6 +867,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher"}):
                 return
             self.dispatch_reassign_with_audit(payload, path)
+            return
+        if path == "/api/auction/listings":
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            self.auction_publish_with_audit(payload, path, user)
             return
         if path == "/api/driver/profile":
             self.send_json(update_driver_profile(payload.get("driver_id"), payload))
@@ -1362,6 +1374,24 @@ class ApiHandler(BaseHTTPRequestHandler):
             summary=f"Reassigned {len(result.get('updated_order_ids', []))} order(s)",
         )
         self.send_json(result)
+
+    def auction_publish_with_audit(self, payload: dict, path: str, user: dict) -> None:
+        try:
+            result = create_auction_listings(payload, user)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        entity_id = ",".join(str(item.get("listing_id")) for item in result.get("listings", []))
+        record_audit(
+            "auction_publish",
+            "auction_listing",
+            entity_id,
+            after={"payload": payload, "result": result},
+            actor=self.actor_label(),
+            source_path=path,
+            summary=f"Published {result.get('count', 0)} order(s) to auction hall",
+        )
+        self.send_json(result, HTTPStatus.CREATED)
 
     def safe_create(self, func, status: HTTPStatus = HTTPStatus.OK) -> None:
         try:

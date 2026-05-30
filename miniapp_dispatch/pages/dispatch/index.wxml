@@ -16,6 +16,7 @@
     <button class="tool-button" bindtap="toggleSortMode">{{sortMode ? '完成排序' : '排序'}}</button>
     <button class="tool-button dispatch-top {{canAssign ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">批量分配订单</button>
     <button class="tool-button reassign-top {{canAssign ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="reassignSelected">重新分配订单</button>
+    <button class="tool-button auction-top {{selectedKeys.length ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
   </view>
 
   <view wx:if="{{importOpen}}" class="panel import-panel">
@@ -182,6 +183,7 @@
       <button class="dispatch-button secondary" loading="{{loading}}" bindtap="confirmSelectedDrafts">确认草稿</button>
       <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">批量分配</button>
       <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="reassignSelected">重新分配</button>
+      <button class="dispatch-button secondary" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
     </view>
   </view>
 </view>

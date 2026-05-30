@@ -8,6 +8,7 @@
     "pages/map/index",
     "pages/info/index",
     "pages/calendar/index",
+    "pages/auction/index",
     "pages/expense/index",
     "pages/finance/index",
     "pages/profile/index"
@@ -34,12 +35,12 @@
         "text": "\u6d3e\u8f66"
       },
       {
-        "pagePath": "pages/map/index",
-        "text": "\u5730\u56fe"
+        "pagePath": "pages/auction/index",
+        "text": "\u8ba2\u5355\u5927\u5385"
       },
       {
-        "pagePath": "pages/finance/index",
-        "text": "\u8d22\u52a1"
+        "pagePath": "pages/map/index",
+        "text": "\u5730\u56fe"
       },
       {
         "pagePath": "pages/profile/index",

@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Gavel,
   RefreshCw,
   Route,
   Search,
@@ -18,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { formatCurrency, shortRoute, todayIso } from "@/lib/utils";
 import { api } from "@/services/apiClient";
+import { saveAuctionDraft } from "@/pages/AuctionHallPage";
 import type { Assignment, DispatchRecommendation, Driver, Order, Vehicle } from "@/types/api";
 
 type ResourceFilter = {
@@ -325,6 +327,16 @@ export function DispatchPage() {
     setMessage(suggestion.summary?.message || `已按日期、开始时间生成接龙顺序：${optimizedIds.length || ids.length} 单。`);
   }
 
+  function moveSelectedToAuction() {
+    if (!selectedOrderRows.length) {
+      setMessage("请先选中需要放入拍卖大厅的订单。");
+      return;
+    }
+    if (!window.confirm(`确认将 ${selectedOrderRows.length} 单放入拍卖大厅？下一步需要填写起拍价和一口价。`)) return;
+    saveAuctionDraft(selectedOrderRows);
+    window.location.hash = "auction";
+  }
+
   return (
     <div className="space-y-5">
       <section className="runtime-strip">
@@ -610,6 +622,10 @@ export function DispatchPage() {
             <Button data-testid="dispatch-assign-button" disabled={!canAssign} onClick={() => assignMutation.mutate()}>
               <CheckCircle2 size={16} />
               批量派车
+            </Button>
+            <Button variant="secondary" disabled={!selectedOrderRows.length} onClick={moveSelectedToAuction}>
+              <Gavel size={16} />
+              放入拍卖大厅
             </Button>
             <Button variant="secondary" disabled={!canReassign} onClick={() => reassignMutation.mutate()}>
               <RefreshCw size={16} />

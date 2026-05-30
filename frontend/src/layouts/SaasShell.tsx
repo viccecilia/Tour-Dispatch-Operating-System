@@ -9,6 +9,7 @@ import {
   ClipboardList,
   FileClock,
   FileText,
+  Gavel,
   MapPinned,
   LayoutDashboard,
   LucideIcon,
@@ -36,6 +37,7 @@ const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
   { key: "parser", labelKey: "nav.parser", icon: FileText },
   { key: "orders", labelKey: "nav.orders", icon: ClipboardList },
   { key: "dispatch", labelKey: "nav.dispatch", icon: Route },
+  { key: "auction", labelKey: "订单大厅", icon: Gavel },
   { key: "calendar", labelKey: "nav.calendar", icon: CalendarDays },
   { key: "driver-monitor", labelKey: "nav.driver-monitor", icon: MonitorCog },
   { key: "attendance", labelKey: "出勤台账", icon: TimerReset },
@@ -58,7 +60,7 @@ function visibleNavItems(role: string) {
     if (key === "system") return role === "admin";
     if (key === "finance") return role === "admin";
     if (key === "analytics") return role === "admin";
-    if (role === "operations_manager") return !["parser", "orders", "dispatch", "finance", "analytics", "system"].includes(key);
+    if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system"].includes(key);
     if (role === "dispatcher") return !["finance", "analytics", "system"].includes(key);
     return true;
   });
@@ -70,6 +72,7 @@ const titleKeys: Record<PageKey, string> = {
   parser: "page.parser",
   orders: "page.orders",
   dispatch: "page.dispatch",
+  auction: "订单大厅",
   calendar: "page.calendar",
   "driver-monitor": "page.driver-monitor",
   attendance: "出勤与拘束台账",

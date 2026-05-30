@@ -3,9 +3,12 @@ export type ApiOk<T> = T & { ok?: boolean; success?: boolean };
 export type AuthUser = {
   id: number;
   username: string;
+  account_login?: string;
+  company_code?: string;
   role: "admin" | "dispatcher" | "operations_manager" | "driver";
   display_name?: string;
   phone?: string;
+  must_change_password?: boolean;
   profile_type?: string;
   profile_id?: number;
   wx_bind_status?: string;
@@ -23,6 +26,7 @@ export type ManagedAccount = {
   id: number;
   tenant_id?: number;
   username: string;
+  account_login?: string;
   display_name?: string;
   phone?: string;
   role: AccountRole;
@@ -39,6 +43,7 @@ export type ManagedAccount = {
   wx_bound_at?: string;
   last_login_at?: string;
   password_changed_at?: string;
+  must_change_password?: boolean;
   created_at?: string;
   updated_at?: string;
 };
@@ -183,6 +188,42 @@ export type Order = {
   settlement_status?: string;
   execution_status?: string;
   created_at?: string;
+};
+
+export type AuctionListing = {
+  id: number;
+  order_id: number;
+  owner_tenant_id?: number;
+  seller_tenant_id?: number;
+  buyer_tenant_id?: number;
+  status: "listed" | "bidding" | "claimed" | "cancelled" | "sold" | string;
+  start_price_jpy: number;
+  buyout_price_jpy: number;
+  current_bid_jpy?: number;
+  bid_count?: number;
+  published_by_user_id?: number;
+  published_by_name?: string;
+  published_at?: string;
+  expires_at?: string;
+  sold_at?: string;
+  cancelled_at?: string;
+  note?: string;
+  oid?: string;
+  order_date?: string;
+  end_date?: string;
+  start_time?: string;
+  end_time?: string;
+  pickup_location?: string;
+  dropoff_location?: string;
+  order_type?: string;
+  vehicle_type?: string;
+  agency_name?: string;
+  price?: number;
+  remark?: string;
+  seller_company_name?: string;
+  seller_company_code?: string;
+  buyer_company_name?: string;
+  buyer_company_code?: string;
 };
 
 export type Draft = {

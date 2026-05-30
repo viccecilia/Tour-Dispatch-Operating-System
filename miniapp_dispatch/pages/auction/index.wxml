@@ -1,0 +1,84 @@
+<view class="page auction-page">
+  <view class="hero auction-hero">
+    <view class="hero-eyebrow">ORDER HALL</view>
+    <view class="hero-title">订单大厅</view>
+    <view class="hero-meta">把公司暂时无法执行的订单发布到大厅，后续由其他车公司接单。</view>
+  </view>
+
+  <view class="panel publish-panel">
+    <view class="panel-header">
+      <view>
+        <view class="panel-title">发布到大厅</view>
+        <view class="muted">从派车页选中订单后跳到这里，填写起拍价和一口价。</view>
+      </view>
+      <button class="mini-button" bindtap="goDispatch">去选订单</button>
+    </view>
+
+    <block wx:if="{{draft && draft.order_ids.length}}">
+      <view class="draft-list">
+        <view wx:for="{{draft.orders}}" wx:key="id" class="draft-row">
+          <view>
+            <view class="row-title">{{item.oid || item.id}}</view>
+            <view class="muted">{{item.order_date || '-'}} {{item.start_time || ''}} · {{item.pickup_location || '-'}} → {{item.dropoff_location || '-'}}</view>
+          </view>
+          <view class="price-pill">¥{{item.price || 0}}</view>
+        </view>
+      </view>
+
+      <view class="price-form">
+        <view class="field">
+          <view class="field-label">起拍价</view>
+          <input class="input" type="number" value="{{startPrice}}" data-key="startPrice" bindinput="onInput" placeholder="JPY" />
+        </view>
+        <view class="field">
+          <view class="field-label">一口价</view>
+          <input class="input" type="number" value="{{buyoutPrice}}" data-key="buyoutPrice" bindinput="onInput" placeholder="JPY" />
+        </view>
+      </view>
+      <view class="field">
+        <view class="field-label">备注</view>
+        <textarea class="textarea note-input" value="{{note}}" data-key="note" bindinput="onInput" placeholder="例如：需要中文司机、限大阪本地车队等" />
+      </view>
+      <view class="publish-actions">
+        <button class="button-secondary" bindtap="clearDraft">取消</button>
+        <button class="button-primary" loading="{{loading}}" bindtap="publishDraft">确认发布</button>
+      </view>
+    </block>
+
+    <view wx:else class="empty-state">
+      <view class="empty-title">暂无待发布订单</view>
+      <view class="muted">请先在派车页选中订单，再点击“放入大厅”。</view>
+    </view>
+  </view>
+
+  <view wx:if="{{message}}" class="panel message-panel">{{message}}</view>
+
+  <view class="panel">
+    <view class="panel-header">
+      <view>
+        <view class="panel-title">大厅订单</view>
+        <view class="muted">当前显示已发布中的订单。</view>
+      </view>
+      <button class="mini-button" loading="{{loading}}" bindtap="loadListings">刷新</button>
+    </view>
+
+    <view class="auction-list">
+      <view wx:for="{{listings}}" wx:key="id" class="auction-row">
+        <view class="auction-main">
+          <view class="row-title">{{item.oid || item.order_id}}</view>
+          <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+          <view class="muted">发布公司：{{item.seller_company_name || item.seller_company_code || '-'}}</view>
+        </view>
+        <view class="auction-price">
+          <text>起 {{item.startPriceText}}</text>
+          <strong>一口 {{item.buyoutPriceText}}</strong>
+        </view>
+      </view>
+      <view wx:if="{{!listings.length}}" class="empty-state">
+        <view class="empty-title">大厅暂无订单</view>
+      </view>
+    </view>
+  </view>
+
+  <custom-tab-bar />
+</view>

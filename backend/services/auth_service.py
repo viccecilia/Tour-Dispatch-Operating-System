@@ -16,9 +16,35 @@ from backend.services.tenant_context import get_current_tenant_id, set_current_t
 
 ROLES = {"admin", "dispatcher", "operations_manager", "driver"}
 MINIAPP_CLIENTS = {"driver_miniapp", "dispatch_miniapp", "miniapp_driver", "miniapp_dispatch"}
+DEFAULT_COMPANY_CODE = "DAITORA"
+
+
+def company_code_for_tenant(tenant_slug: str | None = None, tenant_name: str | None = None) -> str:
+    raw = str(tenant_slug or tenant_name or DEFAULT_COMPANY_CODE).strip()
+    if raw.lower() in {"demo", "demo travel company"}:
+        return DEFAULT_COMPANY_CODE
+    code = "".join(ch for ch in raw.upper() if ch.isalnum())
+    return code or DEFAULT_COMPANY_CODE
+
+
+def split_company_account(account: str | None) -> tuple[str | None, str]:
+    text = str(account or "").strip()
+    if "-" not in text:
+        return None, text
+    prefix, rest = text.split("-", 1)
+    return company_code_for_tenant(prefix), rest.strip()
+
+
+def company_login_name(phone: str | None, tenant_slug: str | None = None, tenant_name: str | None = None) -> str:
+    digits = normalize_phone(phone or "")
+    code = company_code_for_tenant(tenant_slug, tenant_name)
+    return f"{code}-{digits}" if digits else code
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
+    company_code, phone_part = split_company_account(username)
+    if company_code and normalize_phone(phone_part):
+        return authenticate_phone(username, password)
     with get_connection() as conn:
         user = conn.execute(
             """
@@ -33,6 +59,7 @@ def authenticate(username: str, password: str) -> Optional[dict]:
                 u.profile_type,
                 u.profile_id,
                 u.wx_bind_status,
+                u.must_change_password,
                 u.is_active,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
@@ -56,7 +83,8 @@ def authenticate(username: str, password: str) -> Optional[dict]:
 
 
 def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, wx_unionid: str | None = None, client_type: str = "web") -> Optional[dict]:
-    normalized = normalize_phone(phone)
+    requested_company_code, phone_part = split_company_account(phone)
+    normalized = normalize_phone(phone_part)
     with get_connection() as conn:
         user = conn.execute(
             """
@@ -74,6 +102,7 @@ def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, 
                 u.wx_unionid,
                 u.wx_bound_at,
                 u.wx_bind_status,
+                u.must_change_password,
                 u.is_active,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
@@ -81,11 +110,17 @@ def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, 
             LEFT JOIN tenants t ON t.id = u.tenant_id
             WHERE REPLACE(REPLACE(REPLACE(COALESCE(u.phone, ''), '-', ''), ' ', ''), '+', '') = ?
                OR u.username = ?
+               OR u.username = ?
             ORDER BY u.is_active DESC, u.id ASC
             LIMIT 1
             """,
-            (normalized, phone),
+            (normalized, phone, company_login_name(normalized)),
         ).fetchone()
+        if user and requested_company_code:
+            row_company = company_code_for_tenant(user["tenant_slug"], user["tenant_name"])
+            if requested_company_code != row_company:
+                _audit_auth("login_fail", {"phone": phone, "reason": "company_mismatch", "company_code": requested_company_code})
+                return None
     if not user or not user["is_active"]:
         _audit_auth("login_fail", {"phone": phone, "reason": "user_not_found_or_inactive"})
         return None
@@ -126,6 +161,7 @@ def authenticate_wechat(wx_openid: str | None = None, wx_unionid: str | None = N
                 u.profile_type,
                 u.profile_id,
                 u.wx_bind_status,
+                u.must_change_password,
                 u.is_active,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
@@ -223,7 +259,7 @@ def register_bound_account(payload: dict) -> dict:
                 """
                 UPDATE users
                 SET phone = ?,
-                    username = COALESCE(NULLIF(username, ''), ?),
+                    username = ?,
                     password_hash = ?,
                     role = ?,
                     display_name = ?,
@@ -231,21 +267,22 @@ def register_bound_account(payload: dict) -> dict:
                     profile_id = ?,
                     is_active = 1,
                     password_changed_at = CURRENT_TIMESTAMP,
+                    must_change_password = 0,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (phone, phone, hash_password(password), role, display_name, profile_type, profile_id, user_id),
+                (phone, company_login_name(phone), hash_password(password), role, display_name, profile_type, profile_id, user_id),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO users (
                     tenant_id, username, password_hash, role, display_name, phone,
-                    profile_type, profile_id, is_active, password_changed_at, updated_at
+                    profile_type, profile_id, is_active, password_changed_at, must_change_password, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP)
                 """,
-                (tenant_id, phone, hash_password(password), role, display_name, phone, profile_type, profile_id),
+                (tenant_id, company_login_name(phone), hash_password(password), role, display_name, phone, profile_type, profile_id),
             )
             user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
         if profile_type == "driver":
@@ -278,6 +315,7 @@ def reset_user_password_to_phone_tail(user_id: int | str, actor: str = "system")
             UPDATE users
             SET password_hash = ?,
                 password_changed_at = CURRENT_TIMESTAMP,
+                must_change_password = 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
@@ -305,6 +343,7 @@ def change_user_password(user_id: int | str, old_password: str, new_password: st
             UPDATE users
             SET password_hash = ?,
                 password_changed_at = CURRENT_TIMESTAMP,
+                must_change_password = 0,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
@@ -363,6 +402,7 @@ def get_user_by_token(token: str) -> Optional[dict]:
                 u.profile_type,
                 u.profile_id,
                 u.wx_bind_status,
+                u.must_change_password,
                 u.is_active,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
@@ -416,11 +456,18 @@ def public_user(user: dict) -> dict:
     user.pop("wx_openid", None)
     user.pop("wx_unionid", None)
     user["is_active"] = bool(user.get("is_active", 1))
+    user["must_change_password"] = bool(user.get("must_change_password", 0))
     user["tenant_id"] = int(user.get("tenant_id") or 1)
+    tenant_name = user.pop("tenant_name", None) or "DAITORA"
+    tenant_slug = user.pop("tenant_slug", None) or "daitora"
+    company_code = company_code_for_tenant(tenant_slug, tenant_name)
+    user["company_code"] = company_code
+    user["account_login"] = company_login_name(user.get("phone") or user.get("username"), tenant_slug, tenant_name)
     user["tenant"] = {
         "id": user["tenant_id"],
-        "name": user.pop("tenant_name", None) or "Demo Travel Company",
-        "slug": user.pop("tenant_slug", None) or "demo",
+        "name": tenant_name,
+        "slug": tenant_slug,
+        "company_code": company_code,
     }
     return user
 

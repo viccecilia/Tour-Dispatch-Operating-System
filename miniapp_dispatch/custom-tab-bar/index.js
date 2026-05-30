@@ -4,8 +4,8 @@ const ROLE_TABS = {
   admin: [
     { pagePath: '/pages/index/index', text: '首页' },
     { pagePath: '/pages/dispatch/index', text: '派车' },
+    { pagePath: '/pages/auction/index', text: '订单大厅' },
     { pagePath: '/pages/map/index', text: '地图' },
-    { pagePath: '/pages/finance/index', text: '财务' },
     { pagePath: '/pages/profile/index', text: '我的' }
   ],
   operations_manager: [
@@ -18,6 +18,7 @@ const ROLE_TABS = {
   dispatcher: [
     { pagePath: '/pages/index/index', text: '首页' },
     { pagePath: '/pages/dispatch/index', text: '派车' },
+    { pagePath: '/pages/auction/index', text: '订单大厅' },
     { pagePath: '/pages/map/index', text: '地图' },
     { pagePath: '/pages/profile/index', text: '我的' }
   ],

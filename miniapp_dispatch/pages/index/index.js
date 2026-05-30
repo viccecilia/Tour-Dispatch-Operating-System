@@ -111,7 +111,7 @@ Page({
     this.setData({ loading: true, error: '' });
     const account = String(this.data.username || '').trim();
     const password = String(this.data.password || '');
-    const isPhone = /^\+?[\d\s-]{6,}$/.test(account);
+    const isPhone = /^\+?[\d\s-]{6,}$/.test(account) || /^[A-Za-z0-9]+-[\d\s-]{6,}$/.test(account);
     this.getWechatLoginCode()
       .then((wxCode) => (isPhone ? api.loginPhone(account, password, wxCode) : api.login(account, password, wxCode)))
       .catch(() => (isPhone ? api.loginPhone(account, password, '') : api.login(account, password, '')))
