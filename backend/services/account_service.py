@@ -4,7 +4,7 @@ from typing import Any
 
 from backend.db.database import get_connection, hash_password
 from backend.services.audit_service import record_audit
-from backend.services.auth_service import normalize_phone, reset_user_password_to_phone_tail, unbind_user_wechat
+from backend.services.auth_service import normalize_phone, phone_password_tail, reset_user_password_to_phone_tail, unbind_user_wechat
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -25,7 +25,13 @@ def get_account_overview() -> dict[str, Any]:
         account
         for account in list_accounts()
         if not _is_synthetic_account(account)
-        and (account.get("role") != "driver" or _looks_like_driver_phone(account.get("phone")))
+        and (
+            account.get("role") != "driver"
+            or (
+                _looks_like_driver_phone(account.get("phone"))
+                and account.get("driver_record_status") != "deleted"
+            )
+        )
     ]
     grouped: dict[str, list[dict[str, Any]]] = {role: [] for role in ROLES}
     for account in accounts:
@@ -72,6 +78,8 @@ def list_accounts() -> list[dict[str, Any]]:
                 d.name AS driver_name,
                 d.phone AS driver_phone,
                 d.driver_code,
+                d.status AS driver_record_status,
+                p.operator_code,
                 p.title AS operator_title,
                 p.phone AS operator_phone,
                 p.invite_status,
@@ -107,6 +115,8 @@ def ensure_driver_accounts(actor: str = "system") -> int:
             FROM drivers
             WHERE tenant_id = ?
               AND COALESCE(TRIM(phone), '') != ''
+              AND COALESCE(status, '') != 'deleted'
+              AND COALESCE(driver_status, '') != 'deleted'
             ORDER BY id ASC
             """,
             (tenant_id,),
@@ -126,7 +136,9 @@ def ensure_driver_accounts(actor: str = "system") -> int:
                     )
                 continue
             username = _unique_username(conn, tenant_id, normalized)
-            password = normalized[-4:]
+            password = phone_password_tail(driver["phone"])
+            if not password:
+                continue
             display_name = driver["name"] or driver["driver_code"] or driver["phone"]
             conn.execute(
                 """
@@ -163,16 +175,17 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
     role = str(payload.get("role") or "").strip()
     display_name = str(payload.get("display_name") or payload.get("name") or "").strip()
     phone = str(payload.get("phone") or "").strip()
+    operator_code = str(payload.get("operator_code") or payload.get("code") or "").strip().upper()
     password = str(payload.get("password") or "").strip()
     if role not in ROLES:
         raise ValueError("invalid_role")
     if not phone:
         raise ValueError("phone_required")
     normalized = normalize_phone(phone)
-    if len(normalized) < 4:
+    if len(normalized) < 6:
         raise ValueError("phone_tail_unavailable")
     if not password:
-        password = normalized[-4:]
+        password = phone_password_tail(phone)
     if not display_name:
         display_name = phone
     tenant_id = get_current_tenant_id()
@@ -210,7 +223,7 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
         if role == "driver":
             conn.execute("UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, tenant_id, profile_id))
         else:
-            profile_id = _create_operator_profile_shell(conn, tenant_id, user_id, phone, role)
+            profile_id = _create_operator_profile_shell(conn, tenant_id, user_id, phone, role, operator_code)
             conn.execute("UPDATE users SET profile_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (profile_id, tenant_id, user_id))
         conn.commit()
     account = get_account(user_id)
@@ -233,20 +246,28 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
                 raise ValueError("driver_role_change_requires_confirmation")
         display_name = payload.get("display_name", payload.get("name"))
         phone = payload.get("phone")
+        operator_code = payload.get("operator_code", payload.get("code"))
         updates: list[str] = []
         values: list[Any] = []
         if display_name is not None:
             updates.append("display_name = ?")
             values.append(str(display_name).strip())
         if phone is not None:
-            normalized = normalize_phone(str(phone))
-            if len(normalized) < 4:
-                raise ValueError("phone_tail_unavailable")
-            existing = _find_user_by_phone(conn, tenant_id, normalized)
-            if existing and str(existing["id"]) != str(user_id):
-                raise ValueError("account_phone_exists")
+            phone_value = str(phone).strip()
+            if phone_value:
+                normalized = normalize_phone(phone_value)
+                if len(normalized) < 6:
+                    raise ValueError("phone_tail_unavailable")
+                existing = _find_user_by_phone(conn, tenant_id, normalized)
+                if existing and str(existing["id"]) != str(user_id):
+                    raise ValueError("account_phone_exists")
+                username = _unique_username(conn, tenant_id, normalized, user_id)
+            else:
+                username = _unique_username(conn, tenant_id, f"account-{user_id}", user_id)
             updates.append("phone = ?")
-            values.append(str(phone).strip())
+            values.append(phone_value)
+            updates.append("username = ?")
+            values.append(username)
         if new_role is not None and new_role != before["role"]:
             profile_type, profile_id = _resolve_profile_for_role_change(conn, tenant_id, before, new_role, phone)
             updates.extend(["role = ?", "profile_type = ?", "profile_id = ?"])
@@ -258,6 +279,15 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
             updates.append("updated_at = CURRENT_TIMESTAMP")
             conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE tenant_id = ? AND id = ?", (*values, tenant_id, user_id))
         _sync_profile_after_user_update(conn, tenant_id, user_id)
+        if operator_code is not None:
+            conn.execute(
+                """
+                UPDATE operator_profiles
+                SET operator_code = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND user_id = ?
+                """,
+                (str(operator_code).strip().upper(), tenant_id, user_id),
+            )
         conn.commit()
     after = get_account(user_id)
     record_audit("account_update", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}", summary=f"Updated account {user_id}")
@@ -282,6 +312,27 @@ def disable_account(user_id: int | str, actor: str = "system") -> dict[str, Any]
         conn.commit()
     after = get_account(user_id)
     record_audit("account_disable", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/disable", summary=f"Disabled account {user_id}")
+    return after
+
+
+def enable_account(user_id: int | str, actor: str = "system") -> dict[str, Any] | None:
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        before = _get_account_row(conn, tenant_id, user_id)
+        if not before:
+            return None
+        conn.execute("UPDATE users SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (tenant_id, user_id))
+        conn.execute(
+            """
+            UPDATE operator_profiles
+            SET invite_status = 'active', disabled_at = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND user_id = ?
+            """,
+            (tenant_id, user_id),
+        )
+        conn.commit()
+    after = get_account(user_id)
+    record_audit("account_enable", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/enable", summary=f"Enabled account {user_id}")
     return after
 
 
@@ -331,25 +382,32 @@ def _sync_profile_after_user_update(conn: sqlite3.Connection, tenant_id: int, us
     if not user:
         return
     if user["profile_type"] == "driver" and user["profile_id"]:
-        conn.execute("UPDATE drivers SET user_id = ?, phone = COALESCE(NULLIF(phone, ''), ?), updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, user["phone"], tenant_id, user["profile_id"]))
+        conn.execute(
+            """
+            UPDATE drivers
+            SET user_id = ?, name = COALESCE(NULLIF(?, ''), name), phone = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (user_id, user["display_name"], user["phone"] or "", tenant_id, user["profile_id"]),
+        )
     elif user["profile_type"] == "operator" and user["profile_id"]:
         conn.execute(
             """
             UPDATE operator_profiles
-            SET user_id = ?, phone = COALESCE(NULLIF(?, ''), phone), title = ?, invite_status = CASE WHEN ? = 0 THEN 'disabled' ELSE COALESCE(NULLIF(invite_status, ''), 'active') END, updated_at = CURRENT_TIMESTAMP
+            SET user_id = ?, phone = ?, title = ?, invite_status = CASE WHEN ? = 0 THEN 'disabled' ELSE COALESCE(NULLIF(invite_status, ''), 'active') END, updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = ? AND id = ?
             """,
-            (user_id, user["phone"], ROLE_LABELS.get(user["role"], user["role"]), user["is_active"], tenant_id, user["profile_id"]),
+            (user_id, user["phone"] or "", ROLE_LABELS.get(user["role"], user["role"]), user["is_active"], tenant_id, user["profile_id"]),
         )
 
 
-def _create_operator_profile_shell(conn: sqlite3.Connection, tenant_id: int, user_id: int | str, phone: str, role: str) -> int:
+def _create_operator_profile_shell(conn: sqlite3.Connection, tenant_id: int, user_id: int | str, phone: str, role: str, operator_code: str = "") -> int:
     conn.execute(
         """
-        INSERT INTO operator_profiles (tenant_id, user_id, title, phone, invite_status, invited_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO operator_profiles (tenant_id, user_id, operator_code, title, phone, invite_status, invited_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
-        (tenant_id, user_id, ROLE_LABELS.get(role, role), phone),
+        (tenant_id, user_id, operator_code, ROLE_LABELS.get(role, role), phone),
     )
     return int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
 
@@ -385,13 +443,15 @@ def _find_driver_profile(conn: sqlite3.Connection, tenant_id: int, normalized: s
     ).fetchone()
 
 
-def _unique_username(conn: sqlite3.Connection, tenant_id: int, base: str) -> str:
+def _unique_username(conn: sqlite3.Connection, tenant_id: int, base: str, exclude_user_id: int | str | None = None) -> str:
     username = base
     suffix = 1
-    while conn.execute("SELECT 1 FROM users WHERE tenant_id = ? AND username = ?", (tenant_id, username)).fetchone():
+    while True:
+        row = conn.execute("SELECT id FROM users WHERE tenant_id = ? AND username = ?", (tenant_id, username)).fetchone()
+        if not row or (exclude_user_id is not None and str(row["id"]) == str(exclude_user_id)):
+            return username
         suffix += 1
         username = f"{base}-{suffix}"
-    return username
 
 
 def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | str):
@@ -416,6 +476,8 @@ def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | st
             d.name AS driver_name,
             d.phone AS driver_phone,
             d.driver_code,
+            d.status AS driver_record_status,
+            p.operator_code,
             p.title AS operator_title,
             p.phone AS operator_phone,
             p.invite_status,
@@ -430,7 +492,7 @@ def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | st
 
 
 def _public_account(row: dict[str, Any]) -> dict[str, Any]:
-    phone = row.get("phone") or row.get("driver_phone") or row.get("operator_phone") or ""
+    phone = row.get("phone") or ""
     return {
         "id": row.get("id"),
         "tenant_id": row.get("tenant_id"),
@@ -443,6 +505,8 @@ def _public_account(row: dict[str, Any]) -> dict[str, Any]:
         "profile_id": row.get("profile_id"),
         "profile_label": row.get("driver_name") or row.get("operator_title") or "-",
         "driver_code": row.get("driver_code"),
+        "driver_record_status": row.get("driver_record_status") or "",
+        "operator_code": row.get("operator_code") or "",
         "is_active": bool(row.get("is_active")),
         "account_status": "active" if row.get("is_active") else "disabled",
         "wx_bind_status": row.get("wx_bind_status") or "unbound",

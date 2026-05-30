@@ -4,6 +4,10 @@
   background: linear-gradient(135deg, #1748c7 0%, #246bfe 100%);
 }
 
+.driver-theme .profile-hero {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+}
+
 .profile-list {
   margin-top: 12rpx;
 }
@@ -36,4 +40,65 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.profile-form {
+  display: grid;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.field-label {
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 850;
+}
+
+.profile-input {
+  min-height: 82rpx;
+  height: 82rpx;
+  line-height: 82rpx;
+  padding: 0 22rpx;
+  font-size: 28rpx;
+  font-weight: 850;
+}
+
+.profile-save {
+  margin-top: 22rpx;
+}
+
+.document-block {
+  margin-top: 20rpx;
+  padding: 18rpx;
+  border: 1rpx solid #ccfbf1;
+  border-radius: 26rpx;
+  background: #f8fffe;
+}
+
+.document-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.doc-status {
+  flex: 0 0 auto;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #ccfbf1;
+  color: #0f766e;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.upload-button {
+  margin-top: 14rpx;
 }

@@ -31,6 +31,8 @@ export type ManagedAccount = {
   profile_id?: number;
   profile_label?: string;
   driver_code?: string;
+  driver_record_status?: string;
+  operator_code?: string;
   is_active: boolean;
   account_status?: "active" | "disabled" | string;
   wx_bind_status?: "bound" | "unbound" | string;
@@ -84,6 +86,23 @@ export type AttendanceDaily = {
   date: string;
   summary: {
     total_drivers: number;
+    departed: number;
+    returned: number;
+    sleep_risk: number;
+    missing_report: number;
+    average_constraint_hours: number;
+  };
+  rows: AttendanceRow[];
+};
+
+export type AttendanceLedger = {
+  ok?: boolean;
+  date_from: string;
+  date_to: string;
+  summary: {
+    total_rows: number;
+    date_from?: string;
+    date_to?: string;
     departed: number;
     returned: number;
     sleep_risk: number;
@@ -149,6 +168,7 @@ export type Order = {
   luggage_count?: number;
   guest_name?: string;
   guest_contact?: string;
+  agency_id?: number;
   agency_name?: string;
   price?: number;
   price_rmb?: number;
@@ -227,6 +247,8 @@ export type Driver = {
   email?: string;
   license_due_date?: string;
   health_check_due_date?: string;
+  license_file_url?: string;
+  health_check_file_url?: string;
   license_expires_at?: string;
   medical_check_expires_at?: string;
   alerts?: ResourceAlert[];
@@ -318,6 +340,7 @@ export type Assignment = {
   dispatch_status?: string;
   settlement_status?: string;
   execution_status?: string;
+  calendar_status?: string;
   latest_report?: string;
   report_time?: string;
   latest_report_type?: string;

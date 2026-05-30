@@ -1,0 +1,79 @@
+@import "../../app.wxss";
+
+.expense-hero {
+  background: linear-gradient(135deg, #1748c7 0%, #246bfe 100%);
+}
+
+.driver-theme .expense-hero {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+}
+
+.expense-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  margin-top: 20rpx;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.field-label {
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 850;
+}
+
+.expense-input {
+  height: 88rpx;
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  line-height: 88rpx;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.picker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.picker-arrow {
+  color: var(--c-primary);
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.submit-button {
+  margin-top: 8rpx;
+}
+
+.expense-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.expense-row {
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 16rpx;
+  border-radius: 24rpx;
+  background: #f8fafc;
+  border: 1rpx solid var(--c-border);
+}
+
+.amount {
+  flex: 0 0 auto;
+  color: var(--c-text);
+  font-size: 28rpx;
+  font-weight: 950;
+}

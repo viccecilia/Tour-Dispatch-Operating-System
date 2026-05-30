@@ -118,7 +118,7 @@ def _fetch_available_drivers(conn) -> list[dict[str, Any]]:
             """
             SELECT id, name, phone, status, driver_code, driver_language, office
             FROM drivers
-            WHERE tenant_id = ? AND status = 'available'
+            WHERE tenant_id = ? AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
             ORDER BY id
             """,
             (get_current_tenant_id(),),

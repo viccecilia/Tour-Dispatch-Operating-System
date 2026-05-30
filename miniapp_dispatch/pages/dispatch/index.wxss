@@ -1,7 +1,7 @@
 @import "../../app.wxss";
 
 .dispatch-page {
-  padding-bottom: 190rpx;
+  padding-bottom: 330rpx;
 }
 
 .quick-hero {
@@ -34,7 +34,7 @@
 
 .toolbar {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12rpx;
   margin: 16rpx 0;
 }
@@ -54,6 +54,19 @@
   color: #ffffff;
   border-color: var(--c-primary);
   background: var(--c-primary);
+}
+
+.tool-button.dispatch-top,
+.tool-button.reassign-top {
+  color: #ffffff;
+  border-color: #cbd5e1;
+  background: #cbd5e1;
+}
+
+.tool-button.dispatch-top.ready,
+.tool-button.reassign-top.ready {
+  border-color: #16a34a;
+  background: #16a34a;
 }
 
 .tool-button::after,
@@ -411,11 +424,11 @@
   position: fixed;
   left: 22rpx;
   right: 22rpx;
-  bottom: 30rpx;
-  z-index: 20;
+  bottom: 128rpx;
+  z-index: 1200;
   border-radius: 26rpx;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 168rpx;
+  grid-template-columns: minmax(0, 1fr) 148rpx;
   align-items: center;
   gap: 12rpx;
   padding: 14rpx;
@@ -443,20 +456,44 @@
   white-space: nowrap;
 }
 
-.preview-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7rpx;
-}
-
 .dispatch-button {
-  height: 58rpx;
-  border-radius: 18rpx;
+  width: 148rpx;
+  min-width: 0;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 20rpx;
   color: #ffffff;
-  font-size: 23rpx;
+  font-size: 24rpx;
   font-weight: 900;
   border: 0;
-  padding: 0;
+  line-height: 64rpx;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.preview-actions {
+  display: block;
+  width: 148rpx;
+  overflow: hidden;
+}
+
+.preview-actions .dispatch-button {
+  display: none;
+}
+
+.preview-actions .dispatch-button:nth-child(2) {
+  display: block;
+}
+
+.preview-actions .dispatch-button:nth-child(2)::before {
+  content: "分配";
+  color: #ffffff;
+}
+
+.preview-actions .dispatch-button:nth-child(2) {
+  color: transparent;
 }
 
 .dispatch-button.secondary {

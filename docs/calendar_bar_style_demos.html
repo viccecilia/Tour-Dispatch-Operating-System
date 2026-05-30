@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日历条样式 Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #eef3f8;
+      color: #102033;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    main { padding: 28px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .sub { margin: 0 0 22px; color: #64748b; font-size: 14px; }
+    .grid { display: grid; gap: 18px; }
+    .panel {
+      background: #fff;
+      border: 1px solid #dbe4ef;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+    }
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+    .head b { font-size: 15px; }
+    .head span { color: #64748b; font-size: 12px; }
+    .timeline {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      min-height: 132px;
+    }
+    .vehicle {
+      padding: 18px 14px;
+      border-right: 1px solid #dbe4ef;
+      font-size: 13px;
+      font-weight: 800;
+      background: #fbfdff;
+    }
+    .vehicle small {
+      display: block;
+      margin-top: 5px;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .lane {
+      position: relative;
+      min-height: 132px;
+      background:
+        linear-gradient(to bottom, #f8fafc 0, #f8fafc 31px, transparent 32px),
+        repeating-linear-gradient(to right, transparent 0, transparent calc(100% / 12 - 1px), #e7edf5 calc(100% / 12 - 1px), #e7edf5 calc(100% / 12));
+    }
+    .ticks {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      height: 32px;
+      border-bottom: 1px solid #eef2f7;
+    }
+    .ticks div {
+      padding: 10px 8px;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .bar {
+      position: absolute;
+      left: var(--left);
+      top: var(--top);
+      width: var(--width);
+      min-width: 106px;
+      height: 48px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .bar b, .bar small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar b { font-size: 12px; }
+    .bar small { margin-top: 4px; font-size: 11px; }
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: var(--color);
+      vertical-align: 1px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .76);
+      color: inherit;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .style-a .bar {
+      border: 2px solid var(--color);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--color) 10%, white);
+      color: var(--color);
+      padding: 8px 10px;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, .08);
+    }
+    .style-b .bar {
+      border-left: 7px solid var(--color);
+      border-radius: 8px;
+      background: #fff;
+      color: #0f172a;
+      padding: 8px 10px;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, .12);
+    }
+    .style-b .bar small { color: #64748b; }
+    .style-c .bar {
+      border: 1px solid color-mix(in srgb, var(--color) 35%, white);
+      border-radius: 999px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--color) 16%, white), #fff);
+      color: #0f172a;
+      padding: 9px 14px;
+    }
+    .style-d .bar {
+      height: 36px;
+      min-width: 88px;
+      border: 1px solid color-mix(in srgb, var(--color) 45%, white);
+      border-radius: 6px;
+      background: #fff;
+      color: #0f172a;
+      padding: 5px 8px;
+    }
+    .style-d .bar b { font-size: 11px; }
+    .style-d .bar small { display: none; }
+    .style-e .bar {
+      border: 0;
+      border-radius: 7px;
+      background: var(--color);
+      color: #fff;
+      padding: 8px 10px;
+      box-shadow: inset 0 -15px 0 rgba(0, 0, 0, .1), 0 8px 18px rgba(15, 23, 42, .13);
+    }
+    .style-e .bar.warn { --color: #f59e0b; }
+    .style-e .bar.danger { --color: #ef4444; }
+    @media (max-width: 900px) {
+      main { padding: 16px; }
+      .timeline { grid-template-columns: 118px 1fr; }
+      .vehicle { padding: 14px 10px; }
+      .head { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>日历条样式 Demo</h1>
+    <p class="sub">下面 5 款都支持双击编辑订单。你选定一种后，我再把正式日历页改成对应样式，并接入双击编辑保存。</p>
+
+    <div class="grid">
+      <section class="panel style-a">
+        <div class="head"><b>A. 当前增强版</b><span>保留现在的边框卡片感，适合一眼看订单边界。</span></div>
+        <calendar-demo></calendar-demo>
+      </section>
+
+      <section class="panel style-b">
+        <div class="head"><b>B. 运营卡片版</b><span>左侧色条表示类型或状态，内容更稳重，适合后台调度。</span></div>
+        <calendar-demo></calendar-demo>
+      </section>
+
+      <section class="panel style-c">
+        <div class="head"><b>C. 圆角胶囊版</b><span>视觉更轻，日历密度中等，比较适合日常浏览。</span></div>
+        <calendar-demo></calendar-demo>
+      </section>
+
+      <section class="panel style-d">
+        <div class="head"><b>D. 高密度单行版</b><span>每天 50-80 单时更省空间，优先显示时间和路线。</span></div>
+        <calendar-demo></calendar-demo>
+      </section>
+
+      <section class="panel style-e">
+        <div class="head"><b>E. 状态强调版</b><span>未确认、异常、已完成颜色更明显，适合盯风险。</span></div>
+        <calendar-demo emphasis="true"></calendar-demo>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    customElements.define("calendar-demo", class extends HTMLElement {
+      connectedCallback() {
+        const emphasis = this.getAttribute("emphasis") === "true";
+        const bars = [
+          { left: "8%", top: "46px", width: "15%", color: "#2563eb", title: "08:00-09:30 接机", route: "KIX -> 大阪市内", chip: "未确认", className: emphasis ? "warn" : "" },
+          { left: "28%", top: "46px", width: "24%", color: "#7c3aed", title: "10:20-13:00 包车", route: "大阪市内 -> 京都市内", chip: "已派车", className: "" },
+          { left: "63%", top: "46px", width: "16%", color: "#16a34a", title: "15:00-16:15 送机", route: "京都市内 -> KIX", chip: "已完成", className: "" },
+          { left: "82%", top: "46px", width: "11%", color: "#ef4444", title: "18:20 异常", route: "司机未确认", chip: "风险", className: emphasis ? "danger" : "" }
+        ];
+        this.innerHTML = `
+          <div class="timeline">
+            <div class="vehicle">なにわ330を1001<small>ハイエース / 10座</small></div>
+            <div class="lane">
+              <div class="ticks">${["06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17"].map(h => `<div>${h}:00</div>`).join("")}</div>
+              ${bars.map(bar => `
+                <div class="bar ${bar.className}" style="--left:${bar.left};--top:${bar.top};--width:${bar.width};--color:${bar.color}" title="双击编辑订单">
+                  <b><span class="dot"></span>${bar.title} <span class="chip">${bar.chip}</span></b>
+                  <small>${bar.route}</small>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }
+    });
+  </script>
+</body>
+</html>

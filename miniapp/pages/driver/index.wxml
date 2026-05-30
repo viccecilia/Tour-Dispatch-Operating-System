@@ -9,7 +9,7 @@
       <view class="login-label">手机号</view>
       <input class="login-input" type="number" value="{{loginPhone}}" data-key="loginPhone" bindinput="onLoginInput" placeholder="请输入已录入的手机号" />
       <view class="login-label">密码</view>
-      <input class="login-input" password value="{{loginPassword}}" data-key="loginPassword" bindinput="onLoginInput" placeholder="初始密码为手机号后 4 位" />
+      <input class="login-input" password value="{{loginPassword}}" data-key="loginPassword" bindinput="onLoginInput" placeholder="初始密码为手机号后 6 位" />
       <view wx:if="{{loginError}}" class="login-error">{{loginError}}</view>
       <button class="login-button" loading="{{loginLoading}}" bindtap="loginDriver">进入司机工作台</button>
       <view class="login-help">如果更换手机或微信，请联系管理员解除微信绑定。</view>

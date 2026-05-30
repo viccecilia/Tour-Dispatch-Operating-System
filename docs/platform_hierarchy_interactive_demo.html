@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>平台层级管理交互说明</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #fff;
+      --ink: #111827;
+      --text: #263246;
+      --muted: #64748b;
+      --line: #d8e1eb;
+      --blue: #2563eb;
+      --green: #13805f;
+      --amber: #af6900;
+      --red: #c53a2f;
+      --violet: #6d28d9;
+      --soft-blue: #e8f1ff;
+      --soft-green: #e7f7ef;
+      --soft-amber: #fff3dc;
+      --soft-red: #fff0ee;
+      --soft-violet: #f0eaff;
+      --soft-gray: #eef2f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(560px, 1.15fr) minmax(420px, 0.85fr);
+      gap: 16px;
+      padding: 20px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07);
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      color: var(--ink);
+      font-size: 23px;
+      line-height: 1.2;
+    }
+
+    .sub {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: var(--soft-gray);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .badge.blue { background: var(--soft-blue); color: var(--blue); }
+    .badge.green { background: var(--soft-green); color: var(--green); }
+    .badge.amber { background: var(--soft-amber); color: var(--amber); }
+    .badge.violet { background: var(--soft-violet); color: var(--violet); }
+
+    .map {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .node {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      cursor: pointer;
+      transition: 0.16s ease;
+      text-align: left;
+      color: var(--text);
+      width: 100%;
+      font: inherit;
+    }
+
+    .node:hover,
+    .node.active {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13);
+      transform: translateY(-1px);
+    }
+
+    .node strong {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.25;
+    }
+
+    .node span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .node.platform { background: linear-gradient(180deg, #ffffff, #f5f9ff); }
+    .node.market { background: linear-gradient(180deg, #ffffff, #f7fff9); }
+    .node.agency { background: #fbfdff; }
+    .node.carrier { background: #fffdf8; }
+
+    .topology {
+      display: grid;
+      gap: 14px;
+    }
+
+    .tier {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+
+    .group {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #f8fafc;
+      display: grid;
+      gap: 10px;
+    }
+
+    .group-title {
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 900;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .children {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .connector {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      gap: 8px;
+      padding: 2px 0;
+    }
+
+    .connector::before,
+    .connector::after {
+      content: "";
+      height: 1px;
+      background: var(--line);
+    }
+
+    .detail {
+      padding: 18px 20px 20px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .detail h2 {
+      color: var(--ink);
+      font-size: 20px;
+      line-height: 1.25;
+    }
+
+    .detail-text {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #fff;
+    }
+
+    .section h3 {
+      color: var(--ink);
+      font-size: 14px;
+      margin-bottom: 9px;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    li + li { margin-top: 4px; }
+
+    .flow {
+      display: grid;
+      gap: 8px;
+    }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 9px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .flow-step i {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--soft-blue);
+      color: var(--blue);
+      display: grid;
+      place-items: center;
+      font-style: normal;
+      font-weight: 900;
+      font-size: 11px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 520px;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    td b { color: var(--ink); }
+
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .app { padding: 12px; }
+      .head { display: block; }
+      .badge-row { justify-content: flex-start; margin-top: 12px; }
+      .split,
+      .children { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel">
+      <div class="head">
+        <div>
+          <h1>平台层级管理图</h1>
+          <p class="sub">点击任意板块，右侧会显示对应层级的权限、功能、联动和收费/风控规则。</p>
+        </div>
+        <div class="badge-row">
+          <span class="badge blue">多旅行社</span>
+          <span class="badge amber">多车公司</span>
+          <span class="badge green">订单大厅</span>
+        </div>
+      </div>
+
+      <div class="map">
+        <div class="topology">
+          <div class="tier">
+            <button class="node platform active" data-node="platform">
+              <strong>总控平台</strong>
+              <span>平台运营、规则、风控、财务、仲裁、账号套餐和系统认证担保。</span>
+            </button>
+          </div>
+
+          <div class="connector">管理公司端口与市场规则</div>
+
+          <div class="split">
+            <div class="group">
+              <div class="group-title">旅行社公司端 <span class="badge blue">发单方</span></div>
+              <button class="node agency" data-node="agencyAdmin">
+                <strong>旅行社管理账户</strong>
+                <span>公司主账号，配置客服、导游、财务、权限和额度。</span>
+              </button>
+              <div class="children">
+                <button class="node agency" data-node="agencyService">
+                  <strong>客服账户</strong>
+                  <span>上传订单、改单、补资料、沟通。</span>
+                </button>
+                <button class="node agency" data-node="agencyGuide">
+                  <strong>导游/地接账户</strong>
+                  <span>看行程、联系司机、现场反馈。</span>
+                </button>
+                <button class="node agency" data-node="agencyFinance">
+                  <strong>财务账户</strong>
+                  <span>账单确认、付款、保证金和额度。</span>
+                </button>
+                <button class="node agency" data-node="agencyCredit">
+                  <strong>授信/保证金</strong>
+                  <span>订单金额占用额度，完成付款后释放。</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="group-title">车公司端 <span class="badge amber">承运方</span></div>
+              <button class="node carrier" data-node="carrierAdmin">
+                <strong>车公司管理账户</strong>
+                <span>公司主账号，配置调度、运行、财务、司机。</span>
+              </button>
+              <div class="children">
+                <button class="node carrier" data-node="carrierDispatch">
+                  <strong>调度账户</strong>
+                  <span>报价、接单、派车、改派、异常。</span>
+                </button>
+                <button class="node carrier" data-node="carrierOps">
+                  <strong>运行管理账户</strong>
+                  <span>车辆司机状态、安全和服务质量。</span>
+                </button>
+                <button class="node carrier" data-node="carrierFinance">
+                  <strong>财务账户</strong>
+                  <span>应收、司机结算、赔付和保证金。</span>
+                </button>
+                <button class="node carrier" data-node="driver">
+                  <strong>司机账户</strong>
+                  <span>任务、导航、报备、证据和费用。</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="connector">通过平台市场层联动</div>
+
+          <div class="tier">
+            <button class="node market" data-node="marketplace">
+              <strong>订单大厅 / 公共订单池</strong>
+              <span>旅行社发单进入订单池，车公司共享大厅，按规则报价、接单、救急和回程补位。</span>
+            </button>
+          </div>
+
+          <div class="split">
+            <button class="node market" data-node="pricing">
+              <strong>定价与等级匹配</strong>
+              <span>建议价、保护价、服务等级、旅行社等级、车公司等级共同决定推荐。</span>
+            </button>
+            <button class="node market" data-node="complaint">
+              <strong>客诉仲裁与证据</strong>
+              <span>双方上传资料，平台按证据归因，扣分、冻结、赔付都留痕。</span>
+            </button>
+          </div>
+
+          <div class="split">
+            <button class="node market" data-node="accountBilling">
+              <strong>账号数量与收费</strong>
+              <span>每家公司免费配置一定账号，超额按账号或套餐收费。</span>
+            </button>
+            <button class="node market" data-node="launch">
+              <strong>上线步骤</strong>
+              <span>先文档和 demo，再新增数据/API，最后灰度开放报价和风控。</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="head">
+        <div>
+          <h1>板块说明</h1>
+          <p class="sub">当前选中内容会在这里展开，方便配合规划文档讨论。</p>
+        </div>
+      </div>
+      <div class="detail" id="detail"></div>
+    </aside>
+  </main>
+
+  <script>
+    const details = {
+      platform: {
+        title: "总控平台",
+        desc: "总控平台是最高管理层，不代表任何一家旅行社或车公司。它负责规则、风控、财务、仲裁和系统配置。",
+        badges: ["平台后台", "规则中心", "审计留痕"],
+        functions: [
+          "管理旅行社公司和车公司入驻、停用、认证担保和等级。",
+          "配置订单大厅规则：路线价、保护价、报价区间、急单加价、回程补位价。",
+          "管理保证金、授信额度、额度占用、冻结和解冻。",
+          "处理客诉仲裁、证据归因、扣分、赔付和申诉。",
+          "配置账号免费数量、超额收费、功能套餐和权限模板。"
+        ],
+        permissions: [
+          "可查看全平台公司、订单、报价、结算、客诉和审计日志。",
+          "可调整规则，但需要版本号、审批人、生效时间和变更记录。",
+          "可冻结公司端口、限制发单或限制接单。"
+        ],
+        flow: [
+          "公司入驻后由平台审核资质。",
+          "平台分配公司端口、主账号、免费账号额度和授信方式。",
+          "平台配置订单大厅规则并灰度开放。",
+          "平台对关键动作做审计和风控。"
+        ]
+      },
+      agencyAdmin: {
+        title: "旅行社管理账户",
+        desc: "旅行社主账号统揽本公司端口，可以配置内部客服、导游、财务等子账号，但受平台套餐和风控限制。",
+        badges: ["公司主账号", "权限配置", "额度管理"],
+        functions: [
+          "管理本旅行社资料、联系人、结算信息、保证金和授信额度。",
+          "新增、停用、编辑公司内部账号。",
+          "给客服、导游、财务配置可查看和可操作范围。",
+          "查看本公司全部订单、账单、客诉和额度占用。",
+          "设置内部审批规则，例如高金额订单需要管理账户确认。"
+        ],
+        permissions: [
+          "可查看本公司全部订单。",
+          "可配置子账号权限。",
+          "可查看结算和保证金。",
+          "可发起或处理客诉。",
+          "不可查看其他旅行社订单。"
+        ],
+        flow: [
+          "管理账户创建客服账号。",
+          "客服上传订单。",
+          "订单占用授信额度后进入平台审核。",
+          "成交后旅行社管理账户可查看执行和结算状态。"
+        ]
+      },
+      agencyService: {
+        title: "旅行社客服账户",
+        desc: "客服账户是旅行社日常使用最多的角色，主要负责上传订单、修改订单、补资料和沟通。",
+        badges: ["录单", "改单", "沟通"],
+        functions: [
+          "上传订单、补充航班、酒店、人数、行李和备注。",
+          "修改未成交或平台允许修改的订单。",
+          "与平台客服、车公司调度沟通。",
+          "提交异常说明和客诉材料。",
+          "查看自己创建或被授权查看的订单。"
+        ],
+        permissions: [
+          "是否允许发单由管理账户配置。",
+          "是否允许修改价格由管理账户配置。",
+          "是否允许取消订单由管理账户配置。",
+          "是否能查看结算金额可单独控制。",
+          "可限制为只看自己创建的订单。"
+        ],
+        flow: [
+          "客服录入订单。",
+          "系统检查旅行社可用额度。",
+          "平台审核后发布到订单大厅。",
+          "成交后客服可补充资料并跟进执行。"
+        ]
+      },
+      agencyGuide: {
+        title: "导游 / 地接账户",
+        desc: "导游和地接账户服务现场执行，不参与价格和竞价，重点是看行程、联系司机和上传现场反馈。",
+        badges: ["行程", "司机联系", "现场证据"],
+        functions: [
+          "查看被分配行程、时间、上车点、下车点、航班和酒店。",
+          "成交后查看司机姓名、电话、车辆和车牌。",
+          "与司机或车公司调度联系。",
+          "上传现场反馈：客人迟到、临时改点、超行李、未见客、行程变更。",
+          "确认服务完成，帮助平台判断责任归因。"
+        ],
+        permissions: [
+          "是否显示客人完整联系方式可配置。",
+          "是否显示司机电话可配置。",
+          "是否允许修改集合点可配置。",
+          "不默认显示财务和报价信息。"
+        ],
+        flow: [
+          "旅行社把订单分配给导游。",
+          "订单成交后导游获得司机和车辆信息。",
+          "现场异常由导游上传证据。",
+          "证据进入客诉和责任归因体系。"
+        ]
+      },
+      agencyFinance: {
+        title: "旅行社财务账户",
+        desc: "旅行社财务账户负责账单确认、付款、保证金和授信额度，不默认参与订单操作。",
+        badges: ["账单", "付款", "额度"],
+        functions: [
+          "查看本旅行社账单。",
+          "确认订单完成。",
+          "发起付款或上传付款凭证。",
+          "查看保证金、授信额度、已占用额度和可用额度。",
+          "查看赔付、扣款、退款和冻结记录。"
+        ],
+        permissions: [
+          "可查看结算金额。",
+          "可确认付款。",
+          "可查看保证金记录。",
+          "不默认允许修改订单服务内容。",
+          "不默认允许管理子账号。"
+        ],
+        flow: [
+          "订单完成后进入待付款。",
+          "财务确认付款给车公司或平台。",
+          "付款完成后释放该订单占用额度。",
+          "若有客诉，相关金额可部分冻结。"
+        ]
+      },
+      agencyCredit: {
+        title: "旅行社授信 / 保证金",
+        desc: "保证金是发单授信额度。缴纳 10 万保证金，就只能同时发布未结算总额不超过 10 万的订单。",
+        badges: ["额度占用", "付款释放", "认证担保"],
+        functions: [
+          "订单发布或成交后占用额度。",
+          "订单取消且无责任赔付时释放额度。",
+          "订单完成但未付款时继续占用额度。",
+          "订单完成并支付给车公司后释放额度。",
+          "系统认证担保公司可免现金保证金，但仍必须设置授信上限。"
+        ],
+        permissions: [
+          "只有管理账户或财务账户可查看完整额度。",
+          "平台可冻结额度或降低授信。",
+          "额度不足时限制继续发单。"
+        ],
+        table: [
+          ["场景", "额度处理"],
+          ["发单 ¥5,000", "占用 ¥5,000"],
+          ["订单完成未付款", "继续占用"],
+          ["已支付车公司", "释放 ¥5,000"],
+          ["客诉仲裁中", "可部分冻结"]
+        ]
+      },
+      carrierAdmin: {
+        title: "车公司管理账户",
+        desc: "车公司主账号统揽公司接单、派车、司机、车辆、保证金和评分等级。",
+        badges: ["公司主账号", "接单规则", "服务等级"],
+        functions: [
+          "管理公司资料、车辆、司机、资质、保证金和授信额度。",
+          "配置调度、运行、财务、司机账号。",
+          "查看订单大厅、报价记录、中标订单和执行状态。",
+          "设置接单规则：地区、车型、时间、语言、回程单。",
+          "查看评分、等级、客诉和仲裁记录。"
+        ],
+        permissions: [
+          "可配置本公司子账号。",
+          "可设置报价和接单权限。",
+          "可查看公司全部订单和结算。",
+          "不可查看其他车公司报价明细。"
+        ],
+        flow: [
+          "管理账户配置调度和司机。",
+          "调度在大厅报价或接单。",
+          "成交后调度派司机车辆。",
+          "司机执行并上传报备。"
+        ]
+      },
+      carrierDispatch: {
+        title: "车公司调度账户",
+        desc: "调度账户负责订单大厅报价、接单、派车、改派和异常上报。",
+        badges: ["报价", "接单", "派车"],
+        functions: [
+          "查看订单大厅。",
+          "提交报价、一口接单、申请回程补位价。",
+          "成交后分配司机和车辆。",
+          "改派车辆和司机。",
+          "上报堵车、事故、车辆故障、司机迟到等异常。"
+        ],
+        permissions: [
+          "是否允许报价可配置。",
+          "是否允许一口接单可配置。",
+          "是否允许超过建议价申请加价可配置。",
+          "是否允许改派司机车辆可配置。"
+        ],
+        flow: [
+          "调度查看符合公司等级的订单。",
+          "提交报价或一口接单。",
+          "平台定标后锁定订单。",
+          "调度派车并跟踪执行。"
+        ]
+      },
+      carrierOps: {
+        title: "车公司运行管理账户",
+        desc: "运行管理负责车辆司机状态、安全合规和服务质量，不以报价为主。",
+        badges: ["车辆", "司机", "安全"],
+        functions: [
+          "查看车辆状态、司机状态和任务执行状态。",
+          "管理车况、保险、年检、司机证件。",
+          "监控迟到风险和异常报备。",
+          "处理服务质量问题。",
+          "维护司机服务记录。"
+        ],
+        permissions: [
+          "可查看运行状态。",
+          "可处理异常和服务质量记录。",
+          "不默认允许报价。",
+          "不默认允许查看旅行社完整结算价。"
+        ],
+        flow: [
+          "运行管理监控可用运力。",
+          "调度派车时使用运行数据。",
+          "司机异常反馈进入运行管理。",
+          "运行质量影响车公司等级。"
+        ]
+      },
+      carrierFinance: {
+        title: "车公司财务账户",
+        desc: "车公司财务账户负责应收账款、司机结算、平台服务费、赔付和保证金记录。",
+        badges: ["应收", "司机结算", "赔付"],
+        functions: [
+          "查看车公司应收账款。",
+          "查看订单结算、平台服务费、赔付扣款。",
+          "管理司机费用、司机垫付、司机代收。",
+          "查看保证金冻结、扣款、解冻记录。"
+        ],
+        permissions: [
+          "可查看财务报表。",
+          "可确认收款。",
+          "可处理司机结算。",
+          "不默认允许报价和派车。"
+        ],
+        flow: [
+          "订单完成后进入应收。",
+          "旅行社付款后生成收款记录。",
+          "司机费用进入司机结算。",
+          "赔付或冻结进入财务台账。"
+        ]
+      },
+      driver: {
+        title: "司机账户",
+        desc: "司机账户是执行端，只看自己任务，不参与报价和公司管理。",
+        badges: ["任务", "报备", "证据"],
+        functions: [
+          "查看已分配任务。",
+          "查看上车点、下车点、时间、航班和必要联系人。",
+          "导航、联系导游或客人。",
+          "上传到达、接到客人、完成、异常和费用凭证。",
+          "提交堵车、事故、客人迟到、超行李、临时改点等证据。"
+        ],
+        permissions: [
+          "不允许查看订单大厅。",
+          "不允许报价。",
+          "不允许查看旅行社结算价。",
+          "不允许管理公司其他账号。"
+        ],
+        flow: [
+          "调度派单给司机。",
+          "司机按节点报备。",
+          "异常和费用由司机上传证据。",
+          "完成后进入结算和评分。"
+        ]
+      },
+      marketplace: {
+        title: "订单大厅 / 公共订单池",
+        desc: "订单大厅属于平台市场层，不属于某一家旅行社或车公司。多个旅行社发单，多个车公司共享订单池。",
+        badges: ["公共池", "受控报价", "多端联动"],
+        functions: [
+          "接收多个旅行社发布的订单。",
+          "根据规则生成建议价、保护价、报价区间和服务等级。",
+          "向符合条件的车公司展示订单。",
+          "支持受控报价、一口接单、急单救援、回程补位。",
+          "隐藏其他车公司的具体报价。"
+        ],
+        permissions: [
+          "旅行社只能看自己的订单。",
+          "车公司可看公共池订单，但成交前敏感信息脱敏。",
+          "平台可审核、发布、撤回、定标和仲裁。"
+        ],
+        flow: [
+          "旅行社发单。",
+          "平台审核额度、价格和资料。",
+          "订单进入公共池。",
+          "车公司报价或接单。",
+          "平台定标后进入派车执行。"
+        ]
+      },
+      pricing: {
+        title: "定价与等级匹配",
+        desc: "价格不是低价竞拍，而是基于规则的受控报价。高等级旅行社优先匹配高等级车公司，高等级车公司可以获得服务溢价。",
+        badges: ["保护价", "等级溢价", "非最低价中标"],
+        functions: [
+          "路线价、车型、语言、人数、行李、时段共同计算建议价。",
+          "保护底价后台可见，低于保护价不可报价。",
+          "旅行社等级影响服务匹配。",
+          "车公司等级影响推荐排序和可接订单范围。",
+          "急单按 ETA 和可靠性优先，回程单按路线匹配优先。"
+        ],
+        permissions: [
+          "平台可配置规则版本。",
+          "车公司只看到可报价区间，不看到保护价。",
+          "旅行社看到建议价和成交状态，不看其他车公司具体报价。"
+        ],
+        table: [
+          ["订单类型", "核心规则"],
+          ["标准单", "受控报价，综合评分推荐"],
+          ["一口接单", "符合等级和授信即可锁单"],
+          ["急单救援", "ETA 优先，可高于标准价"],
+          ["回程补位", "允许合理低价，但要证明顺路"]
+        ]
+      },
+      complaint: {
+        title: "客诉仲裁与证据",
+        desc: "平台根据双方上传资料综合评判扣分和赔付事项，不单方面责怪车公司或司机。",
+        badges: ["证据", "责任比例", "申诉"],
+        functions: [
+          "旅行社/旅客上传聊天、航班、照片、损失说明。",
+          "车公司/司机上传定位、出发到达时间、现场照片、道路异常证明。",
+          "平台结合系统通知、订单修改记录和历史信用判断责任。",
+          "双方都有责任时按比例扣分和赔付。",
+          "保证金冻结、扣款、解冻必须有仲裁记录。"
+        ],
+        permissions: [
+          "双方都可上传证据。",
+          "平台仲裁人员可归因和处理赔付。",
+          "公司管理账户可申诉。",
+          "普通司机不承担无限责任。"
+        ],
+        flow: [
+          "客诉建案。",
+          "双方限时上传证据。",
+          "平台判断责任比例。",
+          "执行扣分、赔付、冻结或驳回。",
+          "保留申诉通道。"
+        ]
+      },
+      accountBilling: {
+        title: "账号数量与收费",
+        desc: "每个公司端口可以配置一定数量的免费账号，超出后按账号或套餐收费。",
+        badges: ["免费额度", "超额收费", "角色套餐"],
+        functions: [
+          "旅行社可免费配置 1 个管理账户和若干客服/导游/财务账户。",
+          "车公司可免费配置 1 个管理账户、若干调度/财务/运行账户和一定司机账户。",
+          "超额管理类账号按月计费。",
+          "司机账号可按车队规模给免费额度。",
+          "高级功能可作为套餐收费。"
+        ],
+        permissions: [
+          "公司主账号可添加子账号。",
+          "平台限制免费数量和可开通角色。",
+          "高风险权限需要平台审核或二次确认。"
+        ],
+        table: [
+          ["公司类型", "免费建议"],
+          ["旅行社", "1 个管理账号 + 3 个内部账号"],
+          ["车公司", "1 个管理账号 + 3 个管理类账号 + 若干司机"],
+          ["超额", "按账号或套餐收费"]
+        ]
+      },
+      launch: {
+        title: "推荐上线步骤",
+        desc: "不能贸然改写现有小程序。应该先做独立 marketplace 模块，再逐步接入现有系统。",
+        badges: ["低风险", "灰度", "分阶段"],
+        functions: [
+          "第一阶段：完成文档和 HTML demo。",
+          "第二阶段：新增公司账号、订单大厅、报价、授信、客诉等数据表和 API。",
+          "第三阶段：旅行社可发单，车公司只读大厅，平台人工定标。",
+          "第四阶段：开放受控报价、一口接单、急单、回程补位。",
+          "第五阶段：启用账号收费、额度强校验、扣分、冻结和赔付。"
+        ],
+        permissions: [
+          "初期不要自动成交。",
+          "初期评分和保证金先记录不处罚。",
+          "灰度公司先试运行。",
+          "稳定后再开放真实扣分和保证金冻结。"
+        ],
+        flow: [
+          "页面原型确认。",
+          "规则文档确认。",
+          "后端数据/API 建立。",
+          "小程序分端接入。",
+          "灰度上线和风控启用。"
+        ]
+      }
+    };
+
+    function renderDetail(key) {
+      const item = details[key];
+      const badges = (item.badges || []).map((label, index) => {
+        const colors = ["blue", "green", "amber", "violet"];
+        return `<span class="badge ${colors[index % colors.length]}">${label}</span>`;
+      }).join("");
+
+      const functions = (item.functions || []).map((text) => `<li>${text}</li>`).join("");
+      const permissions = (item.permissions || []).map((text) => `<li>${text}</li>`).join("");
+      const flow = (item.flow || []).map((text, index) => `<div class="flow-step"><i>${index + 1}</i><span>${text}</span></div>`).join("");
+      const table = item.table ? `
+        <div class="section">
+          <h3>规则表</h3>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                ${item.table.map((row, index) => `<tr>${row.map((cell) => index === 0 ? `<th>${cell}</th>` : `<td>${cell}</td>`).join("")}</tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>` : "";
+
+      document.getElementById("detail").innerHTML = `
+        <div>
+          <h2>${item.title}</h2>
+          <p class="detail-text">${item.desc}</p>
+          <div class="badge-row" style="justify-content:flex-start;margin-top:10px;">${badges}</div>
+        </div>
+        <div class="section">
+          <h3>功能</h3>
+          <ul>${functions}</ul>
+        </div>
+        <div class="section">
+          <h3>权限</h3>
+          <ul>${permissions}</ul>
+        </div>
+        ${table}
+        <div class="section">
+          <h3>联动流程</h3>
+          <div class="flow">${flow}</div>
+        </div>
+      `;
+
+      document.querySelectorAll(".node").forEach((node) => {
+        node.classList.toggle("active", node.dataset.node === key);
+      });
+    }
+
+    document.querySelectorAll(".node").forEach((node) => {
+      node.addEventListener("click", () => renderDetail(node.dataset.node));
+    });
+
+    renderDetail("platform");
+  </script>
+</body>
+</html>

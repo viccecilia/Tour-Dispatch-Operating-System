@@ -24,6 +24,9 @@ runtime/prod_startup_test_*.sqlite3*
 
 # Local/private tool config
 miniapp/project.private.config.json
+miniapp_dispatch/project.private.config.json
+miniapp/.cloudbase/
+miniapp_dispatch/.cloudbase/
 
 # OS/editor
 .DS_Store

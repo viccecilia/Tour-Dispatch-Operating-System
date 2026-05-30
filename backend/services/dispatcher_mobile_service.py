@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 from backend.db.database import get_connection
-from backend.services.auth_service import authenticate, authenticate_phone
+from backend.services.auth_service import authenticate, authenticate_phone, authenticate_wechat
 from backend.services.dispatch_mobile_audit_service import record_dispatch_mobile_audit
 from backend.services.parser_service import get_draft, parse_batch_text_to_drafts, parse_text_to_draft, update_draft
 from backend.services.tenant_context import get_current_tenant_id
@@ -27,12 +27,41 @@ def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
         return result
 
     user = result["user"]
-    if user.get("role") not in {"admin", "dispatcher", "operations_manager"}:
+    if user.get("role") not in {"admin", "dispatcher", "operations_manager", "driver"}:
         return None
 
     dispatcher = _dispatcher_from_user(user)
     return {
         "token": result["token"],
+        "user": user,
+        "dispatcher": dispatcher,
+        "dispatcher_session": {
+            "dispatcher_id": dispatcher["dispatcher_id"],
+            "dispatcher_code": dispatcher["dispatcher_code"],
+            "dispatcher_name": dispatcher["dispatcher_name"],
+            "dispatcher_role": dispatcher["dispatcher_role"],
+            "tenant_id": dispatcher["tenant_id"],
+        },
+    }
+
+
+def login_dispatcher_by_wechat(payload: dict[str, Any]) -> dict[str, Any] | None:
+    result = authenticate_wechat(
+        payload.get("wx_openid"),
+        payload.get("wx_unionid"),
+        payload.get("client_type", "dispatch_miniapp"),
+    )
+    if not result:
+        return None
+    if result.get("error"):
+        return result
+    user = result["user"]
+    if user.get("role") not in {"admin", "dispatcher", "operations_manager", "driver"}:
+        return None
+    dispatcher = _dispatcher_from_user(user)
+    return {
+        "token": result["token"],
+        "user": user,
         "dispatcher": dispatcher,
         "dispatcher_session": {
             "dispatcher_id": dispatcher["dispatcher_id"],

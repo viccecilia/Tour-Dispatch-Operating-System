@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
-import type { OrgMember, OrgOverview, ReminderSettings } from "@/types/api";
+import type { AuthUser, OrgMember, OrgOverview, ReminderSettings } from "@/types/api";
 
 const roleOptions: OrgMember["role"][] = ["admin", "dispatcher", "operations_manager", "driver"];
 const roleLabels: Record<OrgMember["role"], string> = {
@@ -76,14 +76,14 @@ function fallbackOrg(): OrgOverview {
     role_permissions: {
       admin: ["all"],
       dispatcher: ["dashboard", "orders", "parser", "dispatch", "calendar", "driver_monitor"],
-      operations_manager: ["dashboard", "dispatch", "calendar", "driver_monitor", "vehicles"],
+      operations_manager: ["dashboard", "calendar", "driver_monitor", "attendance", "vehicles", "map", "notifications"],
       driver: ["driver_mobile"],
     },
     summary: { departments: 1, teams: 1, members: 0, active_members: 0, disabled_members: 0 },
   };
 }
 
-export function SettingsPage() {
+export function SettingsPage({ currentUser }: { currentUser: AuthUser }) {
   const queryClient = useQueryClient();
   const [inviteForm, setInviteForm] = useState<InviteForm>(emptyInviteForm);
   const org = useQuery({ queryKey: ["org-overview"], queryFn: api.orgOverview });
@@ -139,7 +139,7 @@ export function SettingsPage() {
         <Card>
           <CardHeader>
             <h2 className="text-base font-bold text-slate-950">账号策略</h2>
-            <p className="mt-1 text-sm text-slate-500">手机号登录，密码不明文展示，只允许管理员重置为手机号后 4 位。</p>
+            <p className="mt-1 text-sm text-slate-500">手机号登录，密码不明文展示，只允许管理员重置为手机号后 6 位。</p>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-3">
             <Info label="司机端" value="强制微信绑定" />
@@ -153,7 +153,7 @@ export function SettingsPage() {
         <ErrorPanel title="组织接口读取失败" description="成员管理区域保留结构，管理员登录或后端恢复后可继续维护团队。" requestPath="/api/org/overview" onRetry={() => org.refetch()} />
       ) : null}
 
-      <AccountManagementPanel />
+      <AccountManagementPanel currentUser={currentUser} />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard title="启用成员" value={orgData.summary.active_members} icon={UsersRound} tone="green" caption={`${orgData.summary.disabled_members} 已停用`} />

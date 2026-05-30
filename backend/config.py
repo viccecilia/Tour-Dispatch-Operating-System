@@ -49,6 +49,8 @@ LOG_DIR = Path(os.environ.get("WX_DISPATCH_LOG_DIR", str(RUNTIME_DIR / "logs")))
 BACKUP_DIR = Path(os.environ.get("WX_DISPATCH_BACKUP_DIR", str(RUNTIME_DIR / "backups"))).resolve()
 JWT_SECRET = os.environ.get("WX_DISPATCH_JWT_SECRET", "wx-dispatch-demo-secret-change-me")
 JWT_EXPIRES_SECONDS = int(os.environ.get("WX_DISPATCH_JWT_EXPIRES_SECONDS", "86400"))
+WECHAT_MINIAPP_APPID = os.environ.get("WX_DISPATCH_WECHAT_MINIAPP_APPID", "wxfb6b69e5353308de")
+WECHAT_MINIAPP_SECRET = os.environ.get("WX_DISPATCH_WECHAT_MINIAPP_SECRET", "")
 SUPER_WECHAT_IDS = {
     item.strip()
     for item in os.environ.get("WX_DISPATCH_SUPER_WECHAT_IDS", "zongzou").split(",")

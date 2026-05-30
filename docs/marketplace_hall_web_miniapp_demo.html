@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>订单大厅 Web 与小程序 Demo</title>
+  <style>
+    :root {
+      --bg: #f3f6fa;
+      --panel: #fff;
+      --ink: #111827;
+      --text: #263247;
+      --muted: #64748b;
+      --line: #d8e1eb;
+      --blue: #2563eb;
+      --green: #13805f;
+      --amber: #af6900;
+      --red: #c53a2f;
+      --violet: #6d28d9;
+      --soft-blue: #e8f1ff;
+      --soft-green: #e7f7ef;
+      --soft-amber: #fff3dc;
+      --soft-red: #fff0ee;
+      --soft-violet: #f0eaff;
+      --soft-gray: #eef2f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+    }
+
+    .side {
+      background: #101827;
+      color: #d9e6f5;
+      padding: 18px 14px;
+      border-right: 1px solid #263449;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 6px 18px;
+      border-bottom: 1px solid #263449;
+    }
+
+    .mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563eb, #16a34a);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 900;
+    }
+
+    .brand b { display: block; color: #fff; font-size: 14px; }
+    .brand span { display: block; color: #95a6bd; font-size: 12px; margin-top: 2px; }
+
+    .nav {
+      margin-top: 18px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav button {
+      height: 39px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #b9c6d9;
+      padding: 0 10px;
+      text-align: left;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .nav button:hover,
+    .nav button.active {
+      background: #1d2b42;
+      color: #fff;
+    }
+
+    .content {
+      min-width: 0;
+      padding: 22px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      color: var(--ink);
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 860px;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      border-radius: 999px;
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 900;
+      background: var(--soft-gray);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .badge.blue { background: var(--soft-blue); color: var(--blue); }
+    .badge.green { background: var(--soft-green); color: var(--green); }
+    .badge.amber { background: var(--soft-amber); color: var(--amber); }
+    .badge.red { background: var(--soft-red); color: var(--red); }
+    .badge.violet { background: var(--soft-violet); color: var(--violet); }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(560px, 1.25fr) minmax(360px, 0.82fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .panel-head {
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .panel-head h2 { color: var(--ink); font-size: 16px; }
+    .panel-body { padding: 17px; }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      min-height: 78px;
+    }
+
+    .kpi small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .kpi strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--ink);
+      font-size: 22px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      outline: none;
+    }
+
+    input, select {
+      height: 38px;
+      padding: 0 10px;
+    }
+
+    textarea {
+      min-height: 76px;
+      padding: 10px;
+      resize: vertical;
+    }
+
+    .order-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .order-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      display: grid;
+      gap: 11px;
+    }
+
+    .order-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .order-title {
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .meta {
+      margin-top: 5px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .price-line {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .price-box {
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px;
+      border: 1px solid var(--line);
+    }
+
+    .price-box small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .price-box b {
+      display: block;
+      margin-top: 5px;
+      color: var(--ink);
+      font-size: 16px;
+    }
+
+    .bid-panel {
+      display: grid;
+      grid-template-columns: 140px 1fr auto auto;
+      gap: 9px;
+      align-items: end;
+    }
+
+    .btn {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 12px;
+      font-weight: 900;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn.blue { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .btn.green { background: var(--green); color: #fff; border-color: var(--green); }
+    .btn.red { background: var(--red); color: #fff; border-color: var(--red); }
+    .btn.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+    .rule-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .rule {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .rule b {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+
+    .rule p {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th, td {
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    td b { color: var(--ink); }
+
+    .phone-zone {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(220px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+
+    .phone {
+      background: #0f172a;
+      border-radius: 28px;
+      padding: 10px;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.16);
+    }
+
+    .screen {
+      background: #f8fafc;
+      border-radius: 21px;
+      min-height: 540px;
+      overflow: hidden;
+      border: 1px solid #243044;
+    }
+
+    .phone-head {
+      background: #fff;
+      padding: 14px 14px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .phone-head b {
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .phone-head span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .phone-body {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .mini-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 11px;
+    }
+
+    .mini-card b {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+
+    .mini-card p {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 9px;
+    }
+
+    .mini-btn {
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font-weight: 900;
+      font-size: 12px;
+    }
+
+    .mini-btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .mini-btn.green { background: var(--green); color: #fff; border-color: var(--green); }
+    .mini-btn.red { background: var(--red); color: #fff; border-color: var(--red); }
+
+    @media (max-width: 1180px) {
+      .shell { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .phone-zone { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+    }
+
+    @media (max-width: 760px) {
+      .content { padding: 14px; }
+      .topbar { display: block; }
+      .badges { justify-content: flex-start; margin-top: 12px; }
+      .filters, .kpis, .price-line, .bid-panel, .phone-zone { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">
+        <div class="mark">M</div>
+        <div>
+          <b>Marketplace Hall</b>
+          <span>订单大厅 Web + 小程序</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="active" data-page="hall">Web 订单大厅</button>
+        <button data-page="mybids">Web 我的报价</button>
+        <button data-page="urgent">Web 急单救援</button>
+        <button data-page="backhaul">Web 回程补位</button>
+        <button data-page="rules">大厅规则说明</button>
+        <button data-page="miniapp">小程序端页面</button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div>
+          <h1>订单大厅页面规划 Demo</h1>
+          <p class="sub">订单大厅属于平台市场层。多家旅行社发单进入公共池，多家车公司共享查看；报价受保护价、等级、授信、保证金、响应速度和服务能力约束。</p>
+        </div>
+        <div class="badges">
+          <span class="badge green">A 级车公司</span>
+          <span class="badge blue">可接高等级订单</span>
+          <span class="badge amber">保证金 ¥80,000</span>
+        </div>
+      </div>
+
+      <section id="hall" class="page active">
+        <div class="kpis">
+          <div class="kpi"><small>可见订单</small><strong>42</strong></div>
+          <div class="kpi"><small>适配高等级</small><strong>18</strong></div>
+          <div class="kpi"><small>急单</small><strong>3</strong></div>
+          <div class="kpi"><small>我的报价</small><strong>7</strong></div>
+        </div>
+
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>公共订单池</h2>
+              <span class="badge blue">其他公司报价隐藏</span>
+            </div>
+            <div class="panel-body">
+              <div class="filters">
+                <label>日期<input type="date" value="2026-06-18" /></label>
+                <label>地区<select><option>大阪/京都</option><option>东京</option><option>北海道</option></select></label>
+                <label>订单类型<select><option>全部</option><option>标准单</option><option>急单</option><option>回程补位</option></select></label>
+                <label>车型<select><option>全部</option><option>7 座</option><option>海狮</option></select></label>
+                <label>等级<select><option>A/B 级订单</option><option>全部可见</option></select></label>
+              </div>
+
+              <div class="order-list">
+                <article class="order-card">
+                  <div class="order-top">
+                    <div>
+                      <div class="order-title">关西机场 T1 -> 大阪市内酒店</div>
+                      <div class="meta"><span>06-18 09:30</span><span>7 座</span><span>中文司机</span><span>4 人 / 4 件</span><span>旅行社 A 级</span></div>
+                    </div>
+                    <span class="badge green">标准单</span>
+                  </div>
+                  <div class="price-line">
+                    <div class="price-box"><small>平台建议价</small><b>¥560</b></div>
+                    <div class="price-box"><small>一口接单价</small><b>¥560</b></div>
+                    <div class="price-box"><small>已有报价</small><b>3 家</b></div>
+                    <div class="price-box"><small>截止时间</small><b>00:42:18</b></div>
+                  </div>
+                  <div class="bid-panel">
+                    <label>我的报价<input type="number" value="560" /></label>
+                    <label>报价说明<select><option>按建议价接单</option><option>车辆等级更高，申请加价</option><option>顺路补位</option></select></label>
+                    <button class="btn blue">提交报价</button>
+                    <button class="btn green">一口接单</button>
+                  </div>
+                </article>
+
+                <article class="order-card">
+                  <div class="order-top">
+                    <div>
+                      <div class="order-title">京都市内 -> 伊丹机场</div>
+                      <div class="meta"><span>06-18 14:20</span><span>海狮 10 座</span><span>无语言指定</span><span>8 人 / 8 件</span></div>
+                    </div>
+                    <span class="badge amber">人工定标</span>
+                  </div>
+                  <div class="price-line">
+                    <div class="price-box"><small>平台建议价</small><b>¥720</b></div>
+                    <div class="price-box"><small>服务等级</small><b>B 级以上</b></div>
+                    <div class="price-box"><small>已有报价</small><b>5 家</b></div>
+                    <div class="price-box"><small>隐私</small><b>成交前脱敏</b></div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <aside class="panel">
+            <div class="panel-head">
+              <h2>大厅提醒</h2>
+              <span class="badge amber">受控报价</span>
+            </div>
+            <div class="panel-body">
+              <div class="rule-list">
+                <div class="rule"><b>不能无限低价</b><p>系统不展示保护底价，但低于规则区间无法提交。长期贴近底价抢单会影响报价合理性评分。</p></div>
+                <div class="rule"><b>不按最低价自动中标</b><p>平台综合价格、等级、履约、ETA、客诉、保证金和路线匹配推荐成交方。</p></div>
+                <div class="rule"><b>隐私脱敏</b><p>成交前不显示完整客人联系方式和旅行社敏感信息，成交后按权限开放。</p></div>
+                <div class="rule"><b>报价次数限制</b><p>每家公司每单最多报价 2 次，报价后有冷却时间，避免互相压价。</p></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="mybids" class="page">
+        <div class="panel">
+          <div class="panel-head"><h2>我的报价与中标</h2><span class="badge green">车公司内部可见</span></div>
+          <div class="panel-body table-wrap">
+            <table>
+              <thead><tr><th>订单</th><th>报价</th><th>状态</th><th>推荐原因</th><th>后续动作</th></tr></thead>
+              <tbody>
+                <tr><td><b>MK-0618-022</b><br />KIX -> 大阪</td><td>¥560<br />按建议价</td><td><span class="badge amber">待定标</span></td><td>等级匹配，准时率高</td><td><button class="btn">查看</button></td></tr>
+                <tr><td><b>MK-0618-019</b><br />大阪 -> KIX</td><td>¥500<br />一口接单</td><td><span class="badge green">已中标</span></td><td>A 级车公司优先</td><td><button class="btn blue">安排司机</button></td></tr>
+                <tr><td><b>BK-0618-004</b><br />回程补位</td><td>¥430<br />顺路证明</td><td><span class="badge blue">平台审核</span></td><td>需核验前序订单</td><td><button class="btn">补证明</button></td></tr>
+                <tr><td><b>EM-0618-002</b><br />急单救援</td><td>¥780<br />ETA 18 分钟</td><td><span class="badge red">未中标</span></td><td>另一家公司 ETA 12 分钟</td><td><button class="btn">复盘</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="urgent" class="page">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head"><h2>急单救援池</h2><span class="badge red">ETA 优先</span></div>
+            <div class="panel-body">
+              <div class="order-list">
+                <article class="order-card">
+                  <div class="order-top">
+                    <div>
+                      <div class="order-title">原车故障：大阪市内酒店 -> 关西机场</div>
+                      <div class="meta"><span>距离出发 48 分钟</span><span>2 人 / 3 件</span><span>7 座</span><span>误机风险</span></div>
+                    </div>
+                    <span class="badge red">高风险</span>
+                  </div>
+                  <div class="price-line">
+                    <div class="price-box"><small>急单建议价</small><b>¥780</b></div>
+                    <div class="price-box"><small>优先条件</small><b>ETA</b></div>
+                    <div class="price-box"><small>我的 ETA</small><b>18 分钟</b></div>
+                    <div class="price-box"><small>责任归属</small><b>待仲裁</b></div>
+                  </div>
+                  <div class="bid-panel">
+                    <label>救援报价<input type="number" value="780" /></label>
+                    <label>可到达时间<input value="18 分钟" /></label>
+                    <button class="btn red">响应救援</button>
+                    <button class="btn">上传空车位置</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><h2>急单规则</h2><span class="badge amber">不是低价竞拍</span></div>
+            <div class="panel-body rule-list">
+              <div class="rule"><b>优先救到</b><p>急单先看 ETA、车辆真实可用、司机状态和历史履约，价格排在后面。</p></div>
+              <div class="rule"><b>允许加价</b><p>急单可高于标准价，尤其是深夜、雨雪、机场排队和误机风险订单。</p></div>
+              <div class="rule"><b>责任归因</b><p>原车公司、旅行社、旅客、平台或不可抗力责任会影响差价承担和扣分。</p></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="backhaul" class="page">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head"><h2>回程补位申请</h2><span class="badge green">合理低价</span></div>
+            <div class="panel-body">
+              <div class="order-card">
+                <div class="order-top">
+                  <div>
+                    <div class="order-title">大阪市内 -> 关西机场 T1</div>
+                    <div class="meta"><span>06-18 13:40</span><span>7 座</span><span>2 人 / 2 件</span><span>适合回程</span></div>
+                  </div>
+                  <span class="badge green">补位单</span>
+                </div>
+                <div class="price-line">
+                  <div class="price-box"><small>标准建议价</small><b>¥500</b></div>
+                  <div class="price-box"><small>补位报价</small><b>¥430</b></div>
+                  <div class="price-box"><small>前序结束点</small><b>3.2 km</b></div>
+                  <div class="price-box"><small>时间衔接</small><b>42 分钟</b></div>
+                </div>
+                <div class="bid-panel">
+                  <label>补位价<input type="number" value="430" /></label>
+                  <label>前序订单<input value="已送机 KIX -> 大阪" /></label>
+                  <button class="btn green">申请补位</button>
+                  <button class="btn">上传证明</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><h2>回程规则</h2><span class="badge blue">不算恶意低价</span></div>
+            <div class="panel-body rule-list">
+              <div class="rule"><b>必须证明顺路</b><p>需要前序订单、车辆当前位置、结束点和新订单起点距离、时间窗口。</p></div>
+              <div class="rule"><b>不能影响前序服务</b><p>如果为了回程单影响原订单准时或服务，会扣运行和履约分。</p></div>
+              <div class="rule"><b>单独统计</b><p>回程低价不计入恶性低价，但平台会监控是否滥用补位规则。</p></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="rules" class="page">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head"><h2>订单大厅核心规则</h2><span class="badge blue">平台市场层</span></div>
+            <div class="panel-body rule-list">
+              <div class="rule"><b>位置</b><p>订单大厅在总控平台市场层，不属于旅行社或车公司任何一方。</p></div>
+              <div class="rule"><b>可见性</b><p>旅行社只看自己的订单；车公司看公共池中符合资质等级的订单。</p></div>
+              <div class="rule"><b>报价</b><p>报价必须在平台允许区间内，保护底价不对车公司公开。</p></div>
+              <div class="rule"><b>定标</b><p>初期人工定标，后期可按综合评分自动推荐，不默认最低价中标。</p></div>
+              <div class="rule"><b>风控</b><p>保证金、授信额度、客诉、取消、迟到、恶意低价都会影响可接订单范围。</p></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>联动流程</h2><span class="badge green">从发单到派车</span></div>
+            <div class="panel-body table-wrap">
+              <table>
+                <thead><tr><th>步骤</th><th>旅行社</th><th>平台</th><th>车公司</th></tr></thead>
+                <tbody>
+                  <tr><td><b>1</b></td><td>发单，占用授信额度</td><td>审核资料和价格规则</td><td>不可见敏感信息</td></tr>
+                  <tr><td><b>2</b></td><td>等待报价/定标</td><td>发布到订单池</td><td>查看、报价、一口接单</td></tr>
+                  <tr><td><b>3</b></td><td>查看成交结果</td><td>人工或规则定标</td><td>中标后安排司机车辆</td></tr>
+                  <tr><td><b>4</b></td><td>导游跟进现场</td><td>监控异常与证据</td><td>司机执行并报备</td></tr>
+                  <tr><td><b>5</b></td><td>付款释放额度</td><td>结算/评分/仲裁</td><td>收款和司机结算</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="miniapp" class="page">
+        <div class="phone-zone">
+          <div class="phone">
+            <div class="screen">
+              <div class="phone-head"><b>移动订单大厅</b><span>筛选 / 报价 / 一口接单</span></div>
+              <div class="phone-body">
+                <div class="mini-card"><b>KIX -> 大阪市内</b><p>09:30，7 座，中文司机，建议 ¥560，已有 3 家报价。</p><div class="mini-grid"><button class="mini-btn primary">报价</button><button class="mini-btn green">一口接</button></div></div>
+                <div class="mini-card"><b>京都 -> 伊丹机场</b><p>14:20，海狮，B 级以上，人工定标。</p><div class="mini-grid"><button class="mini-btn primary">查看</button><button class="mini-btn">收藏</button></div></div>
+                <div class="mini-card"><b>筛选</b><p>大阪/京都，今日，A/B 级订单，标准单优先。</p></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phone">
+            <div class="screen">
+              <div class="phone-head"><b>急单救援</b><span>ETA 优先</span></div>
+              <div class="phone-body">
+                <div class="mini-card"><b>高风险急单</b><p>大阪酒店 -> KIX，距离出发 48 分钟，误机风险。</p><div class="mini-grid"><button class="mini-btn red">响应救援</button><button class="mini-btn">看位置</button></div></div>
+                <div class="mini-card"><b>我的 ETA</b><p>车辆距离 7.8 km，预计 18 分钟到达。</p></div>
+                <div class="mini-card"><b>报价</b><p>急单建议 ¥780，可上传空车位置证明。</p></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phone">
+            <div class="screen">
+              <div class="phone-head"><b>回程补位</b><span>顺路证明</span></div>
+              <div class="phone-body">
+                <div class="mini-card"><b>补位机会</b><p>大阪市内 -> KIX，13:40，与你前序订单结束点 3.2 km。</p><div class="mini-grid"><button class="mini-btn green">申请补位</button><button class="mini-btn">上传证明</button></div></div>
+                <div class="mini-card"><b>补位价</b><p>标准 ¥500，建议补位 ¥430，不计入恶意低价。</p></div>
+                <div class="mini-card"><b>提醒</b><p>不得影响前序订单准时和服务。</p></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phone">
+            <div class="screen">
+              <div class="phone-head"><b>我的报价</b><span>中标 / 待定标 / 复盘</span></div>
+              <div class="phone-body">
+                <div class="mini-card"><b>已中标</b><p>大阪 -> KIX，¥500，一口接单成功。</p><div class="mini-grid"><button class="mini-btn primary">安排司机</button><button class="mini-btn">详情</button></div></div>
+                <div class="mini-card"><b>待定标</b><p>KIX -> 大阪，报价 ¥560，评分推荐靠前。</p></div>
+                <div class="mini-card"><b>未中标复盘</b><p>急单未中标：另一家公司 ETA 更短。</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    document.querySelectorAll(".nav button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const page = button.dataset.page;
+        document.querySelectorAll(".nav button").forEach((item) => item.classList.toggle("active", item === button));
+        document.querySelectorAll(".page").forEach((item) => item.classList.toggle("active", item.id === page));
+      });
+    });
+  </script>
+</body>
+</html>

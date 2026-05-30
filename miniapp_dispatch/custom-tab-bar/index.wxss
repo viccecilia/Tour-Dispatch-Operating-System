@@ -36,6 +36,11 @@
   box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.24);
 }
 
+.custom-tabbar.driver-theme .tab-item.active {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  box-shadow: 0 10rpx 22rpx rgba(20, 184, 166, 0.24);
+}
+
 .tab-label {
   font-size: 22rpx;
   font-weight: 850;

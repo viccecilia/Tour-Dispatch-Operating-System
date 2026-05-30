@@ -5,8 +5,10 @@ import json
 import time
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
-from backend.config import JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS
+from backend.config import JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, WECHAT_MINIAPP_APPID, WECHAT_MINIAPP_SECRET
 from backend.db.database import get_connection, hash_password
 from backend.services.audit_service import record_audit
 from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
@@ -106,6 +108,77 @@ def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, 
     return {"token": create_jwt(public), "user": public}
 
 
+def authenticate_wechat(wx_openid: str | None = None, wx_unionid: str | None = None, client_type: str = "dispatch_miniapp") -> Optional[dict]:
+    openid = str(wx_openid or "").strip()
+    unionid = str(wx_unionid or "").strip()
+    if not openid and not unionid:
+        return None
+    with get_connection() as conn:
+        user = conn.execute(
+            """
+            SELECT
+                u.id,
+                u.tenant_id,
+                u.username,
+                u.role,
+                u.display_name,
+                u.phone,
+                u.profile_type,
+                u.profile_id,
+                u.wx_bind_status,
+                u.is_active,
+                t.name AS tenant_name,
+                t.slug AS tenant_slug
+            FROM users u
+            LEFT JOIN tenants t ON t.id = u.tenant_id
+            WHERE u.is_active = 1
+              AND (
+                  (COALESCE(u.wx_openid, '') <> '' AND u.wx_openid = ?)
+                  OR (COALESCE(u.wx_unionid, '') <> '' AND u.wx_unionid = ?)
+              )
+            ORDER BY u.id ASC
+            LIMIT 1
+            """,
+            (openid, unionid),
+        ).fetchone()
+    if not user:
+        _audit_auth("wechat_auto_login_fail", {"reason": "wechat_not_bound", "client_type": client_type})
+        return None
+    user_data = dict(user)
+    if user_data["role"] not in ROLES:
+        _audit_auth("wechat_auto_login_fail", {"user_id": user_data["id"], "reason": "invalid_role", "client_type": client_type})
+        return None
+    public = public_user(user_data)
+    _mark_login(public["id"])
+    _audit_auth("wechat_auto_login_ok", {"user_id": public["id"], "role": public["role"], "client_type": client_type})
+    return {"token": create_jwt(public), "user": public}
+
+
+def resolve_wechat_login_code(wx_code: str | None) -> dict:
+    code = str(wx_code or "").strip()
+    if not code:
+        return {}
+    if not WECHAT_MINIAPP_APPID or not WECHAT_MINIAPP_SECRET:
+        raise ValueError("wechat_code_exchange_unavailable")
+    query = urlencode(
+        {
+            "appid": WECHAT_MINIAPP_APPID,
+            "secret": WECHAT_MINIAPP_SECRET,
+            "js_code": code,
+            "grant_type": "authorization_code",
+        }
+    )
+    url = f"https://api.weixin.qq.com/sns/jscode2session?{query}"
+    with urlopen(url, timeout=8) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    if data.get("errcode"):
+        raise ValueError(f"wechat_code_exchange_failed:{data.get('errcode')}")
+    return {
+        "wx_openid": data.get("openid") or "",
+        "wx_unionid": data.get("unionid") or "",
+    }
+
+
 def register_bound_account(payload: dict) -> dict:
     phone = str(payload.get("phone") or "").strip()
     password = str(payload.get("password") or "").strip()
@@ -197,8 +270,8 @@ def reset_user_password_to_phone_tail(user_id: int | str, actor: str = "system")
         row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
         if not row:
             return None
-        tail = normalize_phone(row["phone"] or row["username"])[-4:]
-        if len(tail) < 4:
+        tail = phone_password_tail(row["phone"] or row["username"])
+        if not tail:
             raise ValueError("phone_tail_unavailable")
         conn.execute(
             """
@@ -212,8 +285,40 @@ def reset_user_password_to_phone_tail(user_id: int | str, actor: str = "system")
         )
         conn.commit()
     user = _load_user_public(int(user_id))
-    _audit_auth("password_reset", {"user_id": user_id, "reset_to": "phone_last_4"}, actor=actor)
+    _audit_auth("password_reset", {"user_id": user_id, "reset_to": "phone_last_6"}, actor=actor)
     return public_user(user) if user else None
+
+
+def change_user_password(user_id: int | str, old_password: str, new_password: str, actor: str = "system") -> dict | None:
+    if not old_password or not new_password:
+        raise ValueError("password_required")
+    if len(str(new_password)) < 6:
+        raise ValueError("password_too_short")
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
+        if not row:
+            return None
+        if row["password_hash"] != hash_password(old_password):
+            raise ValueError("invalid_old_password")
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?,
+                password_changed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (hash_password(new_password), user_id, get_current_tenant_id()),
+        )
+        conn.commit()
+    user = _load_user_public(int(user_id))
+    _audit_auth("password_change", {"user_id": user_id}, actor=actor)
+    return public_user(user) if user else None
+
+
+def phone_password_tail(phone: str | None) -> str:
+    digits = normalize_phone(phone or "")
+    return digits[-6:] if len(digits) >= 6 else ""
 
 
 def unbind_user_wechat(user_id: int | str, actor: str = "system") -> dict | None:

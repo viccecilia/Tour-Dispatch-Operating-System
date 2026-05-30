@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>旅行社端高频订单工作台 Demo</title>
+  <style>
+    :root {
+      --ink: #152033;
+      --muted: #64748b;
+      --line: #d9e2ef;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --blue: #2563eb;
+      --green: #0f8a61;
+      --amber: #b7791f;
+      --red: #c24135;
+      --cyan: #087990;
+      --violet: #6d5bd0;
+      --shadow: 0 12px 26px rgba(20, 31, 51, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      background: var(--bg);
+      letter-spacing: 0;
+    }
+    button, input, select { font: inherit; }
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 220px minmax(980px, 1fr);
+    }
+    .side {
+      background: #101827;
+      color: #d7e2f2;
+      padding: 18px 14px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .brand { font-weight: 800; font-size: 18px; color: #fff; margin-bottom: 4px; }
+    .sub { color: #93a4bb; font-size: 12px; margin-bottom: 20px; }
+    .nav button {
+      width: 100%;
+      border: 0;
+      border-radius: 6px;
+      color: #dbe7f7;
+      background: transparent;
+      padding: 10px 12px;
+      margin-bottom: 4px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .nav button.active { background: #1f3150; color: #fff; }
+    .nav small { display: block; color: #93a4bb; margin-top: 2px; }
+    .main { padding: 18px 20px 26px; overflow: hidden; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .hint { color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn.primary { border-color: var(--blue); background: var(--blue); color: #fff; }
+    .btn.green { border-color: var(--green); background: var(--green); color: #fff; }
+    .btn.warn { border-color: #d58a1f; background: #fff7e8; color: #8a5200; }
+    .grid { display: grid; gap: 10px; }
+    .kpis { grid-template-columns: repeat(8, minmax(112px, 1fr)); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .kpi { padding: 10px 12px; min-height: 78px; }
+    .kpi .label { color: var(--muted); font-size: 12px; }
+    .kpi .value { font-size: 23px; font-weight: 900; margin-top: 8px; }
+    .kpi .note { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .filters {
+      margin-top: 12px;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1.5fr repeat(5, 1fr) 130px;
+      gap: 9px;
+    }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input, select {
+      width: 100%;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 0 9px;
+    }
+    .ops {
+      margin-top: 10px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .ops .left, .ops .right { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .pill.blue { background: #e8f0ff; color: #1c55c7; }
+    .pill.green { background: #e7f7ef; color: #08724e; }
+    .pill.amber { background: #fff4d7; color: #895300; }
+    .pill.red { background: #ffe8e4; color: #a9362d; }
+    .pill.gray { background: #eef2f7; color: #475569; }
+    .workspace {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: minmax(760px, 1fr) 330px;
+      gap: 12px;
+      align-items: start;
+    }
+    .table-wrap { overflow: hidden; }
+    .table-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 12px 8px;
+      border-bottom: 1px solid var(--line);
+    }
+    .table-head strong { font-size: 15px; }
+    .table-scroll { max-height: 615px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f8fafc;
+      color: #475569;
+      border-bottom: 1px solid var(--line);
+      padding: 8px 6px;
+      text-align: left;
+      font-weight: 800;
+    }
+    td { border-bottom: 1px solid #edf2f7; padding: 8px 6px; vertical-align: top; }
+    tr.active { background: #eef6ff; box-shadow: inset 3px 0 0 var(--blue); }
+    tr:hover { background: #f7fbff; }
+    .check { width: 32px; }
+    .num { width: 48px; }
+    .code { width: 105px; font-weight: 900; }
+    .route { width: 190px; }
+    .time { width: 86px; }
+    .owner { width: 76px; }
+    .price { width: 88px; }
+    .market { width: 104px; }
+    .vendor { width: 118px; }
+    .run { width: 92px; }
+    .risk { width: 135px; }
+    .actions { width: 136px; text-align: right; }
+    .route b { display: block; margin-bottom: 3px; }
+    .muted { color: var(--muted); }
+    .money { font-weight: 900; }
+    .mini-btn {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #fff;
+      padding: 5px 7px;
+      font-weight: 800;
+      cursor: pointer;
+      margin-left: 4px;
+      margin-bottom: 4px;
+    }
+    .mini-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .mini-btn.green { background: var(--green); border-color: var(--green); color: #fff; }
+    .detail { padding: 12px; }
+    .detail h2, .panel h2 { font-size: 16px; margin: 0 0 10px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .field {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px;
+      background: #fbfdff;
+      min-height: 58px;
+    }
+    .field span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .field b { font-size: 14px; }
+    .queue { margin-top: 12px; padding: 12px; }
+    .queue-list { display: grid; gap: 8px; }
+    .queue-item {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 9px;
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+    }
+    .queue-item strong { font-size: 18px; }
+    .queue-item b { display: block; font-size: 13px; margin-bottom: 3px; }
+    .roles {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .role { padding: 12px; }
+    .role h3 { margin: 0 0 8px; font-size: 15px; }
+    .role ul { margin: 0; padding-left: 17px; color: #44546a; line-height: 1.65; font-size: 13px; }
+    .phone-zone {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .phone {
+      border: 1px solid #cbd5e1;
+      border-radius: 22px;
+      background: #111827;
+      padding: 11px;
+      min-height: 390px;
+      box-shadow: var(--shadow);
+    }
+    .screen {
+      background: #f8fafc;
+      border-radius: 16px;
+      min-height: 368px;
+      overflow: hidden;
+    }
+    .screen-head {
+      background: #fff;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 900;
+    }
+    .m-card {
+      margin: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      font-size: 12px;
+    }
+    .m-card b { display: block; margin-bottom: 4px; }
+    .page { display: none; }
+    .page.active { display: block; }
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 1fr; }
+      .side { position: relative; height: auto; }
+      .nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+      .kpis { grid-template-columns: repeat(4, 1fr); }
+      .workspace, .roles, .phone-zone { grid-template-columns: 1fr; }
+      .filters { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">旅行社端</div>
+      <div class="sub">100单/天高频订单模拟</div>
+      <nav class="nav">
+        <button class="active" data-page="desk">总控工作台<small>管理账户看全局</small></button>
+        <button data-page="orders">订单队列<small>批量录入与大厅状态</small></button>
+        <button data-page="roles">账号分工<small>客服 财务 导游 管理</small></button>
+        <button data-page="mini">小程序端<small>移动处理样式</small></button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <section class="page active" id="desk">
+        <div class="topbar">
+          <div>
+            <h1>100单/天旅行社运营工作台</h1>
+            <div class="hint">适合每天大量发单的旅行社：订单录入、批量上架、竞价跟踪、异常处理、车公司联系、开始/完成/结算/互评放在同一条运营链路里。</div>
+          </div>
+          <div class="toolbar">
+            <button class="btn primary">批量导入订单</button>
+            <button class="btn green">批量放入大厅</button>
+            <button class="btn">查看订单大厅</button>
+            <button class="btn warn">只看异常 19</button>
+          </div>
+        </div>
+
+        <div class="grid kpis">
+          <div class="card kpi"><div class="label">今日总订单</div><div class="value">100</div><div class="note">已生成 001-100</div></div>
+          <div class="card kpi"><div class="label">已入大厅</div><div class="value">76</div><div class="note">可竞价/一口价</div></div>
+          <div class="card kpi"><div class="label">竞价中</div><div class="value">28</div><div class="note">8 单 30 分钟内落拍</div></div>
+          <div class="card kpi"><div class="label">已接单</div><div class="value">41</div><div class="note">联系人已解锁</div></div>
+          <div class="card kpi"><div class="label">流拍待处理</div><div class="value">5</div><div class="note">建议调价/延时</div></div>
+          <div class="card kpi"><div class="label">待补资料</div><div class="value">12</div><div class="note">航班/人数/行李</div></div>
+          <div class="card kpi"><div class="label">待付款结算</div><div class="value">18</div><div class="note">付款后释放额度</div></div>
+          <div class="card kpi"><div class="label">保证金额度</div><div class="value">¥63k</div><div class="note">剩余额度/总 ¥100k</div></div>
+        </div>
+
+        <div class="card filters">
+          <div><label>关键词</label><input id="searchBox" value="大阪 机场 7座" /></div>
+          <div><label>日期</label><input type="date" value="2026-06-18" /></div>
+          <div><label>大厅状态</label><select><option>全部</option><option>未上架</option><option>竞价中</option><option>已接单</option><option>流拍</option></select></div>
+          <div><label>负责人</label><select><option>全部客服</option><option>客服A</option><option>客服B</option><option>客服C</option></select></div>
+          <div><label>地区</label><select><option>关西</option><option>东京</option><option>北海道</option><option>冲绳</option></select></div>
+          <div><label>车型</label><select><option>全部</option><option>7座</option><option>海狮</option><option>大巴</option></select></div>
+          <div><label>排序</label><select><option>离服务时间最近</option><option>离落拍最近</option><option>异常优先</option><option>未结算优先</option></select></div>
+        </div>
+
+        <div class="card ops">
+          <div class="left">
+            <span class="pill blue">已选 12 单</span>
+            <button class="btn green">批量放入大厅</button>
+            <button class="btn">批量调起拍价</button>
+            <button class="btn">批量改一口价</button>
+            <button class="btn">批量延长竞价</button>
+            <button class="btn">流拍重新上架</button>
+          </div>
+          <div class="right">
+            <button class="btn">导出今日订单</button>
+            <button class="btn">同步给导游</button>
+          </div>
+        </div>
+
+        <div class="workspace">
+          <div class="card table-wrap">
+            <div class="table-head">
+              <strong>今日订单队列 <span class="muted">显示 001-100，列表高密度滚动</span></strong>
+              <span class="pill gray">当前页 1-30 / 100</span>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="check"><input type="checkbox" checked /></th>
+                    <th class="num">序号</th>
+                    <th class="code">订单号</th>
+                    <th class="route">线路/要求</th>
+                    <th class="time">服务时间</th>
+                    <th class="owner">客服</th>
+                    <th class="price">起拍/一口</th>
+                    <th class="market">大厅状态</th>
+                    <th class="vendor">接单方</th>
+                    <th class="run">执行</th>
+                    <th class="risk">风险/下一步</th>
+                    <th class="actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="orderRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <aside>
+            <div class="card detail">
+              <h2>选中订单详情</h2>
+              <div class="detail-grid">
+                <div class="field"><span>订单</span><b id="dCode">AG-0618-001</b></div>
+                <div class="field"><span>大厅状态</span><b id="dStatus">竞价中</b></div>
+                <div class="field"><span>当前价/报价数</span><b id="dBid">¥460 / 5家</b></div>
+                <div class="field"><span>落拍倒计时</span><b id="dTime">00:38:12</b></div>
+                <div class="field"><span>接单车公司</span><b id="dVendor">未确定</b></div>
+                <div class="field"><span>联系信息</span><b id="dContact">接单后解锁</b></div>
+              </div>
+              <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn primary">查看竞价</button>
+                <button class="btn green">一键催确认</button>
+                <button class="btn">补资料</button>
+                <button class="btn">写备注</button>
+              </div>
+            </div>
+
+            <div class="card queue">
+              <h2>异常队列</h2>
+              <div class="queue-list">
+                <div class="queue-item"><strong>12</strong><div><b>待补资料</b><span class="muted">航班号、儿童座椅、行李数量未完整</span></div></div>
+                <div class="queue-item"><strong>8</strong><div><b>即将落拍</b><span class="muted">30分钟内无人接或价格偏高</span></div></div>
+                <div class="queue-item"><strong>5</strong><div><b>流拍待重发</b><span class="muted">客服调整价格或改一口价</span></div></div>
+                <div class="queue-item"><strong>18</strong><div><b>待财务结算</b><span class="muted">付款完成后释放保证金额度</span></div></div>
+                <div class="queue-item"><strong>3</strong><div><b>客诉/异常</b><span class="muted">平台按双方资料综合判责</span></div></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="page" id="orders">
+        <div class="topbar">
+          <div>
+            <h1>录入、批量录入与大厅状态</h1>
+            <div class="hint">100单/天不能靠单个表单逐条处理，核心应是 Excel/模板导入、字段校验、批量定价、批量上架、异常回流。</div>
+          </div>
+          <div class="toolbar">
+            <button class="btn primary">下载导入模板</button>
+            <button class="btn green">上传 Excel</button>
+            <button class="btn">字段映射</button>
+          </div>
+        </div>
+        <div class="grid" style="grid-template-columns: 1.2fr 1fr 1fr;">
+          <div class="card detail">
+            <h2>批量导入流程</h2>
+            <div class="queue-list">
+              <div class="queue-item"><strong>1</strong><div><b>上传订单表</b><span class="muted">系统识别日期、线路、人数、行李、航班、导游、客人联系方式</span></div></div>
+              <div class="queue-item"><strong>2</strong><div><b>自动校验</b><span class="muted">缺航班、人数不匹配、车型容量不足会进入待补资料</span></div></div>
+              <div class="queue-item"><strong>3</strong><div><b>批量生成价格</b><span class="muted">录入起拍价、一口价，也可按路线模板自动带出建议价</span></div></div>
+              <div class="queue-item"><strong>4</strong><div><b>批量放入大厅</b><span class="muted">发布后旅行社可跟踪竞价中、已接单、流拍、待结算</span></div></div>
+            </div>
+          </div>
+          <div class="card detail">
+            <h2>订单生命周期</h2>
+            <div class="field"><span>未上架</span><b>客服补资料，财务检查额度</b></div>
+            <div class="field" style="margin-top:8px;"><span>竞价中</span><b>展示当前价、报价数、落拍时间</b></div>
+            <div class="field" style="margin-top:8px;"><span>已接单</span><b>解锁车公司电话/微信/负责人</b></div>
+            <div class="field" style="margin-top:8px;"><span>已完成</span><b>确认服务完成，进入结算与互评</b></div>
+          </div>
+          <div class="card detail">
+            <h2>财务额度联动</h2>
+            <div class="field"><span>保证金</span><b>¥100,000</b></div>
+            <div class="field" style="margin-top:8px;"><span>已占用订单金额</span><b>¥37,000</b></div>
+            <div class="field" style="margin-top:8px;"><span>剩余额度</span><b>¥63,000</b></div>
+            <div class="field" style="margin-top:8px;"><span>释放规则</span><b>订单完成并支付车公司后释放额度</b></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="roles">
+        <div class="topbar">
+          <div>
+            <h1>旅行社内部账号分工</h1>
+            <div class="hint">管理账户可以给客服、财务、导游配置权限；免费账号数量内可用，超过数量由平台按账号或套餐收费。</div>
+          </div>
+        </div>
+        <div class="roles">
+          <div class="card role">
+            <h3>管理账户</h3>
+            <ul>
+              <li>查看 100 单全局状态、额度、异常、成本</li>
+              <li>配置客服/财务/导游账号和权限</li>
+              <li>审核批量上架、价格策略、客诉材料</li>
+              <li>查看车公司等级、接单表现与结算风险</li>
+            </ul>
+          </div>
+          <div class="card role">
+            <h3>客服账户</h3>
+            <ul>
+              <li>单条录入、批量导入、补订单资料</li>
+              <li>录入起拍价、一口价、落拍时间</li>
+              <li>跟踪竞价中、已接单、流拍并重新上架</li>
+              <li>与车公司负责人沟通订单变更</li>
+            </ul>
+          </div>
+          <div class="card role">
+            <h3>财务账户</h3>
+            <ul>
+              <li>查看保证金占用、可发单额度</li>
+              <li>订单完成后付款给车公司</li>
+              <li>付款完成后释放该订单额度</li>
+              <li>处理扣款、赔付、发票、月结对账</li>
+            </ul>
+          </div>
+          <div class="card role">
+            <h3>导游账户</h3>
+            <ul>
+              <li>查看自己团队行程、车辆、司机联系</li>
+              <li>确认客人上车、服务开始、服务完成</li>
+              <li>上传现场照片、迟到说明、变更反馈</li>
+              <li>只看相关订单，不看公司全部财务数据</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="mini">
+        <div class="topbar">
+          <div>
+            <h1>小程序端高频订单样式</h1>
+            <div class="hint">小程序不适合展示 100 行大表，应该按角色切成今日待办、异常、详情、联系与确认动作。</div>
+          </div>
+        </div>
+        <div class="phone-zone">
+          <div class="phone"><div class="screen">
+            <div class="screen-head">管理端 今日概览</div>
+            <div class="m-card"><b>今日 100 单</b><span class="pill blue">竞价中 28</span> <span class="pill green">已接 41</span></div>
+            <div class="m-card"><b>异常优先</b>待补资料 12 / 流拍 5 / 客诉 3</div>
+            <div class="m-card"><b>额度</b>剩余 ¥63k，待付款 18 单</div>
+          </div></div>
+          <div class="phone"><div class="screen">
+            <div class="screen-head">客服端 待处理</div>
+            <div class="m-card"><b>AG-0618-022</b>关西机场 T1 -> 大阪市内酒店<br><span class="pill amber">即将落拍</span></div>
+            <div class="m-card"><b>AG-0618-033</b>缺航班号 / 2件行李待确认<br><span class="pill red">补资料</span></div>
+            <div class="m-card"><button class="btn primary" style="width:100%;">批量重发流拍单</button></div>
+          </div></div>
+          <div class="phone"><div class="screen">
+            <div class="screen-head">财务端 结算</div>
+            <div class="m-card"><b>待付款 18 单</b>合计 ¥37,000</div>
+            <div class="m-card"><b>已完成未付</b>付款后自动释放发单额度</div>
+            <div class="m-card"><button class="btn green" style="width:100%;">确认支付并释放</button></div>
+          </div></div>
+          <div class="phone"><div class="screen">
+            <div class="screen-head">导游端 行程</div>
+            <div class="m-card"><b>08:30 接机</b>司机 山田 / 微信 driver-kansai</div>
+            <div class="m-card"><b>游客信息</b>王先生 4人 / 4件行李 / 中文司机</div>
+            <div class="m-card"><button class="btn primary" style="width:100%;">确认已上车</button></div>
+          </div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const routes = [
+      ["关西机场 T1 -> 大阪市内酒店", "中文司机 / 4人 / 4件"],
+      ["大阪市内酒店 -> 关西机场 T2", "普通送机 / 2人 / 2件"],
+      ["京都市内 -> 伊丹机场", "海狮 / 8人 / 8件"],
+      ["神户港 -> 大阪梅田", "邮轮接送 / 儿童座椅"],
+      ["奈良公园 -> 大阪心斋桥", "包车半日 / 中文可机"],
+      ["环球影城 -> 关西机场 T1", "晚间送机 / 5人 / 6件"]
+    ];
+    const states = [
+      ["竞价中", "blue"], ["已接单", "green"], ["流拍", "red"], ["待补资料", "amber"], ["未上架", "gray"], ["待结算", "amber"]
+    ];
+    const vendors = ["未确定", "关西车行A", "大阪接送B", "樱花车队", "京都商务车C"];
+    const owners = ["客服A", "客服B", "客服C", "客服D"];
+    const runStates = ["未开始", "待司机确认", "已开始", "已完成", "待付款"];
+
+    function money(n) { return "¥" + n; }
+    function rowData(i) {
+      const route = routes[i % routes.length];
+      const state = states[i % states.length];
+      const start = 500 + (i % 7) * 40;
+      const buy = start + 60;
+      const current = Math.max(360, start - (i % 5) * 20);
+      const hasVendor = state[0] === "已接单" || state[0] === "待结算";
+      return {
+        i, route, state, start, buy, current,
+        code: "AG-0618-" + String(i).padStart(3, "0"),
+        time: "06-18 " + String(7 + (i % 14)).padStart(2, "0") + ":" + (i % 2 ? "30" : "00"),
+        owner: owners[i % owners.length],
+        bids: 1 + (i % 8),
+        vendor: hasVendor ? vendors[(i % (vendors.length - 1)) + 1] : "接单后解锁",
+        run: runStates[i % runStates.length]
+      };
+    }
+    function renderRows() {
+      const tbody = document.getElementById("orderRows");
+      tbody.innerHTML = "";
+      for (let i = 1; i <= 100; i++) {
+        const d = rowData(i);
+        const tr = document.createElement("tr");
+        tr.className = "order-row" + (i === 1 ? " active" : "");
+        tr.innerHTML = `
+          <td class="check"><input type="checkbox" ${i <= 12 ? "checked" : ""}></td>
+          <td class="num">${String(i).padStart(3, "0")}</td>
+          <td class="code">${d.code}</td>
+          <td class="route"><b>${d.route[0]}</b><span class="muted">${d.route[1]}</span></td>
+          <td class="time">${d.time}</td>
+          <td class="owner">${d.owner}</td>
+          <td class="price"><span class="money">${money(d.start)}</span><br><span class="muted">一口 ${money(d.buy)}</span></td>
+          <td class="market"><span class="pill ${d.state[1]}">${d.state[0]}</span><br><span class="muted">当前 ${money(d.current)} / ${d.bids}家</span></td>
+          <td class="vendor">${d.vendor}<br><span class="muted">${d.vendor === "接单后解锁" ? "电话/微信隐藏" : "电话/微信可见"}</span></td>
+          <td class="run">${d.run}</td>
+          <td class="risk">${riskText(d.state[0], i)}</td>
+          <td class="actions">
+            <button class="mini-btn primary">详情</button>
+            <button class="mini-btn green">${d.state[0] === "流拍" ? "重发" : "跟进"}</button>
+          </td>
+        `;
+        tr.addEventListener("click", () => selectRow(tr, d));
+        tbody.appendChild(tr);
+      }
+    }
+    function riskText(state, i) {
+      if (state === "待补资料") return "补航班/行李后再上架";
+      if (state === "流拍") return "调价或延长落拍时间";
+      if (state === "待结算") return "财务付款后释放额度";
+      if (state === "竞价中" && i % 4 === 0) return "30分钟内落拍";
+      if (state === "已接单") return "同步导游与联系人";
+      return "正常跟踪";
+    }
+    function selectRow(tr, d) {
+      document.querySelectorAll("tr.order-row").forEach(row => row.classList.remove("active"));
+      tr.classList.add("active");
+      document.getElementById("dCode").textContent = d.code;
+      document.getElementById("dStatus").textContent = d.state[0];
+      document.getElementById("dBid").textContent = money(d.current) + " / " + d.bids + "家";
+      document.getElementById("dTime").textContent = d.state[0] === "竞价中" ? "00:" + String(20 + d.i % 39).padStart(2, "0") + ":12" : "-";
+      document.getElementById("dVendor").textContent = d.vendor;
+      document.getElementById("dContact").textContent = d.vendor === "接单后解锁" ? "接单后解锁" : "电话 080-1234-" + String(6000 + d.i) + " / 微信 " + d.vendor;
+    }
+    document.querySelectorAll(".nav button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".nav button").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.page).classList.add("active");
+      });
+    });
+    renderRows();
+  </script>
+</body>
+</html>

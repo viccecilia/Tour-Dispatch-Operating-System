@@ -1,0 +1,243 @@
+@import "../../app.wxss";
+
+.calendar-hero {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  box-shadow: 0 18rpx 42rpx rgba(20, 184, 166, 0.22);
+}
+
+.calendar-summary {
+  margin-top: 18rpx;
+  box-sizing: border-box;
+  border: 1rpx solid var(--c-border);
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: var(--shadow-card);
+}
+
+.calendar-summary {
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  padding: 18rpx 22rpx;
+}
+
+.range-main {
+  min-width: 0;
+}
+
+.range-title {
+  color: #0f172a;
+  font-size: 28rpx;
+  font-weight: 950;
+}
+
+.range-date {
+  margin-top: 4rpx;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  color: #64748b;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.range-date text {
+  color: #94a3b8;
+}
+
+.range-picker {
+  border-radius: 10rpx;
+  padding: 4rpx 6rpx;
+  color: #334155;
+  font-weight: 950;
+}
+
+.range-action {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 10rpx 16rpx;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.weekday-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8rpx;
+  margin-top: 18rpx;
+  padding: 0 2rpx;
+}
+
+.weekday-row view {
+  min-width: 0;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 950;
+  text-align: center;
+}
+
+.weekday-row .holiday {
+  color: #ef4444;
+}
+
+.day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8rpx;
+  margin-top: 8rpx;
+}
+
+.day-card {
+  position: relative;
+  min-width: 0;
+  min-height: 132rpx;
+  box-sizing: border-box;
+  padding: 12rpx 8rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid var(--c-border);
+  background: #ffffff;
+  box-shadow: var(--shadow-card);
+}
+
+.day-card.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+}
+
+.day-card.holiday {
+  border-color: #f1d4d4;
+  background: #ffffff;
+}
+
+.day-card.holiday.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  box-shadow: var(--shadow-card);
+}
+
+.day-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4rpx;
+}
+
+.day-label {
+  color: #334155;
+  font-size: 19rpx;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.day-card.holiday .day-label,
+.day-card.holiday .day-name {
+  color: #dc2626;
+}
+
+.day-name {
+  margin-top: 18rpx;
+  color: #0f172a;
+  font-size: 18rpx;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.day-count {
+  flex: 0 0 auto;
+  min-width: 28rpx;
+  height: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 18rpx;
+  font-weight: 950;
+}
+
+.day-card.holiday .day-count {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.day-card.empty {
+  visibility: hidden;
+  box-shadow: none;
+}
+
+.day-incident {
+  position: absolute;
+  left: 8rpx;
+  bottom: 8rpx;
+  min-width: 28rpx;
+  height: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 18rpx;
+  font-weight: 950;
+}
+
+.day-grid.month .day-card {
+  min-height: 108rpx;
+}
+
+.day-grid.month .day-name {
+  margin-top: 12rpx;
+}
+
+.compact-ledger {
+  margin-top: 18rpx;
+}
+
+.ledger-list {
+  margin-top: 12rpx;
+}
+
+.ledger-row {
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #edf2f7;
+}
+
+.ledger-row:last-child {
+  border-bottom: 0;
+}
+
+.ledger-title {
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 950;
+}
+
+.ledger-route {
+  margin-top: 4rpx;
+  color: #64748b;
+  font-size: 22rpx;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.ledger-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.ledger-fields text {
+  border-radius: 999rpx;
+  padding: 6rpx 10rpx;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 20rpx;
+  font-weight: 850;
+}

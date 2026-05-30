@@ -135,6 +135,7 @@ def submit_driver_report(payload: dict[str, Any]) -> dict[str, Any]:
     location_check = _validate_report_geofence(report_type, assignment, payload)
     if not location_check.get("ok"):
         return {"success": False, "error": "location_out_of_range", "location_check": location_check}
+    report_time = _normalize_event_time(payload.get("report_time"))
 
     with get_connection() as conn:
         cursor = conn.execute(
@@ -143,7 +144,7 @@ def submit_driver_report(payload: dict[str, Any]) -> dict[str, Any]:
                 tenant_id, assignment_id, order_id, driver_id, report_type, report_status,
                 report_time, latitude, longitude, location_text, note, photo_url, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 'submitted', CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 get_current_tenant_id(),
@@ -151,6 +152,7 @@ def submit_driver_report(payload: dict[str, Any]) -> dict[str, Any]:
                 assignment["order_id"],
                 driver_id,
                 report_type,
+                report_time,
                 _optional_float(payload.get("latitude")),
                 _optional_float(payload.get("longitude")),
                 payload.get("location_text"),
@@ -398,6 +400,7 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
     event_type = str(payload.get("event_type") or "").strip()
     if not driver_id or not event_type:
         return {"success": False, "error": "invalid_workflow_event"}
+    event_time = _normalize_event_time(payload.get("event_time"))
 
     assignment = None
     if assignment_id:
@@ -414,7 +417,7 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
                 tenant_id, driver_id, assignment_id, order_id, event_type, event_status,
                 latitude, longitude, location_text, note, event_time, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 get_current_tenant_id(),
@@ -426,6 +429,7 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
                 _optional_float(payload.get("longitude")),
                 payload.get("location_text"),
                 payload.get("note"),
+                event_time,
             ),
         )
         event_id = cursor.lastrowid
@@ -640,7 +644,8 @@ def get_driver_profile(driver_id: Any) -> dict[str, Any]:
             """
             SELECT id, name, driver_code, driver_language, office, phone, email,
                    wechat, line, whatsapp, kakao,
-                   license_due_date, health_check_due_date, driver_status, status
+                   license_due_date, health_check_due_date, license_file_url, health_check_file_url,
+                   driver_status, status
             FROM drivers
             WHERE tenant_id = ? AND id = ?
             """,
@@ -653,7 +658,16 @@ def update_driver_profile(driver_id: Any, payload: dict[str, Any]) -> dict[str, 
     driver_id_int = _to_int(driver_id or payload.get("driver_id"))
     if not driver_id_int:
         return {"success": False, "error": "missing_driver_id"}
-    allowed = ("phone", "wechat", "line", "whatsapp", "kakao")
+    allowed = (
+        "phone",
+        "wechat",
+        "line",
+        "whatsapp",
+        "kakao",
+        "email",
+        "license_due_date",
+        "health_check_due_date",
+    )
     data = {key: str(payload.get(key) or "").strip() for key in allowed if key in payload}
     if not data:
         return {"success": False, "error": "empty_profile_update"}
@@ -672,6 +686,55 @@ def update_driver_profile(driver_id: Any, payload: dict[str, Any]) -> dict[str, 
         return {"success": False, "error": "driver_not_found"}
     profile = get_driver_profile(driver_id_int).get("driver")
     return {"success": True, "driver": profile}
+
+
+def upload_driver_profile_document(payload: dict[str, Any]) -> dict[str, Any]:
+    driver_id = _to_int(payload.get("driver_id"))
+    document_type = str(payload.get("document_type") or "").strip()
+    image_data = str(payload.get("image_base64") or "").strip()
+    if not driver_id or document_type not in {"license", "health_check"} or not image_data:
+        return {"success": False, "error": "invalid_profile_document_request"}
+    try:
+        suffix, raw = _decode_image_payload(image_data)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    file_name = f"driver{driver_id}_{document_type}_{uuid.uuid4().hex[:10]}.{suffix}"
+    file_path = UPLOAD_ROOT / file_name
+    file_path.write_bytes(raw)
+    file_url = f"/uploads/driver_evidence/{file_name}"
+    field = "license_file_url" if document_type == "license" else "health_check_file_url"
+    date_field = "license_due_date" if document_type == "license" else "health_check_due_date"
+    date_value = str(payload.get(date_field) or payload.get("due_date") or "").strip()
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM drivers WHERE tenant_id = ? AND id = ?",
+            (get_current_tenant_id(), driver_id),
+        ).fetchone()
+        if not row:
+            return {"success": False, "error": "driver_not_found"}
+        if date_value:
+            conn.execute(
+                f"""
+                UPDATE drivers
+                SET {field} = ?, {date_field} = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """,
+                (file_url, date_value, get_current_tenant_id(), driver_id),
+            )
+        else:
+            conn.execute(
+                f"""
+                UPDATE drivers
+                SET {field} = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """,
+                (file_url, get_current_tenant_id(), driver_id),
+            )
+        conn.commit()
+    return {"success": True, "file_url": file_url, "driver": get_driver_profile(driver_id).get("driver")}
 
 
 def upload_driver_evidence(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1411,6 +1474,17 @@ def _optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_event_time(value: Any) -> str:
+    text = str(value or "").strip()
+    if text:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+            try:
+                return datetime.strptime(text, fmt).strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _decode_image_payload(image_data: str) -> tuple[str, bytes]:

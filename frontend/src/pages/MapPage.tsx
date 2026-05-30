@@ -1,18 +1,21 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { AlertTriangle, Clock, MapPinned, RadioTower, RefreshCcw, Search, ShieldAlert, UserRound } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
 import type { DriverSafetyAlert, LocationLog } from "@/types/api";
 
 const VEHICLE_LABEL: Record<string, string> = {
-  available: "可用",
+  available: "正常",
   outbound: "已出库",
   in_service: "服务中",
   returned: "已入库",
-  busy: "占用",
+  busy: "正常",
   maintenance: "维修",
-  inactive: "停用",
+  inactive: "正常",
+  retired: "减车",
 };
 
 const EXECUTION_LABEL: Record<string, string> = {
@@ -33,35 +36,11 @@ function labelOf(map: Record<string, string>, value?: string) {
   return value ? map[value] || value : "-";
 }
 
-function positionStyle(location: LocationLog) {
-  const lat = typeof location.latitude === "number" ? location.latitude : 35.68;
-  const lng = typeof location.longitude === "number" ? location.longitude : 139.76;
-  const x = Math.max(7, Math.min(93, ((lng - 134.5) / 7.5) * 100));
-  const y = Math.max(8, Math.min(92, 100 - ((lat - 32.5) / 5.5) * 100));
-  return { left: `${x}%`, top: `${y}%` };
-}
-
 function isRisk(location: LocationLog, alerts: DriverSafetyAlert[]) {
   return (
     location.online_status === "stale" ||
     alerts.some((alert) => Number(alert.driver_id) === Number(location.driver_id) && ["high", "critical"].includes(String(alert.severity || "")))
   );
-}
-
-function markerClass(location: LocationLog, alerts: DriverSafetyAlert[]) {
-  if (isRisk(location, alerts)) return "border-red-300 bg-red-50 text-red-800";
-  if (location.vehicle_status === "in_service") return "border-emerald-300 bg-emerald-50 text-emerald-800";
-  if (location.vehicle_status === "outbound") return "border-blue-300 bg-blue-50 text-blue-800";
-  if (location.vehicle_status === "returned") return "border-slate-300 bg-white text-slate-700";
-  return "border-indigo-300 bg-white text-slate-900";
-}
-
-function markerDot(location: LocationLog, alerts: DriverSafetyAlert[]) {
-  if (isRisk(location, alerts)) return "bg-red-500";
-  if (location.vehicle_status === "in_service") return "bg-emerald-500";
-  if (location.vehicle_status === "outbound") return "bg-blue-500";
-  if (location.vehicle_status === "returned") return "bg-slate-500";
-  return "bg-indigo-500";
 }
 
 export function MapPage() {
@@ -108,7 +87,7 @@ export function MapPage() {
 
   const activeAssignments = filtered.filter((item) => item.assignment_id || item.order_id);
   const nearbyDrivers = filtered
-    .filter((item) => item.online_status === "online" && !["in_service", "busy", "maintenance", "inactive"].includes(String(item.vehicle_status || "")))
+    .filter((item) => item.online_status === "online" && !["in_service", "busy", "retired"].includes(String(item.vehicle_status || "")))
     .slice(0, 8);
   const riskItems = filtered.filter((item) => isRisk(item, alerts)).slice(0, 8);
 
@@ -164,10 +143,7 @@ export function MapPage() {
             className="h-10 rounded-xl border border-border bg-white px-3 text-sm font-semibold text-slate-700"
           >
             <option value="">全部车辆状态</option>
-            <option value="available">可用</option>
-            <option value="outbound">已出库</option>
-            <option value="in_service">服务中</option>
-            <option value="returned">已入库</option>
+            <option value="available">正常</option>
             <option value="maintenance">维修</option>
           </select>
           <button
@@ -189,7 +165,7 @@ export function MapPage() {
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <div className="relative min-h-[680px] overflow-hidden bg-[#dcebf5]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.12),transparent_26%),radial-gradient(circle_at_70%_30%,rgba(16,185,129,0.1),transparent_24%),linear-gradient(90deg,rgba(255,255,255,0.42)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.42)_1px,transparent_1px)] bg-[size:auto,auto,72px_72px,72px_72px]" />
+              <LeafletFleetMap locations={filtered} alerts={alerts} />
               <div className="absolute left-6 top-6 z-10 rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
                 <div className="flex items-center gap-2 text-sm font-black text-slate-950">
                   <MapPinned size={18} className="text-blue-600" />
@@ -198,33 +174,13 @@ export function MapPage() {
                 <div className="mt-1 text-xs font-semibold text-slate-500">蓝：已出库 / 绿：服务中 / 红：风险 / 灰：已入库</div>
               </div>
               <div className="absolute bottom-6 left-6 z-10 max-w-md rounded-2xl border border-white/70 bg-white/90 px-4 py-3 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur">
-                当前为轻量地图运行视图，坐标来自司机端位置上报。后续接入正式地图底图时，marker 和订单覆盖层可以继续复用。
+                正式地图底图已接入，坐标来自司机端位置上报。无坐标的司机会保留在列表中，不显示在地图点位上。
               </div>
-
-              {filtered.length ? (
-                filtered.map((location) => (
-                  <div
-                    key={`${location.driver_id}-${location.id}`}
-                    className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl border px-3 py-2 shadow-lg transition hover:z-30 hover:scale-105 ${markerClass(location, alerts)}`}
-                    style={positionStyle(location)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${markerDot(location, alerts)}`} />
-                      <b className="max-w-32 truncate text-sm">{location.plate_number || `司机 ${location.driver_id}`}</b>
-                    </div>
-                    <div className="mt-1 max-w-44 truncate text-xs opacity-80">
-                      {location.driver_name || "未命名司机"} · {labelOf(EXECUTION_LABEL, location.execution_status)}
-                    </div>
-                    <div className="mt-2 rounded-full bg-white/70 px-2 py-1 text-[11px] font-bold">
-                      {location.location_text || `${coord(location.latitude)}, ${coord(location.longitude)}`}
-                    </div>
-                  </div>
-                ))
-              ) : (
+              {!filtered.some(hasCoordinates) ? (
                 <div className="absolute inset-0 z-10 flex items-center justify-center text-sm font-semibold text-slate-500">
-                  暂无匹配的司机位置
+                  暂无可显示在地图上的司机坐标
                 </div>
-              )}
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -317,6 +273,98 @@ export function MapPage() {
       </Card>
     </div>
   );
+}
+
+function LeafletFleetMap({ locations, alerts }: { locations: LocationLog[]; alerts: DriverSafetyAlert[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const layerRef = useRef<L.LayerGroup | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    const map = L.map(containerRef.current, {
+      center: [34.6937, 135.5023],
+      zoom: 9,
+      zoomControl: true,
+      attributionControl: true,
+    });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+    const layer = L.layerGroup().addTo(map);
+    mapRef.current = map;
+    layerRef.current = layer;
+    setTimeout(() => map.invalidateSize(), 0);
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      layerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = layerRef.current;
+    if (!map || !layer) return;
+    layer.clearLayers();
+    const plotted = locations.filter(hasCoordinates);
+    plotted.forEach((location) => {
+      const color = markerHex(location, alerts);
+      const marker = L.circleMarker([Number(location.latitude), Number(location.longitude)], {
+        radius: 9,
+        color,
+        weight: 3,
+        fillColor: color,
+        fillOpacity: 0.78,
+      });
+      marker.bindTooltip(`${location.plate_number || `司机 ${location.driver_id}`} · ${location.driver_name || "-"}`, {
+        direction: "top",
+        offset: [0, -8],
+      });
+      marker.bindPopup(popupHtml(location, alerts), { maxWidth: 320 });
+      marker.addTo(layer);
+    });
+    if (plotted.length) {
+      const bounds = L.latLngBounds(plotted.map((item) => [Number(item.latitude), Number(item.longitude)] as [number, number]));
+      map.fitBounds(bounds.pad(0.2), { maxZoom: 13, animate: false });
+    } else {
+      map.setView([34.6937, 135.5023], 9);
+    }
+    setTimeout(() => map.invalidateSize(), 0);
+  }, [locations, alerts]);
+
+  return <div ref={containerRef} className="absolute inset-0 z-0" />;
+}
+
+function hasCoordinates(location: LocationLog) {
+  return typeof location.latitude === "number" && typeof location.longitude === "number";
+}
+
+function markerHex(location: LocationLog, alerts: DriverSafetyAlert[]) {
+  if (isRisk(location, alerts)) return "#ef4444";
+  if (location.vehicle_status === "in_service") return "#10b981";
+  if (location.vehicle_status === "outbound") return "#3b82f6";
+  if (location.vehicle_status === "returned") return "#64748b";
+  return "#6366f1";
+}
+
+function popupHtml(location: LocationLog, alerts: DriverSafetyAlert[]) {
+  const risk = isRisk(location, alerts) ? "<span style='color:#dc2626;font-weight:800'>风险</span>" : "正常";
+  return `
+    <div style="min-width:220px;font-family:Arial,'Microsoft YaHei',sans-serif">
+      <div style="font-weight:900;font-size:14px;color:#0f172a">${escapeHtml(location.plate_number || `司机 ${location.driver_id}`)}</div>
+      <div style="margin-top:4px;color:#475569;font-size:12px">${escapeHtml(location.driver_name || "未命名司机")} · ${escapeHtml(labelOf(EXECUTION_LABEL, location.execution_status))}</div>
+      <div style="margin-top:8px;font-size:12px;color:#334155">${escapeHtml(location.location_text || `${coord(location.latitude)}, ${coord(location.longitude)}`)}</div>
+      <div style="margin-top:8px;font-size:12px;color:#64748b">车辆：${escapeHtml(labelOf(VEHICLE_LABEL, location.vehicle_status))} · 状态：${risk}</div>
+      <div style="margin-top:8px;font-size:12px;color:#64748b">更新：${escapeHtml(location.reported_at || "-")}</div>
+      ${location.oid ? `<div style="margin-top:10px;padding:8px;border-radius:8px;background:#f8fafc;color:#334155;font-size:12px"><b>${escapeHtml(location.oid)}</b><br>${escapeHtml(location.pickup_location || "-")} -> ${escapeHtml(location.dropoff_location || "-")}</div>` : ""}
+    </div>
+  `;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] || char));
 }
 
 function Metric({ label, value, tone = "slate" }: { label: string; value: string | number; tone?: "slate" | "green" | "blue" | "indigo" | "red" }) {

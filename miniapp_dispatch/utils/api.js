@@ -1,6 +1,9 @@
 const API_STORAGE_KEY = 'wx_dispatch_api_base_url';
-const DEFAULT_BASE_URL = 'http://localhost:18765';
-const CLOUD_BASE_URL = 'https://api.example.com';
+const ACTIVE_TAB_KEY = 'dispatch_active_tab_path';
+const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
+const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
+const DEFAULT_BASE_URL = TRIAL_BASE_URL;
+const CLOUD_BASE_URL = TRIAL_BASE_URL;
 
 const API_CONFIG = {
   baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
@@ -24,6 +27,10 @@ function resetBaseUrl() {
   API_CONFIG.baseUrl = DEFAULT_BASE_URL;
 }
 
+function setActiveTab(path) {
+  wx.setStorageSync(ACTIVE_TAB_KEY, path);
+}
+
 function getSession() {
   return wx.getStorageSync('dispatcher_session') || null;
 }
@@ -34,6 +41,23 @@ function setSession(session) {
 
 function clearSession() {
   wx.removeStorageSync('dispatcher_session');
+}
+
+function getRole(session = getSession()) {
+  const dispatcher = session && session.dispatcher ? session.dispatcher : {};
+  const user = session && session.user ? session.user : {};
+  return user.role || dispatcher.dispatcher_role || '';
+}
+
+function canAccess(feature, session = getSession()) {
+  const role = getRole(session);
+  const rules = {
+    dispatch: ['admin', 'dispatcher'],
+    map: ['admin', 'dispatcher', 'operations_manager', 'driver'],
+    finance: ['admin'],
+    profile: ['admin', 'dispatcher', 'operations_manager', 'driver']
+  };
+  return (rules[feature] || []).indexOf(role) >= 0;
 }
 
 function request(path, options = {}) {
@@ -73,17 +97,23 @@ function withDispatcher(payload = {}) {
 
 module.exports = {
   API_CONFIG,
+  TRIAL_BASE_URL,
+  LOCAL_BASE_URL,
   setBaseUrl,
   getBaseUrl,
   useCloudBaseUrl,
   resetBaseUrl,
+  setActiveTab,
   getSession,
   setSession,
   clearSession,
+  getRole,
+  canAccess,
   withDispatcher,
   request,
-  login: (username, password, wxOpenid = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_openid: wxOpenid, client_type: wxOpenid ? 'dispatch_miniapp' : 'web' } }),
-  loginPhone: (phone, password, wxOpenid) => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_openid: wxOpenid, client_type: 'dispatch_miniapp' } }),
+  login: (username, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
+  loginPhone: (phone, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
+  loginWechat: (wxCode) => request('/api/dispatch-mobile/wechat-login', { method: 'POST', data: { wx_code: wxCode, client_type: 'dispatch_miniapp' } }),
   registerPhone: (data) => request('/api/auth/register', { method: 'POST', data: { ...data, client_type: data.client_type || 'dispatch_miniapp' } }),
   context: () => request('/api/dispatch-mobile/context'),
   dashboard: () => {
@@ -105,6 +135,17 @@ module.exports = {
     return request(`/api/dispatch-mobile/unassigned-orders${query}`);
   },
   notifications: () => request('/api/dispatch-mobile/notifications'),
+  driverNotifications: (driverId) => request(`/api/driver/notifications?driver_id=${driverId}`),
+  driverAssignments: (driverId) => request(`/api/driver/assignments?driver_id=${driverId}`),
+  driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
+  driverProfile: (driverId) => request(`/api/driver/profile?driver_id=${driverId}`),
+  updateDriverProfile: (data) => request('/api/driver/profile', { method: 'POST', data }),
+  uploadDriverProfileDocument: (data) => request('/api/driver/profile-document', { method: 'POST', data }),
+  driverExpenses: (driverId) => request(`/api/driver/expenses?driver_id=${driverId}`),
+  driverIncome: (driverId) => request(`/api/driver/income?driver_id=${driverId}`),
+  submitDriverReport: (data) => request('/api/driver/report', { method: 'POST', data }),
+  submitDriverWorkflowEvent: (data) => request('/api/driver/workflow-event', { method: 'POST', data }),
+  submitDriverExpense: (data) => request('/api/driver/expense', { method: 'POST', data }),
   auditLogs: () => {
     const session = getSession();
     const dispatcher = session && session.dispatcher ? session.dispatcher : {};

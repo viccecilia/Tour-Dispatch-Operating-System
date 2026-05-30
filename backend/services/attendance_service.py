@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -41,6 +43,88 @@ def get_driver_attendance_daily(target_date: str | None = None) -> dict[str, Any
         "average_constraint_hours": _average([row.get("constraint_hours") for row in rows]),
     }
     return {"date": day.isoformat(), "summary": summary, "rows": rows}
+
+
+def get_driver_attendance_ledger(filters: dict[str, str]) -> dict[str, Any]:
+    start = _parse_date(filters.get("date_from")) or _parse_date(filters.get("start_date")) or date.today()
+    end = _parse_date(filters.get("date_to")) or _parse_date(filters.get("end_date")) or start
+    if end < start:
+        start, end = end, start
+    if (end - start).days > 370:
+        end = start + timedelta(days=370)
+
+    rows: list[dict[str, Any]] = []
+    current = start
+    while current <= end:
+        rows.extend(get_driver_attendance_daily(current.isoformat())["rows"])
+        current += timedelta(days=1)
+
+    keyword = str(filters.get("keyword") or "").strip().lower()
+    risk = str(filters.get("risk") or "").strip()
+    if keyword:
+        rows = [
+            row for row in rows
+            if any(keyword in str(row.get(field) or "").lower() for field in ("driver_name", "driver_code", "driver_phone", "vehicle_plate"))
+        ]
+    if risk:
+        rows = [row for row in rows if str(row.get("sleep_risk_level") or "") == risk]
+
+    rows.sort(key=lambda row: (row.get("date") or "", row.get("vehicle_plate") or "", row.get("driver_name") or ""))
+    summary = {
+        "total_rows": len(rows),
+        "date_from": start.isoformat(),
+        "date_to": end.isoformat(),
+        "departed": sum(1 for row in rows if row.get("depart_time")),
+        "returned": sum(1 for row in rows if row.get("return_time")),
+        "sleep_risk": sum(1 for row in rows if row.get("sleep_risk_level") == "danger"),
+        "missing_report": sum(1 for row in rows if row.get("report_status") == "missing"),
+        "average_constraint_hours": _average([row.get("constraint_hours") for row in rows]),
+    }
+    return {"ok": True, "date_from": start.isoformat(), "date_to": end.isoformat(), "summary": summary, "rows": rows}
+
+
+def export_driver_attendance_csv(filters: dict[str, str]) -> str:
+    ledger = get_driver_attendance_ledger(filters)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "日期",
+        "车牌",
+        "司机",
+        "司机代码/电话",
+        "订单数",
+        "睡眠时间",
+        "出库点呼时间",
+        "出库时间",
+        "入库时间",
+        "休息时间",
+        "入库点呼时间",
+        "每日拘束时间",
+        "前次入库",
+        "休息间隔",
+        "睡眠校验",
+        "说明",
+    ])
+    for row in ledger["rows"]:
+        writer.writerow([
+            row.get("date") or "",
+            row.get("vehicle_plate") or "",
+            row.get("driver_name") or "",
+            row.get("driver_code") or row.get("driver_phone") or "",
+            row.get("assignment_count") or 0,
+            row.get("sleep_hours_reported") if row.get("sleep_hours_reported") is not None else "",
+            row.get("depart_call_time") or "",
+            row.get("depart_time") or "",
+            row.get("return_time") or "",
+            row.get("rest_hours_reported") if row.get("rest_hours_reported") is not None else "",
+            row.get("return_call_time") or "",
+            row.get("constraint_hours") if row.get("constraint_hours") is not None else "",
+            row.get("previous_return_time") or "",
+            row.get("rest_interval_hours") if row.get("rest_interval_hours") is not None else "",
+            row.get("sleep_risk_level") or "",
+            row.get("sleep_risk_message") or "",
+        ])
+    return "\ufeff" + output.getvalue()
 
 
 def _build_driver_row(conn: Any, driver: dict[str, Any], day: date, tenant_id: int) -> dict[str, Any] | None:

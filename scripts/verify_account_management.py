@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.db.database import get_connection, init_db
+from backend.services.auth_service import phone_password_tail
 
 
 BASE_URL = os.environ.get("WX_DISPATCH_BASE_URL", "http://127.0.0.1:18765")
@@ -63,6 +64,20 @@ def prepare_driver(phone: str, suffix: str) -> int:
 
 
 def main() -> None:
+    tail_cases = {
+        "08046447554": "447554",
+        "080-4644-7554": "447554",
+        "090-6058-7891": "587891",
+        "090 6058 7891": "587891",
+    }
+    for phone, expected in tail_cases.items():
+        assert_ok(f"phone_tail_{phone}", phone_tail(phone) == expected, {"phone": phone, "expected": expected, "actual": phone_tail(phone)})
+        assert_ok(
+            f"canonical_phone_password_tail_{phone}",
+            phone_password_tail(phone) == expected,
+            {"phone": phone, "expected": expected, "actual": phone_password_tail(phone)},
+        )
+
     suffix = str(int(time.time()))[-6:]
     phones = {
         "dispatcher": f"090-81-{suffix}",

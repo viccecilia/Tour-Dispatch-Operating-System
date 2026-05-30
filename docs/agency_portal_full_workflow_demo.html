@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>旅行社端完整工作流 Demo</title>
+  <style>
+    :root { --bg:#f3f6fa; --panel:#fff; --ink:#111827; --text:#263247; --muted:#64748b; --line:#d8e1eb; --blue:#2563eb; --green:#13805f; --amber:#af6900; --red:#c53a2f; --soft-blue:#e8f1ff; --soft-green:#e7f7ef; --soft-amber:#fff3dc; --soft-red:#fff0ee; --soft-gray:#eef2f7; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Inter,"Microsoft YaHei","Noto Sans SC",Arial,sans-serif; letter-spacing:0; }
+    .shell { min-height:100vh; display:grid; grid-template-columns:248px minmax(0,1fr); }
+    .side { background:#101827; color:#d9e6f5; padding:18px 14px; border-right:1px solid #263449; }
+    .brand { display:flex; align-items:center; gap:10px; padding:0 6px 18px; border-bottom:1px solid #263449; }
+    .mark { width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg,#2563eb,#16a34a); display:grid; place-items:center; color:#fff; font-weight:900; }
+    .brand b { display:block; color:#fff; font-size:14px; }
+    .brand span { display:block; color:#95a6bd; font-size:12px; margin-top:2px; }
+    .nav { margin-top:18px; display:grid; gap:6px; }
+    .nav button { height:39px; border:0; border-radius:8px; background:transparent; color:#b9c6d9; padding:0 10px; text-align:left; font-weight:800; cursor:pointer; }
+    .nav button:hover,.nav button.active { background:#1d2b42; color:#fff; }
+    .content { min-width:0; padding:22px; }
+    .topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:16px; }
+    h1,h2,h3,p { margin:0; }
+    h1 { color:var(--ink); font-size:24px; line-height:1.2; }
+    .sub { margin-top:6px; color:var(--muted); font-size:13px; line-height:1.5; max-width:860px; }
+    .badges { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+    .badge { display:inline-flex; align-items:center; height:27px; border-radius:999px; padding:0 9px; font-size:12px; font-weight:900; background:var(--soft-gray); color:var(--muted); white-space:nowrap; }
+    .badge.blue { background:var(--soft-blue); color:var(--blue); } .badge.green { background:var(--soft-green); color:var(--green); } .badge.amber { background:var(--soft-amber); color:var(--amber); } .badge.red { background:var(--soft-red); color:var(--red); }
+    .page { display:none; } .page.active { display:block; }
+    .grid { display:grid; grid-template-columns:minmax(420px,.95fr) minmax(560px,1.25fr); gap:16px; align-items:start; }
+    .grid.three { grid-template-columns:minmax(280px,.7fr) minmax(420px,1fr) minmax(300px,.75fr); }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 10px 30px rgba(15,23,42,.06); overflow:hidden; min-width:0; }
+    .panel-head { padding:15px 17px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .panel-head h2 { color:var(--ink); font-size:16px; }
+    .panel-body { padding:17px; }
+    .kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+    .kpi { border:1px solid var(--line); border-radius:8px; background:#fff; padding:11px; min-height:74px; }
+    .kpi small { display:block; color:var(--muted); font-size:11px; font-weight:900; }
+    .kpi strong { display:block; margin-top:7px; color:var(--ink); font-size:21px; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    label { display:grid; gap:6px; color:var(--muted); font-size:12px; font-weight:900; }
+    input,select,textarea { width:100%; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--text); font:inherit; font-size:13px; font-weight:700; outline:none; }
+    input,select { height:38px; padding:0 10px; }
+    textarea { min-height:82px; padding:10px; resize:vertical; }
+    .wide { grid-column:1/-1; }
+    .actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:14px; }
+    .btn { height:36px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--text); padding:0 12px; font-weight:900; cursor:pointer; white-space:nowrap; }
+    .btn.blue { background:var(--blue); color:#fff; border-color:var(--blue); } .btn.green { background:var(--green); color:#fff; border-color:var(--green); } .btn.red { background:var(--red); color:#fff; border-color:var(--red); }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; min-width:980px; border-collapse:collapse; font-size:12px; }
+    th,td { padding:10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#f8fafc; color:var(--muted); font-size:11px; white-space:nowrap; }
+    td b { color:var(--ink); }
+    .dropzone { border:1px dashed #a9bad0; border-radius:8px; background:#fbfdff; padding:18px; text-align:center; color:var(--muted); font-size:13px; line-height:1.6; }
+    .rule-list { display:grid; gap:10px; }
+    .rule { border:1px solid var(--line); border-radius:8px; padding:12px; background:#fff; }
+    .rule b { display:block; color:var(--ink); font-size:13px; margin-bottom:5px; }
+    .rule p { color:var(--muted); font-size:12px; line-height:1.5; }
+    .timeline { display:grid; gap:8px; }
+    .step { display:grid; grid-template-columns:24px 1fr; gap:9px; align-items:start; color:var(--muted); font-size:12px; line-height:1.45; }
+    .step i { width:22px; height:22px; border-radius:50%; background:var(--soft-blue); color:var(--blue); display:grid; place-items:center; font-style:normal; font-weight:900; font-size:11px; }
+    .phone-zone { display:grid; grid-template-columns:repeat(4,minmax(220px,1fr)); gap:14px; align-items:start; }
+    .phone { background:#0f172a; border-radius:28px; padding:10px; box-shadow:0 20px 45px rgba(15,23,42,.16); }
+    .screen { background:#f8fafc; border-radius:21px; min-height:560px; overflow:hidden; border:1px solid #243044; }
+    .phone-head { background:#fff; padding:14px 14px 12px; border-bottom:1px solid var(--line); }
+    .phone-head b { display:block; color:var(--ink); font-size:15px; } .phone-head span { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
+    .phone-body { padding:12px; display:grid; gap:10px; }
+    .mini-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:11px; }
+    .mini-card b { display:block; color:var(--ink); font-size:13px; margin-bottom:5px; }
+    .mini-card p { color:var(--muted); font-size:12px; line-height:1.45; }
+    .mini-btns { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }
+    .mini-btn { height:32px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--text); font-weight:900; font-size:12px; }
+    .mini-btn.primary { background:var(--blue); color:#fff; border-color:var(--blue); } .mini-btn.green { background:var(--green); color:#fff; border-color:var(--green); }
+    @media (max-width:1180px){ .shell{grid-template-columns:1fr;} .grid,.grid.three{grid-template-columns:1fr;} .phone-zone{grid-template-columns:repeat(2,minmax(220px,1fr));} .kpis{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    @media (max-width:720px){ .content{padding:14px;} .topbar{display:block;} .badges{justify-content:flex-start;margin-top:12px;} .form-grid,.phone-zone,.kpis{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand"><div class="mark">A</div><div><b>Agency Portal</b><span>完整工作流 Demo</span></div></div>
+      <nav class="nav">
+        <button class="active" data-page="dashboard">总览</button>
+        <button data-page="create">单条录入</button>
+        <button data-page="batch">批量录入</button>
+        <button data-page="orders">我的订单</button>
+        <button data-page="settlement">结算评价</button>
+        <button data-page="roles">角色分工</button>
+        <button data-page="miniapp">小程序新版</button>
+      </nav>
+    </aside>
+    <main class="content">
+      <div class="topbar">
+        <div><h1>旅行社端完整工作流</h1><p class="sub">旅行社可单条或批量录入订单，设置起拍价和一口价，查看订单是否入大厅、是否接单、是否流拍、执行进度、联系方式、结算和互评。</p></div>
+        <div class="badges"><span class="badge green">A 级旅行社</span><span class="badge blue">系统认证担保</span><span class="badge amber">可用额度 ¥186,000</span></div>
+      </div>
+
+      <section id="dashboard" class="page active">
+        <div class="kpis">
+          <div class="kpi"><small>今日录入</small><strong>26</strong></div><div class="kpi"><small>大厅竞价</small><strong>8</strong></div><div class="kpi"><small>已接单</small><strong>12</strong></div><div class="kpi"><small>流拍</small><strong>2</strong></div><div class="kpi"><small>待结算</small><strong>¥32k</strong></div>
+        </div>
+        <div class="grid">
+          <section class="panel"><div class="panel-head"><h2>订单生命周期</h2><span class="badge blue">从录入到评价</span></div><div class="panel-body"><div class="timeline">
+            <div class="step"><i>1</i><span>客服单条录入或批量导入，填写起拍价和一口价。</span></div>
+            <div class="step"><i>2</i><span>管理账户确认后放入订单大厅，占用授信额度。</span></div>
+            <div class="step"><i>3</i><span>车公司竞价或一口价接单，旅行社看到当前价、报价数量和落拍时间。</span></div>
+            <div class="step"><i>4</i><span>接单后解锁车公司负责人电话/微信，执行中可看司机和车辆信息。</span></div>
+            <div class="step"><i>5</i><span>完成后财务结算，释放额度，双方互评。</span></div>
+          </div></div></section>
+          <section class="panel"><div class="panel-head"><h2>今日重点</h2><span class="badge amber">需要处理</span></div><div class="panel-body table-wrap"><table><thead><tr><th>类型</th><th>数量</th><th>处理动作</th></tr></thead><tbody>
+            <tr><td><b>流拍订单</b></td><td>2</td><td>调整起拍价/一口价，重新上架或联系平台。</td></tr>
+            <tr><td><b>待补资料</b></td><td>3</td><td>客服补航班、酒店、客人电话。</td></tr>
+            <tr><td><b>待付款释放额度</b></td><td>5</td><td>财务确认付款，释放授信额度。</td></tr>
+          </tbody></table></div></section>
+        </div>
+      </section>
+
+      <section id="create" class="page">
+        <div class="grid">
+          <section class="panel"><div class="panel-head"><h2>单条录入订单</h2><span class="badge blue">客服常用</span></div><div class="panel-body">
+            <div class="form-grid">
+              <label>订单类型<select><option>机场接机</option><option>机场送机</option><option>包车</option></select></label><label>是否立即入大厅<select><option>管理确认后发布</option><option>保存草稿</option><option>立即发布</option></select></label>
+              <label>服务日期<input type="date" value="2026-06-18" /></label><label>开始时间<input type="time" value="09:30" /></label>
+              <label>上车地点<input value="关西机场 T1" /></label><label>下车地点<input value="大阪市内酒店" /></label>
+              <label>人数<input type="number" value="4" /></label><label>行李<input type="number" value="4" /></label>
+              <label>车型<select><option>7 座</option><option>海狮</option></select></label><label>语言<select><option>中文司机</option><option>无指定</option></select></label>
+              <label>起拍价<input value="480" /></label><label>一口价<input value="500" /></label>
+              <label>竞价时长<select><option>30 分钟</option><option>1 小时</option><option>2 小时</option></select></label><label>落拍后<select><option>最低价自动成交</option><option>管理账户确认</option></select></label>
+              <label class="wide">客人和备注<textarea>航班 CA927，王先生，090-****-1021，老人同行，需要举牌。</textarea></label>
+            </div>
+            <div class="actions"><button class="btn">保存草稿</button><button class="btn blue">提交管理确认</button><button class="btn green">放入订单大厅</button></div>
+          </div></section>
+          <section class="panel"><div class="panel-head"><h2>发布预览</h2><span class="badge green">大厅字段</span></div><div class="panel-body rule-list">
+            <div class="rule"><b>大厅显示</b><p>关西机场 T1 -> 大阪市内酒店，06-18 09:30，7 座，中文司机，4 人 4 件。</p></div>
+            <div class="rule"><b>价格</b><p>起拍价 ¥480，一口价 ¥500，每次车公司出价默认降低 ¥20。</p></div>
+            <div class="rule"><b>隐私</b><p>成交前隐藏客人电话和旅行社负责人微信；成交后按权限解锁。</p></div>
+          </div></section>
+        </div>
+      </section>
+
+      <section id="batch" class="page">
+        <div class="grid">
+          <section class="panel"><div class="panel-head"><h2>批量录入</h2><span class="badge blue">Excel / 粘贴</span></div><div class="panel-body">
+            <div class="dropzone"><b>拖入 Excel 或 CSV</b><br />字段建议：日期、时间、上车地、下车地、车型、人数、行李、航班、客人、起拍价、一口价、竞价时长。</div>
+            <div class="actions"><button class="btn">下载模板</button><button class="btn blue">导入并预检查</button><button class="btn green">批量放入大厅</button></div>
+          </div></section>
+          <section class="panel"><div class="panel-head"><h2>导入预检</h2><span class="badge amber">3 条需处理</span></div><div class="panel-body table-wrap"><table><thead><tr><th>行</th><th>问题</th><th>建议</th></tr></thead><tbody>
+            <tr><td>12</td><td>缺少一口价</td><td>按起拍价 + ¥40 自动补齐或手动修改。</td></tr>
+            <tr><td>19</td><td>客人电话为空</td><td>允许先发大厅，成交后必须补齐。</td></tr>
+            <tr><td>22</td><td>起拍价高于一口价</td><td>阻止发布，需修正价格。</td></tr>
+          </tbody></table></div></section>
+        </div>
+      </section>
+
+      <section id="orders" class="page">
+        <section class="panel"><div class="panel-head"><h2>我的订单状态</h2><span class="badge green">本旅行社隔离</span></div><div class="panel-body table-wrap"><table><thead><tr><th>订单</th><th>大厅状态</th><th>起拍/一口</th><th>当前价</th><th>接单方</th><th>执行</th><th>联系方式</th><th>操作</th></tr></thead><tbody>
+          <tr><td><b>AG-0618-022</b><br />KIX -> 大阪</td><td><span class="badge amber">竞价中</span><br />00:42 落拍</td><td>¥480 / ¥500</td><td>¥460<br />3 家报价</td><td>未成交</td><td>未开始</td><td>成交后解锁</td><td><button class="btn">调价</button></td></tr>
+          <tr><td><b>AG-0618-019</b><br />大阪 -> KIX</td><td><span class="badge green">已接单</span><br />一口价</td><td>¥500 / ¥500</td><td>¥500</td><td>樱花交通</td><td>待开始</td><td>负责人：田中<br />TEL 080-1111<br />微信 sakura-car</td><td><button class="btn">联系</button></td></tr>
+          <tr><td><b>AG-0617-031</b><br />京都 -> 伊丹</td><td><span class="badge blue">执行中</span></td><td>¥680 / ¥720</td><td>¥660</td><td>大阪联运</td><td>司机已到达</td><td>司机：山本<br />TEL 090-2222</td><td><button class="btn">看轨迹</button></td></tr>
+          <tr><td><b>AG-0617-026</b><br />奈良包车</td><td><span class="badge green">已完成</span></td><td>¥800 / ¥880</td><td>¥780</td><td>关西车队</td><td>已完成</td><td>已归档</td><td><button class="btn green">结算</button></td></tr>
+          <tr><td><b>AG-0616-018</b><br />神户 -> 大阪</td><td><span class="badge red">流拍</span></td><td>¥420 / ¥480</td><td>无有效报价</td><td>-</td><td>未开始</td><td>-</td><td><button class="btn blue">重新上架</button></td></tr>
+        </tbody></table></div></section>
+      </section>
+
+      <section id="settlement" class="page">
+        <div class="grid">
+          <section class="panel"><div class="panel-head"><h2>结算</h2><span class="badge blue">付款后释放额度</span></div><div class="panel-body table-wrap"><table><thead><tr><th>订单</th><th>车公司</th><th>成交价</th><th>状态</th><th>额度</th><th>操作</th></tr></thead><tbody>
+            <tr><td>AG-0617-026</td><td>关西车队</td><td>¥780</td><td>待付款</td><td>付款后释放</td><td><button class="btn green">确认付款</button></td></tr>
+            <tr><td>AG-0617-020</td><td>樱花交通</td><td>¥500</td><td>已付款</td><td>已释放</td><td><button class="btn">查看凭证</button></td></tr>
+          </tbody></table></div></section>
+          <section class="panel"><div class="panel-head"><h2>互相评价</h2><span class="badge green">完成后评价</span></div><div class="panel-body rule-list">
+            <div class="rule"><b>旅行社评价车公司</b><p>准时、车辆、司机态度、沟通、是否按订单执行。</p></div>
+            <div class="rule"><b>车公司评价旅行社</b><p>订单资料准确、变更是否及时、客人是否迟到、结算是否及时。</p></div>
+            <div class="rule"><b>平台使用方式</b><p>评价进入双方等级和风控记录，但客诉扣分必须经过证据仲裁。</p></div>
+          </div></section>
+        </div>
+      </section>
+
+      <section id="roles" class="page">
+        <div class="grid three">
+          <section class="panel"><div class="panel-head"><h2>客服端职责</h2><span class="badge blue">录单沟通</span></div><div class="panel-body rule-list">
+            <div class="rule"><b>负责</b><p>单条录入、批量导入、补航班/酒店/客人信息、跟进大厅状态、与平台沟通。</p></div>
+            <div class="rule"><b>可配置</b><p>是否允许改价、取消、重新上架、查看联系方式、发起客诉。</p></div>
+          </div></section>
+          <section class="panel"><div class="panel-head"><h2>财务端职责</h2><span class="badge green">结算额度</span></div><div class="panel-body rule-list">
+            <div class="rule"><b>负责</b><p>查看账单、确认付款、上传凭证、查看保证金/授信占用、处理赔付冻结。</p></div>
+            <div class="rule"><b>不负责</b><p>不默认录单、改行程、联系司机。</p></div>
+          </div></section>
+          <section class="panel"><div class="panel-head"><h2>导游端职责</h2><span class="badge amber">现场执行</span></div><div class="panel-body rule-list">
+            <div class="rule"><b>可看</b><p>行程、司机姓名电话、车牌、集合点、航班、客人必要联系人。</p></div>
+            <div class="rule"><b>可做</b><p>联系司机、确认接到客人、上传客人迟到/超行李/临时改点等现场证据。</p></div>
+          </div></section>
+        </div>
+      </section>
+
+      <section id="miniapp" class="page">
+        <div class="phone-zone">
+          <div class="phone"><div class="screen"><div class="phone-head"><b>客服小程序</b><span>录单 / 补资料 / 跟进大厅</span></div><div class="phone-body">
+            <div class="mini-card"><b>快速录单</b><p>KIX -> 大阪，起拍 ¥480，一口 ¥500，30 分钟落拍。</p><div class="mini-btns"><button class="mini-btn primary">提交</button><button class="mini-btn">草稿</button></div></div>
+            <div class="mini-card"><b>批量导入</b><p>拍照/上传 Excel，系统检查缺字段和价格异常。</p><div class="mini-btns"><button class="mini-btn primary">导入</button><button class="mini-btn">模板</button></div></div>
+            <div class="mini-card"><b>大厅状态</b><p>8 单竞价中，2 单流拍，3 单待补资料。</p></div>
+          </div></div></div>
+          <div class="phone"><div class="screen"><div class="phone-head"><b>管理小程序</b><span>审核发布 / 调价 / 重新上架</span></div><div class="phone-body">
+            <div class="mini-card"><b>待确认发布</b><p>客服提交 5 单，需确认起拍价和一口价。</p><div class="mini-btns"><button class="mini-btn primary">批量发布</button><button class="mini-btn">查看</button></div></div>
+            <div class="mini-card"><b>流拍处理</b><p>AG-0616-018 无有效报价，可调价重新上架。</p><div class="mini-btns"><button class="mini-btn primary">重新上架</button><button class="mini-btn">联系平台</button></div></div>
+          </div></div></div>
+          <div class="phone"><div class="screen"><div class="phone-head"><b>导游小程序</b><span>行程 / 司机 / 现场反馈</span></div><div class="phone-body">
+            <div class="mini-card"><b>今日行程</b><p>09:30 KIX 接王先生，司机山本，车牌 大阪500。</p><div class="mini-btns"><button class="mini-btn primary">联系司机</button><button class="mini-btn">导航</button></div></div>
+            <div class="mini-card"><b>现场反馈</b><p>客人临时增加 2 件行李，已拍照上传。</p><div class="mini-btns"><button class="mini-btn primary">上传</button><button class="mini-btn">确认上车</button></div></div>
+          </div></div></div>
+          <div class="phone"><div class="screen"><div class="phone-head"><b>财务小程序</b><span>结算 / 额度 / 评价</span></div><div class="phone-body">
+            <div class="mini-card"><b>待付款</b><p>关西车队 ¥780，付款后释放额度。</p><div class="mini-btns"><button class="mini-btn green">确认付款</button><button class="mini-btn">凭证</button></div></div>
+            <div class="mini-card"><b>待评价</b><p>AG-0617-026 已完成，请评价车公司。</p><div class="mini-btns"><button class="mini-btn primary">评价</button><button class="mini-btn">稍后</button></div></div>
+          </div></div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll(".nav button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const page = button.dataset.page;
+        document.querySelectorAll(".nav button").forEach((item) => item.classList.toggle("active", item === button));
+        document.querySelectorAll(".page").forEach((item) => item.classList.toggle("active", item.id === page));
+      });
+    });
+  </script>
+</body>
+</html>

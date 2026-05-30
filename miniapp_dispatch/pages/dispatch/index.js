@@ -41,7 +41,20 @@ Page({
   _tapTimer: null,
 
   onShow() {
+    api.setActiveTab('/pages/dispatch/index');
+    this.refreshTabBar();
+    if (!api.canAccess('dispatch')) {
+      wx.showToast({ title: '当前账号没有派车权限', icon: 'none' });
+      wx.switchTab({ url: '/pages/index/index' });
+      return;
+    }
     this.loadAll();
+  },
+
+  refreshTabBar() {
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().refresh();
+    }
   },
 
   toggleImport() {
@@ -491,6 +504,21 @@ Page({
       .catch(() => {
         this.setData({ loading: false, conflictText: '派车失败，请检查冲突或后端连接。' });
       });
+  },
+
+  reassignSelected() {
+    if (!this.data.canAssign) {
+      wx.showToast({ title: '请选择订单、司机和车辆', icon: 'none' });
+      return;
+    }
+    wx.showModal({
+      title: '重新分配订单',
+      content: '确认将已选订单重新分配给当前司机和车辆？',
+      confirmText: '重新分配',
+      success: (res) => {
+        if (res.confirm) this.assignSelected();
+      }
+    });
   },
 
   getSelectedWindows() {

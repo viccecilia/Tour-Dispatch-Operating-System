@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from backend.db.database import get_connection
@@ -26,6 +26,8 @@ DRIVER_FIELDS = [
     "email",
     "license_due_date",
     "health_check_due_date",
+    "license_file_url",
+    "health_check_file_url",
     "license_expires_at",
     "medical_check_expires_at",
 ]
@@ -55,6 +57,8 @@ RESOURCE_COLUMNS = {
         "driver_status": "TEXT",
         "license_due_date": "TEXT",
         "health_check_due_date": "TEXT",
+        "license_file_url": "TEXT",
+        "health_check_file_url": "TEXT",
         "license_expires_at": "TEXT",
         "medical_check_expires_at": "TEXT",
         "driver_external_id": "TEXT",
@@ -90,10 +94,10 @@ def list_drivers(status: str | None = None) -> list[dict[str, Any]]:
         SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
                driver_external_id, license_number, residence_status, residence_due_date,
                health_check_remaining_days, wechat, line, whatsapp, kakao, email,
-               license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at,
+               license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
                created_at, updated_at
         FROM drivers
-        WHERE tenant_id = ? AND COALESCE(status, '') != 'deleted'
+        WHERE tenant_id = ? AND COALESCE(status, '') NOT IN ('deleted', 'retired')
         """
     ]
     params: list[Any] = [get_current_tenant_id()]
@@ -115,9 +119,9 @@ def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
                 tenant_id, name, phone, status, driver_status, driver_code, driver_language, office,
                 driver_external_id, license_number, residence_status, residence_due_date,
                 health_check_remaining_days, wechat, line, whatsapp, kakao, email,
-                license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at, updated_at
+                license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 get_current_tenant_id(),
@@ -140,6 +144,8 @@ def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
                 data.get("email"),
                 data.get("license_due_date"),
                 data.get("health_check_due_date"),
+                data.get("license_file_url"),
+                data.get("health_check_file_url"),
                 data.get("license_expires_at"),
                 data.get("medical_check_expires_at"),
             ),
@@ -160,7 +166,7 @@ def get_driver(driver_id: str) -> Optional[dict[str, Any]]:
             SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
                    driver_external_id, license_number, residence_status, residence_due_date,
                    health_check_remaining_days, wechat, line, whatsapp, kakao, email,
-                   license_due_date, health_check_due_date, license_expires_at, medical_check_expires_at,
+                   license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
                    created_at, updated_at
             FROM drivers
             WHERE id = ? AND tenant_id = ?
@@ -218,14 +224,14 @@ def list_vehicles(status: str | None = None) -> list[dict[str, Any]]:
                insurance_due_date, inspection_expires_at, insurance_expires_at, maintenance_status,
                created_at, updated_at
         FROM vehicles
-        WHERE tenant_id = ? AND COALESCE(status, '') != 'deleted'
+        WHERE tenant_id = ? AND COALESCE(status, '') NOT IN ('deleted', 'retired')
         """
     ]
     params: list[Any] = [get_current_tenant_id()]
     if status:
         sql.append("AND status = ?")
         params.append(status)
-    sql.append("ORDER BY CASE status WHEN 'available' THEN 0 WHEN 'busy' THEN 1 WHEN 'maintenance' THEN 2 ELSE 3 END, id")
+    sql.append("ORDER BY CASE status WHEN 'available' THEN 0 WHEN 'maintenance' THEN 1 ELSE 2 END, id")
     with get_connection() as conn:
         return [_with_resource_alert(dict(row), "vehicle") for row in conn.execute(" ".join(sql), params).fetchall()]
 
@@ -347,20 +353,108 @@ def delete_vehicle(vehicle_id: str) -> bool:
     return True
 
 
+def create_vehicle_inspection_record(vehicle_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    vehicle = get_vehicle(vehicle_id)
+    if not vehicle:
+        return None
+    record = _normalize_inspection_record(payload)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO vehicle_inspection_records (
+                tenant_id, vehicle_id, inspection_type, inspection_date, source, note, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                get_current_tenant_id(),
+                _to_int(vehicle_id),
+                record["inspection_type"],
+                record["inspection_date"],
+                record.get("source"),
+                record.get("note"),
+            ),
+        )
+        conn.commit()
+        record_id = cursor.lastrowid
+    _refresh_vehicle_dates_from_records(_to_int(vehicle_id))
+    return get_vehicle_inspection_record(record_id)
+
+
+def update_vehicle_inspection_record(record_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    before = get_vehicle_inspection_record(record_id)
+    if not before:
+        return None
+    record = _normalize_inspection_record({**before, **payload})
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE vehicle_inspection_records
+            SET inspection_type = ?,
+                inspection_date = ?,
+                source = ?,
+                note = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (
+                record["inspection_type"],
+                record["inspection_date"],
+                record.get("source"),
+                record.get("note"),
+                get_current_tenant_id(),
+                _to_int(record_id),
+            ),
+        )
+        conn.commit()
+    _refresh_vehicle_dates_from_records(int(before["vehicle_id"]))
+    return get_vehicle_inspection_record(record_id)
+
+
+def delete_vehicle_inspection_record(record_id: str) -> bool:
+    before = get_vehicle_inspection_record(record_id)
+    if not before:
+        return False
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM vehicle_inspection_records WHERE tenant_id = ? AND id = ?",
+            (get_current_tenant_id(), _to_int(record_id)),
+        )
+        conn.commit()
+    _refresh_vehicle_dates_from_records(int(before["vehicle_id"]))
+    return cursor.rowcount > 0
+
+
+def get_vehicle_inspection_record(record_id: int | str) -> dict[str, Any] | None:
+    _ensure_resource_columns()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, vehicle_id, inspection_type, inspection_date, source, note, created_at, updated_at
+            FROM vehicle_inspection_records
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (get_current_tenant_id(), _to_int(record_id)),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def get_resource_reminders() -> dict[str, Any]:
     settings = get_reminder_settings()
     drivers = list_drivers()
     vehicles = list_vehicles()
     alerts = []
     for driver in drivers:
-        for field, label, days_key in (
-            ("license_due_date", "驾照到期", "driver_license_days"),
-            ("health_check_due_date", "健康体检到期", "driver_health_check_days"),
+        for field, label, value, days_key in (
+            ("license_due_date", "驾照到期", driver.get("license_due_date"), "driver_license_days"),
+            ("health_check_due_date", "健康体检到期", driver.get("medical_check_expires_at") or _health_check_expiry_365_days(driver.get("health_check_due_date")), "driver_health_check_days"),
         ):
-            alert = _expiry_alert(driver.get(field), int(settings[days_key]))
+            alert = _expiry_alert(value, int(settings[days_key]))
             if alert:
                 alerts.append({"type": "driver", "id": driver["id"], "name": driver["name"], "field": field, "label": label, **alert})
     for vehicle in vehicles:
+        if vehicle.get("status") == "retired":
+            continue
         for field, label, days_key in (
             ("next_inspection_due_date", "三个月点检到期", "vehicle_inspection_days"),
             ("shaken_due_date", "一年车检到期", "vehicle_shaken_days"),
@@ -396,8 +490,6 @@ def _normalize_driver(payload: dict[str, Any], partial: bool) -> dict[str, Any]:
     mapped = dict(payload)
     if "license_due_date" not in mapped and mapped.get("license_expires_at"):
         mapped["license_due_date"] = mapped["license_expires_at"]
-    if "health_check_due_date" not in mapped and mapped.get("medical_check_expires_at"):
-        mapped["health_check_due_date"] = mapped["medical_check_expires_at"]
     if "driver_status" not in mapped and mapped.get("status"):
         mapped["driver_status"] = mapped["status"]
     if "status" not in mapped and mapped.get("driver_status"):
@@ -412,10 +504,11 @@ def _normalize_driver(payload: dict[str, Any], partial: bool) -> dict[str, Any]:
         if field in data:
             data[field] = _normalize_date(data[field])
     if data.get("health_check_due_date"):
-        due = _parse_iso_date(data.get("health_check_due_date"))
-        data["health_check_remaining_days"] = (due - date.today()).days if due else data.get("health_check_remaining_days")
+        expiry = _parse_iso_date(_health_check_expiry_365_days(data.get("health_check_due_date")))
+        data["medical_check_expires_at"] = expiry.isoformat() if expiry else data.get("medical_check_expires_at")
+        data["health_check_remaining_days"] = (expiry - date.today()).days if expiry else data.get("health_check_remaining_days")
     data["license_expires_at"] = data.get("license_expires_at") or data.get("license_due_date")
-    data["medical_check_expires_at"] = data.get("medical_check_expires_at") or data.get("health_check_due_date")
+    data["medical_check_expires_at"] = data.get("medical_check_expires_at") or _health_check_expiry_365_days(data.get("health_check_due_date"))
     return _strip_strings(data)
 
 
@@ -440,6 +533,8 @@ def _normalize_vehicle(payload: dict[str, Any], partial: bool) -> dict[str, Any]
     if not partial and not str(data.get("plate_number", "")).strip():
         raise ValueError("missing_plate_number")
     data.setdefault("status", "available")
+    if data.get("status") not in {"available", "maintenance", "retired"}:
+        data["status"] = "available"
     if "seat_count" in data:
         data["seat_count"] = 0 if data["seat_count"] in ("", None) else int(data["seat_count"])
     for field in (
@@ -523,6 +618,13 @@ def _normalize_inspection_records(records: Any) -> list[dict[str, Any]] | None:
     return normalized
 
 
+def _normalize_inspection_record(record: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_inspection_records([record])
+    if not normalized:
+        raise ValueError("inspection_date_required")
+    return normalized[0]
+
+
 def _derive_vehicle_dates(mapped: dict[str, Any], records: list[dict[str, Any]] | None) -> dict[str, str | None]:
     valid_records = records or []
     dates = []
@@ -541,7 +643,7 @@ def _derive_vehicle_dates(mapped: dict[str, Any], records: list[dict[str, Any]] 
     # 车检本身也算一次点检，所以最近一次记录不区分点检/车检。
     return {
         "last_inspection_date": latest_any.isoformat(),
-        "next_inspection_due_date": _add_months(latest_any, 3).isoformat(),
+        "next_inspection_due_date": (latest_any + timedelta(days=90)).isoformat(),
         "shaken_due_date": _add_years(latest_shaken, 1).isoformat() if latest_shaken else mapped.get("shaken_due_date"),
     }
 
@@ -589,6 +691,31 @@ def _vehicle_records(vehicle_id: int) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _refresh_vehicle_dates_from_records(vehicle_id: int) -> None:
+    records = _vehicle_records(vehicle_id)
+    derived = {key: value for key, value in _derive_vehicle_dates({}, records).items() if value}
+    if not derived:
+        return
+    assignments = ", ".join(f"{field} = ?" for field in derived)
+    with get_connection() as conn:
+        conn.execute(
+            f"""
+            UPDATE vehicles
+            SET {assignments},
+                inspection_expires_at = COALESCE(?, inspection_expires_at),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            [
+                *[derived[field] for field in derived],
+                derived.get("next_inspection_due_date"),
+                get_current_tenant_id(),
+                vehicle_id,
+            ],
+        )
+        conn.commit()
+
+
 def _normalize_date(value: Any) -> str | None:
     if value in ("", None):
         return None
@@ -627,16 +754,24 @@ def _with_resource_alert(row: dict[str, Any], resource_type: str) -> dict[str, A
     settings = get_reminder_settings()
     if resource_type == "driver":
         row["license_due_date"] = row.get("license_due_date") or row.get("license_expires_at")
-        row["health_check_due_date"] = row.get("health_check_due_date") or row.get("medical_check_expires_at")
+        row["health_check_due_date"] = row.get("health_check_due_date")
+        row["medical_check_expires_at"] = _health_check_expiry_365_days(row.get("health_check_due_date")) or row.get("medical_check_expires_at")
+        expiry = _parse_iso_date(row.get("medical_check_expires_at"))
+        if expiry:
+            row["health_check_remaining_days"] = (expiry - date.today()).days
         row["driver_status"] = row.get("driver_status") or row.get("status")
         alerts = [
             _named_alert("license_due_date", "驾照到期", row.get("license_due_date"), int(settings["driver_license_days"])),
-            _named_alert("health_check_due_date", "健康体检到期", row.get("health_check_due_date"), int(settings["driver_health_check_days"])),
+            _named_alert("health_check_due_date", "健康体检到期", row.get("medical_check_expires_at"), int(settings["driver_health_check_days"])),
         ]
     else:
-        row["next_inspection_due_date"] = row.get("next_inspection_due_date") or row.get("inspection_expires_at")
+        row["next_inspection_due_date"] = _inspection_due_90_days(row.get("last_inspection_date")) or row.get("next_inspection_due_date") or row.get("inspection_expires_at")
         row["insurance_due_date"] = row.get("insurance_due_date") or row.get("insurance_expires_at")
         row["inspection_records"] = _vehicle_records(int(row["id"]))
+        if row.get("status") == "retired":
+            row["alerts"] = []
+            row["alert_level"] = "ok"
+            return row
         alerts = [
             _named_alert("next_inspection_due_date", "三个月点检到期", row.get("next_inspection_due_date"), int(settings["vehicle_inspection_days"])),
             _named_alert("shaken_due_date", "一年车检到期", row.get("shaken_due_date"), int(settings["vehicle_shaken_days"])),
@@ -676,6 +811,20 @@ def _expiry_alert(value: Any, days: int) -> dict[str, Any] | None:
     if days_left <= days:
         return {"status": "upcoming", "date": expiry.isoformat(), "days_left": days_left, "message": f"{days_left} 天后到期"}
     return None
+
+
+def _inspection_due_90_days(value: Any) -> str:
+    parsed = _parse_iso_date(value)
+    if not parsed:
+        return ""
+    return (parsed + timedelta(days=90)).isoformat()
+
+
+def _health_check_expiry_365_days(value: Any) -> str:
+    parsed = _parse_iso_date(value)
+    if not parsed:
+        return ""
+    return (parsed + timedelta(days=365)).isoformat()
 
 
 def _alert_level(alerts: list[dict[str, Any]]) -> str:

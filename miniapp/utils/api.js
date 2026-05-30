@@ -1,6 +1,8 @@
 const API_STORAGE_KEY = 'wx_dispatch_api_base_url';
-const DEFAULT_BASE_URL = 'http://localhost:18765';
-const CLOUD_BASE_URL = 'https://api.example.com';
+const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
+const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
+const DEFAULT_BASE_URL = TRIAL_BASE_URL;
+const CLOUD_BASE_URL = TRIAL_BASE_URL;
 
 const API_CONFIG = {
   baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
@@ -42,6 +44,8 @@ function request(path, options = {}) {
 
 module.exports = {
   API_CONFIG,
+  TRIAL_BASE_URL,
+  LOCAL_BASE_URL,
   setBaseUrl,
   getBaseUrl,
   useCloudBaseUrl,
@@ -51,9 +55,9 @@ module.exports = {
     method: 'POST',
     data: { username, password }
   }),
-  loginPhone: (phone, password, wxOpenid) => request('/api/auth/login-phone', {
+  loginPhone: (phone, password, wxCode) => request('/api/auth/login-phone', {
     method: 'POST',
-    data: { phone, password, wx_openid: wxOpenid, client_type: 'driver_miniapp' }
+    data: { phone, password, wx_code: wxCode, client_type: 'driver_miniapp' }
   }),
   registerPhone: (data) => request('/api/auth/register', {
     method: 'POST',

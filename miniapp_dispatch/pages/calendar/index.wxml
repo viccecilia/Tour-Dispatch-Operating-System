@@ -1,0 +1,69 @@
+<view class="page calendar-page">
+  <view class="hero calendar-hero">
+    <view class="hero-eyebrow">OPERATIONS CALENDAR</view>
+    <view class="hero-title">出勤日历</view>
+    <view class="hero-meta">默认显示一周，下拉页面切换整月；日本周末和祝日用红色标注。</view>
+  </view>
+
+  <view class="calendar-summary">
+    <view class="range-main">
+      <view class="range-title">{{rangeLabel}}</view>
+      <view class="range-date">
+        <picker mode="date" value="{{dateFrom}}" bindchange="onDateFrom">
+          <view class="range-picker">{{dateFrom}}</view>
+        </picker>
+        <text>至</text>
+        <picker mode="date" value="{{dateTo}}" bindchange="onDateTo">
+          <view class="range-picker">{{dateTo}}</view>
+        </picker>
+      </view>
+    </view>
+    <view class="range-action" bindtap="toggleRange">{{mode === 'month' ? '收回一周' : '展开整月'}}</view>
+  </view>
+
+  <view class="weekday-row">
+    <view wx:for="{{weekdayHeaders}}" wx:key="*this" class="{{item.holiday ? 'holiday' : ''}}">{{item.label}}</view>
+  </view>
+
+  <view class="day-grid {{mode === 'month' ? 'month' : 'week'}}">
+    <view wx:for="{{calendarDays}}" wx:key="key" class="day-card {{item.empty ? 'empty' : ''}} {{item.active ? 'active' : ''}} {{item.holiday ? 'holiday' : ''}}" data-date="{{item.date}}" bindtap="selectDay">
+      <view class="day-top">
+        <view>
+          <view class="day-label">{{item.label}}</view>
+        </view>
+        <view class="day-count">{{item.attendanceCount}}</view>
+      </view>
+      <view wx:if="{{item.holidayName || item.attendanceCount}}" class="day-name">{{item.holidayName || '出勤'}}</view>
+      <view wx:if="{{item.incidentCount}}" class="day-incident">{{item.incidentCount}}</view>
+    </view>
+  </view>
+
+  <view class="panel compact-ledger">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">{{selectedDate}} 出勤列表</view>
+        <view class="muted">一条出勤信息一行，包含司机、车辆、睡眠、点呼、出入库和休息时间。</view>
+      </view>
+      <view class="soft-count">{{dayRows.length}} 条</view>
+    </view>
+    <view class="ledger-list">
+      <view wx:for="{{dayRows}}" wx:key="id" class="ledger-row">
+        <view class="ledger-main">
+          <view class="ledger-title">{{item.time}} · {{item.driver}} · {{item.vehicle}}</view>
+          <view class="ledger-route">{{item.route}}</view>
+        </view>
+        <view class="ledger-fields">
+          <text>睡眠 {{item.sleep}}</text>
+          <text>点呼 {{item.departCall}}</text>
+          <text>出库 {{item.departTime}}</text>
+          <text>入库 {{item.returnTime}}</text>
+          <text>休息 {{item.rest}}</text>
+          <text>{{item.status}}</text>
+        </view>
+      </view>
+      <view wx:if="{{!dayRows.length}}" class="empty-state">当天暂无出勤记录</view>
+    </view>
+  </view>
+
+  <custom-tab-bar />
+</view>

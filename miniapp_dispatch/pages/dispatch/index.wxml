@@ -14,6 +14,8 @@
   <view class="toolbar">
     <button class="tool-button primary" bindtap="toggleImport">{{importOpen ? '收起导入' : '批量导入'}}</button>
     <button class="tool-button" bindtap="toggleSortMode">{{sortMode ? '完成排序' : '排序'}}</button>
+    <button class="tool-button dispatch-top {{canAssign ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">批量分配订单</button>
+    <button class="tool-button reassign-top {{canAssign ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="reassignSelected">重新分配订单</button>
   </view>
 
   <view wx:if="{{importOpen}}" class="panel import-panel">
@@ -174,11 +176,12 @@
   <view wx:if="{{selectedKeys.length > 0}}" class="dispatch-preview">
     <view>
       <view class="preview-title">{{preview.orderCount}} 单 → {{preview.driverName}} → {{preview.vehicleName}}</view>
-      <view class="preview-sub">先入库草稿，也可以直接派车，系统会自动确认草稿。</view>
+      <view class="preview-sub">{{canAssign ? '司机和车辆已选，可以派单。' : '请在下方选择司机和车辆。'}}</view>
     </view>
     <view class="preview-actions">
-      <button class="dispatch-button secondary" loading="{{loading}}" bindtap="confirmSelectedDrafts">入库</button>
-      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">派车</button>
+      <button class="dispatch-button secondary" loading="{{loading}}" bindtap="confirmSelectedDrafts">确认草稿</button>
+      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">批量分配</button>
+      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="reassignSelected">重新分配</button>
     </view>
   </view>
 </view>

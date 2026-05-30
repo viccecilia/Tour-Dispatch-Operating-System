@@ -7,6 +7,7 @@ from backend.services.tenant_context import get_current_tenant_id
 
 
 LEGEND = [
+    {"key": "unconfirmed", "label": "未确认", "color": "#f59e0b"},
     {"key": "airport_pickup", "label": "接机", "color": "#2563eb"},
     {"key": "airport_dropoff", "label": "送机", "color": "#16a34a"},
     {"key": "charter", "label": "包车", "color": "#7c3aed"},
@@ -21,6 +22,18 @@ def get_dispatch_calendar(filters: dict[str, str]) -> dict[str, Any]:
     base_date = _parse_date(filters.get("date"))
     start_date, end_date = _date_range(view, base_date)
     items = _query_calendar_items(filters, start_date, end_date)
+    vehicles = _list_vehicles()
+    if any(_is_unconfirmed_row(item) and not item.get("vehicle_id") for item in items):
+        vehicles = [
+            {
+                "id": 0,
+                "plate_number": "未确认订单",
+                "vehicle_type": "未分配",
+                "seat_count": None,
+                "status": "unconfirmed",
+            },
+            *vehicles,
+        ]
     return {
         "ok": True,
         "view": view,
@@ -28,7 +41,7 @@ def get_dispatch_calendar(filters: dict[str, str]) -> dict[str, Any]:
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "items": items,
-        "vehicles": _list_vehicles(),
+        "vehicles": vehicles,
         "drivers": _list_drivers(),
         "legend": LEGEND,
         "month_summary": _month_summary(items) if view == "month" else [],
@@ -65,6 +78,7 @@ def get_dispatch_detail(assignment_id: str) -> dict[str, Any] | None:
                 o.price,
                 o.remark,
                 o.dispatch_status,
+                o.execution_status,
                 o.settlement_status,
                 d.name AS driver_name,
                 d.phone AS driver_phone,
@@ -86,13 +100,12 @@ def get_dispatch_detail(assignment_id: str) -> dict[str, Any] | None:
     if not row:
         return None
     detail = dict(row)
-    detail["calendar_color"] = _calendar_color(detail)
-    detail["display_title"] = _display_title(detail)
-    detail["display_subtitle"] = _display_subtitle(detail)
+    _decorate_calendar_item(detail)
     return detail
 
 
 def _query_calendar_items(filters: dict[str, str], start_date: date_cls, end_date: date_cls) -> list[dict[str, Any]]:
+    tenant_id = get_current_tenant_id()
     sql = [
         """
         SELECT
@@ -128,7 +141,7 @@ def _query_calendar_items(filters: dict[str, str], start_date: date_cls, end_dat
           AND COALESCE(o.end_date, o.order_date) >= ?
         """
     ]
-    params: list[Any] = [get_current_tenant_id(), get_current_tenant_id(), end_date.isoformat(), start_date.isoformat()]
+    params: list[Any] = [tenant_id, tenant_id, end_date.isoformat(), start_date.isoformat()]
     for field, column in (
         ("vehicle_id", "a.vehicle_id"),
         ("driver_id", "a.driver_id"),
@@ -143,16 +156,60 @@ def _query_calendar_items(filters: dict[str, str], start_date: date_cls, end_dat
     sql.append("ORDER BY o.order_date ASC, v.plate_number ASC, o.start_time ASC, a.id ASC")
     with get_connection() as conn:
         rows = conn.execute(" ".join(sql), params).fetchall()
+        unassigned_rows = []
+        if _should_include_unassigned_orders(filters):
+            unassigned_sql = [
+                """
+            SELECT
+                NULL AS assignment_id,
+                o.id AS order_id,
+                NULL AS driver_id,
+                0 AS vehicle_id,
+                'pending' AS assignment_status,
+                o.order_date,
+                o.end_date,
+                o.start_time,
+                o.end_time,
+                o.pickup_location,
+                o.dropoff_location,
+                o.order_type,
+                o.vehicle_type,
+                o.dispatch_status,
+                'unconfirmed' AS execution_status,
+                o.settlement_status,
+                o.oid,
+                o.price,
+                NULL AS driver_name,
+                '未确认订单' AS plate_number
+            FROM orders o
+            WHERE o.tenant_id = ?
+              AND COALESCE(o.is_deleted, 0) = 0
+              AND o.dispatch_status = 'unassigned'
+              AND o.order_date <= ?
+              AND COALESCE(o.end_date, o.order_date) >= ?
+                """
+            ]
+            unassigned_params: list[Any] = [tenant_id, end_date.isoformat(), start_date.isoformat()]
+            for field, column in (
+                ("order_type", "o.order_type"),
+                ("settlement_status", "o.settlement_status"),
+            ):
+                value = filters.get(field)
+                if value:
+                    unassigned_sql.append(f"AND {column} = ?")
+                    unassigned_params.append(value)
+            unassigned_sql.append("ORDER BY o.order_date ASC, o.start_time ASC, o.id ASC")
+            unassigned_rows = conn.execute(" ".join(unassigned_sql), unassigned_params).fetchall()
     items = []
     for row in rows:
         item = dict(row)
-        item["calendar_color"] = _calendar_color(item)
-        item["display_title"] = _display_title(item)
-        item["display_subtitle"] = _display_subtitle(item)
-        item["start_minute"] = _time_to_minutes(item.get("start_time"))
-        item["end_minute"] = _time_to_minutes(item.get("end_time"))
+        _decorate_calendar_item(item)
         items.append(item)
-    return items
+    for row in unassigned_rows:
+        item = dict(row)
+        _decorate_calendar_item(item)
+        items.append(item)
+    return sorted(items, key=lambda item: (item.get("order_date") or "", item.get("plate_number") or "", item.get("start_time") or "", item.get("order_id") or 0))
 
 
 def _list_vehicles() -> list[dict[str, Any]]:
@@ -164,6 +221,7 @@ def _list_vehicles() -> list[dict[str, Any]]:
                 SELECT id, plate_number, vehicle_type, seat_count, status
                 FROM vehicles
                 WHERE tenant_id = ?
+                  AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
                 ORDER BY plate_number ASC, id ASC
                 """
                 ,
@@ -206,6 +264,8 @@ def _month_summary(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _calendar_color(item: dict[str, Any]) -> str:
+    if _is_unconfirmed_row(item):
+        return "#f59e0b"
     if item.get("dispatch_status") == "exception":
         return "#dc2626"
     if item.get("dispatch_status") == "completed":
@@ -229,7 +289,27 @@ def _display_title(item: dict[str, Any]) -> str:
 
 
 def _display_subtitle(item: dict[str, Any]) -> str:
-    return f"{item.get('driver_name') or '-'} / {item.get('plate_number') or '-'} / {item.get('dispatch_status') or '-'}"
+    return f"{item.get('driver_name') or '-'} / {item.get('plate_number') or '-'} / {item.get('calendar_status') or item.get('dispatch_status') or '-'}"
+
+
+def _decorate_calendar_item(item: dict[str, Any]) -> None:
+    item["calendar_status"] = "unconfirmed" if _is_unconfirmed_row(item) else (item.get("execution_status") or item.get("dispatch_status"))
+    item["calendar_color"] = _calendar_color(item)
+    item["display_title"] = _display_title(item)
+    item["display_subtitle"] = _display_subtitle(item)
+    item["start_minute"] = _time_to_minutes(item.get("start_time"))
+    item["end_minute"] = _time_to_minutes(item.get("end_time"))
+
+
+def _is_unconfirmed_row(item: dict[str, Any]) -> bool:
+    return item.get("dispatch_status") == "unassigned" or (item.get("dispatch_status") == "assigned" and (item.get("execution_status") or "assigned") == "assigned")
+
+
+def _should_include_unassigned_orders(filters: dict[str, str]) -> bool:
+    if filters.get("vehicle_id") or filters.get("driver_id"):
+        return False
+    dispatch_status = filters.get("dispatch_status")
+    return not dispatch_status or dispatch_status == "unassigned"
 
 
 def _date_range(view: str, base_date: date_cls) -> tuple[date_cls, date_cls]:

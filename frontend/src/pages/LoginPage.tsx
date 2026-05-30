@@ -4,13 +4,9 @@ import { Button } from "@/components/ui/button";
 import { api, setAuthToken } from "@/services/apiClient";
 import type { AuthUser } from "@/types/api";
 
-function looksLikePhone(value: string) {
-  return /^\+?[\d\s-]{6,}$/.test(value.trim());
-}
-
 export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
-  const [account, setAccount] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [account, setAccount] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -20,9 +16,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setError("");
     try {
       const loginAccount = account.trim();
-      const result = looksLikePhone(loginAccount)
-        ? await api.loginPhone(loginAccount, password)
-        : await api.login(loginAccount, password);
+      const result = await api.loginPhone(loginAccount, password);
       setAuthToken(result.token);
       onLogin(result.user);
     } catch (exc) {
@@ -57,7 +51,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           <Button type="submit" className="h-11" disabled={loading}>
             {loading ? "登录中..." : "登录"}
           </Button>
-          <p className="text-xs text-slate-500">内部账号由管理员预先创建；手机号账号的重置密码为手机号后 4 位。</p>
+          <p className="text-xs text-slate-500">所有角色统一使用手机号登录；初始或重置密码为手机号后 6 位。</p>
         </div>
       </form>
     </div>

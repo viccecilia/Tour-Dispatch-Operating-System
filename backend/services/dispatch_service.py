@@ -14,7 +14,7 @@ def list_available_drivers() -> list[dict[str, Any]]:
                 """
                 SELECT id, name, phone, status, driver_code, driver_language, office, created_at, updated_at
                 FROM drivers
-                WHERE status = 'available'
+                WHERE COALESCE(status, 'available') NOT IN ('retired', 'deleted')
                   AND tenant_id = ?
                   AND COALESCE(driver_code, '') != ''
                   AND COALESCE(phone, '') LIKE '0%'
@@ -36,8 +36,8 @@ def list_available_vehicles() -> list[dict[str, Any]]:
                 """
                 SELECT id, plate_number, vehicle_type, seat_count, status, plate_short_code, vehicle_type_code, vehicle_color, snow_tire, created_at, updated_at
                 FROM vehicles
-                WHERE status = 'available'
-                  AND tenant_id = ?
+                WHERE tenant_id = ?
+                  AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
                   AND (plate_number LIKE ? OR plate_no LIKE ?)
                 ORDER BY id
                 """
@@ -539,7 +539,16 @@ def _fetch_driver(conn, driver_id: int) -> dict[str, Any] | None:
 
 
 def _fetch_vehicle(conn, vehicle_id: int) -> dict[str, Any] | None:
-    row = conn.execute("SELECT id, plate_number, vehicle_type, plate_short_code, vehicle_type_code, vehicle_color, snow_tire FROM vehicles WHERE id = ? AND tenant_id = ?", (vehicle_id, get_current_tenant_id())).fetchone()
+    row = conn.execute(
+        """
+        SELECT id, plate_number, vehicle_type, plate_short_code, vehicle_type_code, vehicle_color, snow_tire, status
+        FROM vehicles
+        WHERE id = ?
+          AND tenant_id = ?
+          AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
+        """,
+        (vehicle_id, get_current_tenant_id()),
+    ).fetchone()
     return dict(row) if row else None
 
 

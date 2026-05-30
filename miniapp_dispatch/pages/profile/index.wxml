@@ -1,32 +1,66 @@
-<view class="page">
+<view class="page {{isTealTheme ? 'driver-theme' : ''}}">
   <view class="hero profile-hero">
-    <view class="hero-eyebrow">DISPATCHER PROFILE</view>
-    <view class="hero-title">{{session.dispatcher.dispatcher_name || '未登录调度员'}}</view>
-    <view class="hero-meta">{{session.dispatcher.dispatcher_code || '-'}} · {{session.dispatcher.dispatcher_role || '-'}}</view>
+    <view class="hero-eyebrow">{{isDriverTheme ? 'DRIVER PROFILE' : 'ACCOUNT PROFILE'}}</view>
+    <view class="hero-title">{{session.dispatcher.dispatcher_name || '未登录'}}</view>
+    <view class="hero-meta">{{session.dispatcher.dispatcher_code || '-'}} · {{roleLabel}}</view>
   </view>
 
-  <view class="panel">
-    <view class="panel-title">调度员信息</view>
-    <view class="profile-list">
-      <view class="profile-row"><text>调度员</text><strong>{{session.dispatcher.dispatcher_name || '-'}}</strong></view>
-      <view class="profile-row"><text>代码</text><strong>{{session.dispatcher.dispatcher_code || '-'}}</strong></view>
-      <view class="profile-row"><text>角色</text><strong>{{session.dispatcher.dispatcher_role || '-'}}</strong></view>
-      <view class="profile-row"><text>接口</text><strong>{{baseUrl}}</strong></view>
+  <block wx:if="{{isDriverTheme}}">
+    <view class="panel">
+      <view class="panel-title">联系方式</view>
+      <view class="profile-form">
+        <view wx:for="{{contactFields}}" wx:key="key" class="field">
+          <view class="field-label">{{item.label}}</view>
+          <input class="input profile-input" value="{{contactForm[item.key]}}" data-key="{{item.key}}" bindinput="onInput" placeholder="{{item.placeholder}}" />
+        </view>
+      </view>
+      <button class="button-primary profile-save" loading="{{saving}}" bindtap="saveDriverProfile">保存联系方式</button>
     </view>
-  </view>
 
-  <view class="panel">
-    <view class="panel-title">共享数据库同步</view>
-    <view class="grid">
-      <view class="metric"><text>订单</text><strong>{{shared.tables.orders || 0}}</strong></view>
-      <view class="metric"><text>草稿</text><strong>{{shared.tables.drafts || 0}}</strong></view>
-      <view class="metric"><text>派车</text><strong>{{shared.tables.assignments || 0}}</strong></view>
-      <view class="metric"><text>通知</text><strong>{{shared.tables.notifications || 0}}</strong></view>
+    <view class="panel">
+      <view class="panel-title">证件与健康体检</view>
+      <view class="document-block">
+        <view class="document-head">
+          <view>
+            <view class="row-title">驾照</view>
+            <view class="muted">上传驾照照片并填写到期时间，后台可查看。</view>
+          </view>
+          <view class="doc-status">{{driver.license_file_url ? '已上传' : '未上传'}}</view>
+        </view>
+        <input class="input profile-input" value="{{contactForm.license_due_date}}" data-key="license_due_date" bindinput="onInput" placeholder="驾照到期日 YYYY-MM-DD" />
+        <button class="button-secondary upload-button" loading="{{saving}}" bindtap="uploadLicense">上传驾照照片</button>
+      </view>
+
+      <view class="document-block">
+        <view class="document-head">
+          <view>
+            <view class="row-title">健康体检</view>
+            <view class="muted">上传体检照片并填写体检日期；有效期按 365 天计算。</view>
+          </view>
+          <view class="doc-status">{{driver.health_check_file_url ? '已上传' : '未上传'}}</view>
+        </view>
+        <input class="input profile-input" value="{{contactForm.health_check_due_date}}" data-key="health_check_due_date" bindinput="onInput" placeholder="体检日期 YYYY-MM-DD" />
+        <button class="button-secondary upload-button" loading="{{saving}}" bindtap="uploadHealthCheck">上传体检照片</button>
+      </view>
     </view>
-  </view>
+  </block>
+
+  <block wx:else>
+    <view class="panel">
+      <view class="panel-title">账号信息</view>
+      <view class="profile-list">
+        <view class="profile-row"><text>姓名</text><strong>{{session.dispatcher.dispatcher_name || '-'}}</strong></view>
+        <view class="profile-row"><text>账号代码</text><strong>{{session.dispatcher.dispatcher_code || '-'}}</strong></view>
+        <view class="profile-row"><text>角色</text><strong>{{roleLabel}}</strong></view>
+        <view class="profile-row"><text>手机号</text><strong>{{session.user.phone || session.dispatcher.phone || '-'}}</strong></view>
+      </view>
+    </view>
+  </block>
+
+  <view wx:if="{{message}}" class="panel muted">{{message}}</view>
 
   <view class="panel stack">
-    <button class="button-secondary" bindtap="loadShared">刷新同步状态</button>
     <button class="button-primary" bindtap="logout">退出登录</button>
   </view>
+  <custom-tab-bar />
 </view>

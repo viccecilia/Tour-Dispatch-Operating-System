@@ -1123,12 +1123,8 @@ Page({
       this.setData({ loginError: '请输入手机号和密码' });
       return;
     }
-    const wxOpenid = wx.getStorageSync('super_wechat_openid')
-      || wx.getStorageSync('driver_mock_openid')
-      || `driver-miniapp-${phone.replace(/\D/g, '')}`;
-    wx.setStorageSync('driver_mock_openid', wxOpenid);
     this.setData({ loginLoading: true, loginError: '' });
-    api.loginPhone(phone, password, wxOpenid).then((res) => {
+    this.getWechatLoginCode().then((wxCode) => api.loginPhone(phone, password, wxCode)).then((res) => {
       if (!res || !res.token || !res.user) {
         throw new Error((res && (res.error || res.message)) || 'login_failed');
       }
@@ -1151,12 +1147,27 @@ Page({
       wx.showToast({ title: '登录成功', icon: 'success' });
       this.loadAll();
     }).catch((err) => {
-      const message = err && err.message === 'wechat_binding_mismatch'
+      const code = err && (err.error || err.message);
+      const message = code === 'wechat_binding_mismatch'
         ? '该账号已绑定其他微信，请联系管理员解除绑定'
-        : err && err.message === 'not_driver_account'
+        : code === 'wechat_code_exchange_unavailable'
+          ? '微信绑定未配置，请先在云端配置小程序 AppSecret'
+          : code === 'not_driver_account'
           ? '该账号不是司机角色'
           : '登录失败，请检查手机号或密码';
       this.setData({ loginLoading: false, loginError: message });
+    });
+  },
+
+  getWechatLoginCode() {
+    return new Promise((resolve, reject) => {
+      wx.login({
+        success: (res) => {
+          if (res.code) resolve(res.code);
+          else reject({ error: 'wechat_login_failed' });
+        },
+        fail: () => reject({ error: 'wechat_login_failed' })
+      });
     });
   },
 

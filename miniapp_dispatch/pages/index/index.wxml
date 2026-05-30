@@ -1,53 +1,110 @@
-<view class="page">
+<view class="page {{isDriverTheme ? 'driver-theme' : ''}}">
   <view class="hero dashboard-hero">
-    <view class="hero-eyebrow">TOURFLOW DISPATCH</view>
-    <view class="hero-title">{{session ? session.dispatcher.dispatcher_name : '调度员登录'}}</view>
-    <view class="hero-meta">{{session ? session.dispatcher.dispatcher_code + ' · ' + session.dispatcher.dispatcher_role : '移动调度运行入口'}}</view>
+    <view class="hero-eyebrow">TOURFLOW MOBILE</view>
+    <view class="hero-title">{{session ? session.dispatcher.dispatcher_name : '统一账号登录'}}</view>
+    <view class="hero-meta">{{session ? session.dispatcher.dispatcher_code + ' - ' + session.dispatcher.dispatcher_role : '调度 / 管理 / 司机 / 运行管理统一入口'}}</view>
   </view>
 
   <view wx:if="{{!session}}" class="panel stack login-panel">
     <view>
       <view class="panel-title">账号登录</view>
-      <view class="login-help">测试账号：admin / admin123；手机号账号使用手机号和后 4 位密码。</view>
+      <view class="login-help">使用后台录入的手机号登录，初始密码为手机号后 6 位。</view>
     </view>
-    <input class="input login-input" value="{{username}}" bindinput="onUsername" placeholder="用户名或手机号" />
-    <input class="input login-input" value="{{password}}" password bindinput="onPassword" placeholder="密码" />
-    <button class="button-primary" loading="{{loading}}" bindtap="login">进入移动调度</button>
+    <input class="input login-input" value="{{username}}" type="text" confirm-type="next" bindinput="onUsername" placeholder-class="login-placeholder" placeholder="手机号或账号" />
+    <input class="input login-input" value="{{password}}" password confirm-type="done" bindinput="onPassword" placeholder-class="login-placeholder" placeholder="密码" />
+    <button class="button-primary" loading="{{loading}}" bindtap="login">进入系统</button>
     <view wx:if="{{error}}" class="muted">{{error}}</view>
   </view>
 
   <view wx:else>
     <view class="ops-summary">
-      <view class="summary-main" bindtap="goDispatch">
-        <view class="summary-label">未派车</view>
+      <view wx:if="{{canDispatch}}" class="summary-main" bindtap="goDispatch">
+        <view class="summary-label">未派车订单</view>
         <view class="summary-number">{{dashboard.counts.unassigned_orders || 0}}</view>
         <view class="summary-note">点击进入派车工作台</view>
       </view>
+      <view wx:elif="{{isOperationsManager}}" class="summary-main ops-main {{operationsStatus.tone}}">
+        <view class="summary-label">今日运力状态</view>
+        <view class="summary-number status-text">{{operationsStatus.label}}</view>
+        <view class="summary-note">{{operationsStatus.hint}}</view>
+      </view>
+      <view wx:else class="summary-main" bindtap="goTask">
+        <view class="summary-label">当前状态</view>
+        <view class="summary-number status-text">{{statusLabel}}</view>
+        <view class="summary-note">{{statusHint}}</view>
+      </view>
+
       <view class="summary-side">
-        <view class="summary-chip"><text>今日订单</text><strong>{{dashboard.counts.today_orders || 0}}</strong></view>
-        <view class="summary-chip"><text>待确认</text><strong>{{dashboard.counts.pending_confirmations || 0}}</strong></view>
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'orders' ? 'active' : ''}}" data-mode="orders" bindtap="switchPanel">
+          <text>今日订单</text>
+          <strong>{{dashboard.counts.today_orders || 0}}</strong>
+        </view>
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'pending' ? 'active' : ''}}" data-mode="pending" bindtap="switchPanel">
+          <text>待确认</text>
+          <strong>{{dashboard.counts.pending_confirmations || 0}}</strong>
+        </view>
+        <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'tasks' ? 'active' : ''}}" data-section="tasks" bindtap="switchOperationsSection">
+          <text>司机任务</text>
+          <strong>{{operationsOverview.taskTotal}}</strong>
+        </view>
+        <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'notifications' ? 'active' : ''}}" data-section="notifications" bindtap="switchOperationsSection">
+          <text>通知</text>
+          <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
+        </view>
       </view>
     </view>
 
-    <view class="status-strip">
-      <view class="status-card good">
+    <view wx:if="{{isOperationsManager}}" class="ops-grid ops-grid-compact">
+      <view class="ops-card {{operationsSection === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="switchOperationsSection">
+        <text>出勤状态</text>
+        <strong>{{operationsOverview.attendanceWarnings}}</strong>
+        <view>出勤司机、车辆、睡眠、点呼、出入库和休息时间</view>
+      </view>
+    </view>
+
+    <view wx:if="{{isOperationsManager}}" class="panel ops-home-detail">
+      <view class="panel-header-lite">
+        <view>
+          <view class="panel-title">{{operationsDetailTitle}}</view>
+          <view class="muted">{{operationsDetailHint}}</view>
+        </view>
+        <view class="soft-count">{{operationsDetailRows.length}} {{operationsDetailUnit}}</view>
+      </view>
+      <view class="compact-list">
+        <view wx:for="{{operationsDetailRows}}" wx:key="id" class="compact-row">
+          <view class="row-title">{{item.title}}</view>
+          <view class="muted">{{item.meta}}</view>
+          <view wx:if="{{item.body}}" class="compact-body">{{item.body}}</view>
+          <view wx:if="{{item.details && item.details.length}}" class="ops-mini-fields">
+            <view wx:for="{{item.details}}" wx:for-item="field" wx:key="label" class="ops-mini-field">
+              <text>{{field.label}}</text>
+              <strong>{{field.value}}</strong>
+            </view>
+          </view>
+        </view>
+        <view wx:if="{{!operationsDetailRows.length}}" class="empty-state">暂无数据</view>
+      </view>
+    </view>
+
+    <view wx:else class="status-strip">
+      <view class="status-card good {{panelMode === 'orders' ? 'active' : ''}}" data-mode="orders" bindtap="switchPanel">
         <text>在线司机</text>
         <strong>{{dashboard.counts.online_drivers || 0}}</strong>
       </view>
-      <view class="status-card warn">
+      <view class="status-card warn {{panelMode === 'exceptions' ? 'active' : ''}}" data-mode="exceptions" bindtap="switchPanel">
         <text>异常订单</text>
         <strong>{{dashboard.counts.exception_orders || dashboard.counts.incident_orders || 0}}</strong>
       </view>
-      <view class="status-card notice" bindtap="scrollToNotifications">
+      <view class="status-card notice {{panelMode === 'unread' ? 'active' : ''}}" data-mode="unread" bindtap="switchPanel">
         <text>未读通知</text>
         <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
       </view>
     </view>
 
-    <view class="panel">
+    <view wx:if="{{canViewDriverWorkload}}" class="panel">
       <view class="panel-header-lite">
         <view>
-          <view class="panel-title">司机工作压力</view>
+          <view class="panel-title">司机工作负荷</view>
           <view class="muted">连续工作超过 13 天会标记为风险。</view>
         </view>
         <view class="soft-count">{{driverStats.length}} 人</view>
@@ -56,7 +113,7 @@
         <view class="pressure-row {{item.alert ? 'danger' : ''}}" wx:for="{{visibleDriverStats}}" wx:key="driver_id">
           <view>
             <view class="pressure-name">{{item.driver_name}}</view>
-            <view class="muted">今日 {{item.today_orders}} 单 · 本月 {{item.month_orders}} 单</view>
+            <view class="muted">今日 {{item.today_orders}} 单 - 本月 {{item.month_orders}} 单</view>
           </view>
           <view class="pressure-badge {{item.alert ? 'danger' : ''}}">连续 {{item.continuous_days}} 天</view>
         </view>
@@ -67,31 +124,35 @@
       <view wx:if="{{!driverStats.length}}" class="empty-state">暂无司机订单统计</view>
     </view>
 
-    <view class="panel notifications-panel">
+    <view wx:if="{{!isOperationsManager}}" class="panel notifications-panel">
       <view class="panel-header-lite">
         <view>
-          <view class="panel-title">关键通知</view>
-          <view class="muted">派车、司机报备、异常、到期提醒和规则提醒会显示在这里。</view>
+          <view class="panel-title">{{panelTitle}}</view>
+          <view class="muted">{{panelHint}}</view>
         </view>
-        <view class="soft-count" bindtap="toggleNotifications">{{notificationExpanded ? '收起' : '查看'}}</view>
+        <view class="soft-count">{{panelRows.length}} 条</view>
       </view>
       <view class="list">
-        <view wx:for="{{notifications}}" wx:key="id" wx:if="{{notificationExpanded || index < 3}}" data-id="{{item.id}}" bindtap="onNotificationTap" class="row notification-row {{item.isUnread ? 'unread' : ''}}">
-          <view class="notification-dot {{item.priority}}"></view>
+        <view wx:for="{{panelRows}}" wx:key="id" data-index="{{index}}" bindtap="onPanelRowTap" class="row notification-row">
+          <view class="notification-dot {{item.priority || 'normal'}}"></view>
           <view class="notification-main">
-            <view class="row-title">{{item.title || item.typeText}}</view>
-            <view class="muted">{{item.typeText}} · {{item.priorityText}} · {{item.statusText}}</view>
+            <view class="row-title">{{item.title}}</view>
+            <view class="muted">{{item.meta}}</view>
             <view wx:if="{{item.body}}" class="notification-body">{{item.body}}</view>
           </view>
-          <view class="notification-action">详情</view>
+          <view class="notification-action">{{item.actionText || '查看'}}</view>
         </view>
-        <view wx:if="{{!notifications.length}}" class="empty-state">暂无关键通知</view>
+        <view wx:if="{{!panelRows.length}}" class="empty-state">暂无内容</view>
       </view>
     </view>
 
-    <view class="quick-actions">
-      <button class="button-secondary" bindtap="goDispatch">去派车</button>
-      <button class="button-secondary" bindtap="goFinance">看财务</button>
+    <view wx:if="{{!isOperationsManager}}" class="quick-actions">
+      <button wx:if="{{canDispatch}}" class="button-secondary" bindtap="goDispatch">去派车</button>
+      <button wx:if="{{canFinance}}" class="button-secondary" bindtap="goFinance">看财务</button>
+      <button wx:if="{{canDriverTasks}}" class="button-secondary" bindtap="goTask">确认任务</button>
+      <button class="button-secondary" bindtap="goMap">看地图</button>
     </view>
   </view>
+
+  <custom-tab-bar />
 </view>

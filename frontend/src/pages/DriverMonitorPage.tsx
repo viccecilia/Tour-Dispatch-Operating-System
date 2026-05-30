@@ -239,15 +239,16 @@ function EvidenceViewer({ chain, loading }: { chain?: AssignmentEvidenceChain; l
   }
   if (!chain) {
     return (
-      <Card>
-        <CardHeader>
-          <h2 className="text-base font-bold text-slate-950">订单执行证据</h2>
-          <p className="mt-1 text-sm text-slate-500">点击任务中的“查看执行证据”，这里会显示照片、小票、报备和费用 timeline。</p>
-        </CardHeader>
-      </Card>
+          <Card>
+            <CardHeader>
+              <h2 className="text-base font-bold text-slate-950">订单执行证据</h2>
+          <p className="mt-1 text-sm text-slate-500">点击任务中的“查看执行证据”，这里会显示照片、报备和执行记录。</p>
+            </CardHeader>
+          </Card>
     );
   }
   const assignment = chain.assignment;
+  const showExpenses = (chain.summary.expense_count || 0) > 0;
   return (
     <Card>
       <CardHeader>
@@ -257,10 +258,10 @@ function EvidenceViewer({ chain, loading }: { chain?: AssignmentEvidenceChain; l
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-4 gap-2 text-center">
+        <div className={`grid ${showExpenses ? "grid-cols-4" : "grid-cols-3"} gap-2 text-center`}>
           <EvidenceMetric label="照片" value={chain.summary.photo_count || 0} />
           <EvidenceMetric label="报备" value={chain.summary.report_count || 0} />
-          <EvidenceMetric label="小票" value={chain.summary.expense_count || 0} />
+          {showExpenses ? <EvidenceMetric label="小票" value={chain.summary.expense_count || 0} /> : null}
           <EvidenceMetric label="下载" value={chain.summary.download_count || 0} />
         </div>
         <div className="space-y-2">

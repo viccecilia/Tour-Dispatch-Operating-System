@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>可嵌入订单大厅单页 Demo</title>
+  <style>
+    :root {
+      --bg: #f3f6fa;
+      --panel: #fff;
+      --ink: #111827;
+      --text: #263247;
+      --muted: #64748b;
+      --line: #d8e1eb;
+      --blue: #2563eb;
+      --green: #13805f;
+      --amber: #af6900;
+      --red: #c53a2f;
+      --soft-blue: #e8f1ff;
+      --soft-green: #e7f7ef;
+      --soft-amber: #fff3dc;
+      --soft-red: #fff0ee;
+      --soft-gray: #eef2f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+    .embed-shell { min-height: 100vh; padding: 16px; }
+    .hall { max-width: 1500px; margin: 0 auto; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+    }
+    .header {
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--line);
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { color: var(--ink); font-size: 22px; line-height: 1.2; }
+    .sub { margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 880px; }
+    .context-switch { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .context-switch button, .btn, .chip-btn {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 11px;
+      font-weight: 900;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .context-switch button.active, .btn.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .btn.blue, .chip-btn.blue { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .btn.green, .chip-btn.green { background: var(--green); color: #fff; border-color: var(--green); }
+    .btn.red { background: var(--red); color: #fff; border-color: var(--red); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      min-height: 64px;
+    }
+    .stat small { color: var(--muted); font-size: 11px; font-weight: 900; }
+    .stat strong { display: block; color: var(--ink); font-size: 20px; margin-top: 6px; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1.1fr repeat(5, minmax(112px, 0.7fr));
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 900; }
+    input, select {
+      width: 100%;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 10px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      outline: none;
+    }
+    .body-grid {
+      display: grid;
+      grid-template-columns: minmax(900px, 1.6fr) minmax(300px, 0.4fr);
+      gap: 12px;
+      padding: 12px;
+    }
+    .orders-area { display: grid; gap: 10px; min-width: 0; }
+    .compact-orders {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .compact-head, .compact-row {
+      display: grid;
+      grid-template-columns: 108px minmax(230px, 1.2fr) 84px 72px 78px 82px 78px 78px 82px 70px 104px;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .compact-head {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .compact-row { min-height: 54px; cursor: pointer; }
+    .compact-row:hover, .compact-row.active { background: #f7fbff; box-shadow: inset 3px 0 0 var(--blue); }
+    .compact-row:last-child { border-bottom: 0; }
+    .oid, .money { color: var(--ink); font-weight: 900; }
+    .agency-field, .carrier-field { display: none; }
+    .mode-agency .agency-field { display: inline; }
+    .mode-carrier .carrier-field { display: inline; }
+    .mode-admin .agency-field, .mode-admin .carrier-field { display: inline; }
+    .route { min-width: 0; }
+    .route b, .route span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .route b { color: var(--ink); }
+    .route span { margin-top: 3px; color: var(--muted); }
+    .leading { color: var(--green); font-weight: 900; }
+    .behind { color: var(--amber); font-weight: 900; }
+    .countdown { color: var(--red); font-weight: 900; }
+    .quick-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .chip-btn { height: 30px; min-width: 42px; padding: 0 8px; font-size: 12px; }
+    .agency-actions, .carrier-actions { display: none; }
+    .mode-agency .agency-actions { display: flex; }
+    .mode-carrier .carrier-actions { display: flex; }
+    .mode-admin .agency-actions, .mode-admin .carrier-actions { display: flex; }
+    .selected-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .selected-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .selected-title { color: var(--ink); font-size: 16px; font-weight: 900; }
+    .meta { margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 26px;
+      border-radius: 999px;
+      padding: 0 9px;
+      font-size: 12px;
+      font-weight: 900;
+      background: var(--soft-gray);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .badge.blue { background: var(--soft-blue); color: var(--blue); }
+    .badge.green { background: var(--soft-green); color: var(--green); }
+    .badge.amber { background: var(--soft-amber); color: var(--amber); }
+    .badge.red { background: var(--soft-red); color: var(--red); }
+    .price-line {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .price-box {
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 9px;
+      border: 1px solid var(--line);
+    }
+    .price-box small { display: block; color: var(--muted); font-size: 11px; font-weight: 900; }
+    .price-box b { display: block; margin-top: 4px; color: var(--ink); font-size: 15px; }
+    .action-row {
+      display: grid;
+      grid-template-columns: 130px 1fr auto auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .flow-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 9px;
+    }
+    .flow-card b { display: block; color: var(--ink); font-size: 12px; margin-bottom: 4px; }
+    .flow-card span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .side-panel { display: grid; gap: 10px; }
+    .section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+    .section h2 { color: var(--ink); font-size: 15px; margin-bottom: 8px; }
+    .section p, .section li { color: var(--muted); font-size: 12px; line-height: 1.55; }
+    ul { margin: 0; padding-left: 18px; }
+    li + li { margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f8fafc; color: var(--muted); font-size: 11px; }
+    td b { color: var(--ink); }
+    .hint {
+      padding: 11px 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      border-top: 1px solid var(--line);
+      background: #fbfdff;
+    }
+    @media (max-width: 1180px) {
+      .body-grid { grid-template-columns: 1fr; }
+      .toolbar, .stats, .price-line, .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .compact-orders { overflow-x: auto; }
+      .compact-head, .compact-row { min-width: 1180px; }
+    }
+    @media (max-width: 720px) {
+      .embed-shell { padding: 10px; }
+      .header { display: block; }
+      .context-switch { justify-content: flex-start; margin-top: 10px; }
+      .toolbar, .stats, .price-line, .workflow-grid, .action-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="embed-shell">
+    <section class="hall mode-carrier" id="hallRoot">
+      <div class="panel">
+        <div class="header">
+          <div>
+            <h1>订单大厅</h1>
+            <p class="sub" id="modeDescription">嵌入车公司管理账户时显示统一订单大厅。车公司可出拍卖价，最低价优先；也可按一口价直接锁单。</p>
+          </div>
+          <div class="context-switch">
+            <button data-mode="agency">旅行社管理账户</button>
+            <button class="active" data-mode="carrier">车公司管理账户</button>
+            <button data-mode="admin">平台审核视角</button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><small id="statOneLabel">可见订单</small><strong id="statOne">42</strong></div>
+          <div class="stat"><small id="statTwoLabel">竞价中</small><strong id="statTwo">21</strong></div>
+          <div class="stat"><small>一口价可接</small><strong>16</strong></div>
+          <div class="stat"><small id="statFourLabel">我的报价</small><strong id="statFour">7</strong></div>
+          <div class="stat"><small id="statFiveLabel">保证金/额度</small><strong id="statFive">¥80k</strong></div>
+        </div>
+
+        <div class="toolbar">
+          <label>关键词<input value="关西机场 大阪" /></label>
+          <label>日期<input type="date" value="2026-06-18" /></label>
+          <label>地区<select><option>大阪/京都</option><option>东京</option><option>北海道</option></select></label>
+          <label>竞价状态<select><option>全部</option><option>竞价中</option><option>一口价可接</option><option>已成交</option><option>已超时</option></select></label>
+          <label>车型<select><option>全部</option><option>7 座</option><option>海狮</option></select></label>
+          <label>排序<select><option>落拍时间最近</option><option>上架价从高</option><option>当前价从低</option><option>报价最多</option></select></label>
+        </div>
+
+        <div class="body-grid">
+          <div class="orders-area">
+            <div class="compact-orders">
+              <div class="compact-head">
+                <div>订单号</div><div>线路 / 要求</div><div>时间</div><div>车型</div><div>上架价</div><div>当前价</div><div>我的价</div><div>状态</div><div>一口价</div><div>落拍</div><div>操作</div>
+              </div>
+              <div class="compact-row active">
+                <div class="oid">AG-0618-022</div><div class="route"><b>关西机场 T1 -> 大阪市内酒店</b><span>中文司机 / 4 人 / 4 件 / 举牌</span></div><div>06-18<br />09:30</div><div>7 座</div><div class="money">¥500</div><div class="money">¥480</div><div><span class="money carrier-field">¥460</span><span class="agency-field">3 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥480</span></div><div class="money">¥500</div><div><span class="countdown">00:42</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">补充</button></div></div>
+              </div>
+              <div class="compact-row">
+                <div class="oid">AG-0618-023</div><div class="route"><b>大阪市内酒店 -> 关西机场 T1</b><span>普通送机 / 2 人 / 2 件</span></div><div>06-18<br />13:40</div><div>7 座</div><div class="money">¥500</div><div class="money">¥460</div><div><span class="money carrier-field">¥440</span><span class="agency-field">5 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥460</span></div><div class="money">¥500</div><div><span class="countdown">01:18</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">沟通</button></div></div>
+              </div>
+              <div class="compact-row">
+                <div class="oid">AG-0618-024</div><div class="route"><b>京都市内 -> 伊丹机场</b><span>海狮 / 8 人 / 8 件 / 无语言指定</span></div><div>06-18<br />16:20</div><div>海狮</div><div class="money">¥720</div><div class="money">¥690</div><div><span class="money carrier-field">¥670</span><span class="agency-field">2 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥690</span></div><div class="money">¥720</div><div><span class="countdown">02:03</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">补充</button></div></div>
+              </div>
+              <div class="compact-row">
+                <div class="oid">AG-0618-025</div><div class="route"><b>奈良公园 -> 大阪心斋桥</b><span>包车半日 / 中文司机 / 儿童座椅</span></div><div>06-18<br />10:00</div><div>7 座</div><div class="money">¥880</div><div class="money">¥830</div><div><span class="money carrier-field">¥810</span><span class="agency-field">4 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥830</span></div><div class="money">¥880</div><div><span class="countdown">00:55</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">沟通</button></div></div>
+              </div>
+              <div class="compact-row">
+                <div class="oid">AG-0618-026</div><div class="route"><b>环球影城 -> 关西机场 T2</b><span>晚间送机 / 5 人 / 6 件</span></div><div>06-18<br />20:30</div><div>海狮</div><div class="money">¥760</div><div class="money">¥710</div><div><span class="money carrier-field">¥690</span><span class="agency-field">6 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥710</span></div><div class="money">¥760</div><div><span class="countdown">03:12</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">补充</button></div></div>
+              </div>
+              <div class="compact-row">
+                <div class="oid">AG-0618-027</div><div class="route"><b>关西机场 -> 京都四条酒店</b><span>接机 / 英文司机 / 航班 JL221</span></div><div>06-18<br />22:10</div><div>7 座</div><div class="money">¥690</div><div class="money">¥650</div><div><span class="money carrier-field">¥630</span><span class="agency-field">2 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥650</span></div><div class="money">¥690</div><div><span class="countdown">04:26</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">沟通</button></div></div>
+              </div>
+              <div class="compact-row">
+                <div class="oid">AG-0618-028</div><div class="route"><b>神户港 -> 大阪梅田</b><span>邮轮接送 / 6 人 / 大件行李</span></div><div>06-19<br />08:20</div><div>海狮</div><div class="money">¥820</div><div class="money">¥780</div><div><span class="money carrier-field">¥760</span><span class="agency-field">1 家</span></div><div><span class="leading carrier-field">领先</span><span class="agency-field">最低 ¥780</span></div><div class="money">¥820</div><div><span class="countdown">06:08</span></div><div><div class="quick-actions carrier-actions"><button class="chip-btn blue">-20出价</button><button class="chip-btn green">一口</button></div><div class="quick-actions agency-actions"><button class="chip-btn blue">概况</button><button class="chip-btn">补充</button></div></div>
+              </div>
+            </div>
+
+            <article class="selected-card">
+              <div class="selected-top">
+                <div>
+                  <div class="selected-title">选中订单：关西机场 T1 -> 大阪市内酒店</div>
+                  <div class="meta">
+                    <span>06-18 09:30</span><span>7 座</span><span>中文司机</span><span>4 人 / 4 件</span>
+                    <span class="agency-field">本社订单 AG-0618-022</span>
+                    <span class="carrier-field">旅行社 A 级 / 联系方式成交后开放</span>
+                  </div>
+                </div>
+                <span class="badge green">竞价中</span>
+              </div>
+              <div class="price-line">
+                <div class="price-box"><small id="orderOnePriceLabel">旅行社上架价</small><b>¥500</b></div>
+                <div class="price-box"><small id="orderOneSecondLabel">当前最低拍卖价</small><b id="orderOneSecondValue">¥480</b></div>
+                <div class="price-box"><small>我的报价</small><b id="myBidValue">¥470</b></div>
+                <div class="price-box"><small id="orderOneThirdLabel">一口价</small><b id="orderOneThirdValue">¥500</b></div>
+                <div class="price-box"><small id="orderOneFourthLabel">距离落拍</small><b id="orderOneFourthValue">00:42:18</b></div>
+              </div>
+              <div class="workflow-grid">
+                <div class="flow-card"><b>当前价</b><span>最低拍卖价 ¥480，当前 3 家参与。</span></div>
+                <div class="flow-card"><b>领先状态</b><span class="carrier-field">点击出价后默认比当前价低 20 元，当前我的价 ¥460。</span><span class="agency-field">发布端看到当前最低价和报价数量。</span></div>
+                <div class="flow-card"><b>一口价</b><span>任一合格车公司按 ¥500 接单，订单立即锁定。</span></div>
+                <div class="flow-card"><b>落拍</b><span>倒计时结束后最低价公司成交，进入待分配。</span></div>
+              </div>
+              <div class="action-row carrier-actions">
+                <label>我的拍卖价<input type="number" value="460" /></label>
+                <label>报价说明<select><option>参与竞价</option><option>确认可执行</option><option>需要平台沟通</option></select></label>
+                <button class="btn blue">-20 提交拍卖价</button>
+                <button class="btn green">一口接单</button>
+              </div>
+              <div class="action-row agency-actions">
+                <label>补充资料<input value="航班 CA927" /></label>
+                <label>状态说明<input value="竞价中 / 可一口价" /></label>
+                <button class="btn blue">补资料</button>
+                <button class="btn">查看竞价概况</button>
+              </div>
+            </article>
+          </div>
+
+          <aside class="side-panel">
+            <section class="section">
+              <h2 id="sideTitle">车公司管理账户可操作</h2>
+              <ul id="sideRules">
+                <li>可查看公共订单池中符合等级和资质的订单。</li>
+                <li>可提交拍卖价，也可按一口价直接接单。</li>
+                <li>列表展示当前价、我的价、是否领先、一口价和距离落拍时间。</li>
+                <li>成交前敏感联系方式脱敏；落拍或一口价成交后解锁联系方式。</li>
+              </ul>
+            </section>
+
+            <section class="section">
+              <h2>落拍后动作</h2>
+              <p id="afterAuctionText">落拍后，最低价车公司成交，订单自动进入该车公司端的“待分配订单”，来源标记为“大厅拍得”。成交后解锁订单详细信息、客人联系方式、发单方负责人电话和微信。</p>
+            </section>
+
+            <section class="section">
+              <h2 id="tableTitle">我的报价</h2>
+              <table>
+                <thead><tr><th>项目</th><th>状态</th></tr></thead>
+                <tbody id="sideTable">
+                  <tr><td><b>MK-0618-022</b><br />KIX -> 大阪</td><td>已报价 ¥470 / 领先</td></tr>
+                  <tr><td><b>MK-0618-019</b><br />大阪 -> KIX</td><td>一口价已接</td></tr>
+                  <tr><td><b>MK-0618-028</b><br />京都 -> 伊丹</td><td>竞价中</td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="section">
+              <h2>成交后解锁信息</h2>
+              <ul id="unlockList">
+                <li>订单完整明细：客人姓名、人数、行李、航班、酒店、备注。</li>
+                <li>客人联系方式：电话、微信或紧急联系人。</li>
+                <li>发单方负责人：姓名、电话、微信。</li>
+                <li>车公司负责人：姓名、电话、微信。</li>
+                <li>订单进入车公司“待分配”，需要安排司机和车辆。</li>
+              </ul>
+            </section>
+          </aside>
+        </div>
+
+        <div class="hint">
+          前期平台定位为撮合交易：旅行社决定上架价和一口价，车公司竞拍，最低价优先；平台负责基础风控、保证金/授信、成交留痕、信息解锁、客诉仲裁和后续可持续规则升级。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const modeData = {
+      agency: {
+        rootClass: "mode-agency",
+        desc: "嵌入旅行社管理账户时，只显示本旅行社发布到订单大厅的订单、竞价概况、一口价接单进度和结算占用。",
+        stats: ["本社大厅订单", "8", "竞价中", "4", "本社总订单", "26", "额度占用", "¥114k"],
+        sideTitle: "旅行社管理账户可操作",
+        rules: [
+          "只能看到本旅行社订单，不能看到其他旅行社订单。",
+          "发布端能看到当前最低拍卖价、报价数量、一口价状态和距离落拍时间。",
+          "落拍后看到成交车公司、负责人电话和微信；成交前敏感信息脱敏。",
+          "订单完成并付款给车公司后释放对应授信额度。"
+        ],
+        tableTitle: "本社订单概况",
+        table: [
+          ["AG-0618-022<br />KIX -> 大阪", "当前最低 ¥480 / 3 家报价"],
+          ["AG-0618-019<br />大阪 -> KIX", "一口价成交 / 待执行"],
+          ["AG-0617-031<br />京都 -> 伊丹", "待付款 / 待释放额度"]
+        ],
+        afterText: "发布端落拍后，订单状态变为“已成交待执行”。旅行社管理账户可看到成交车公司负责人电话和微信，导游可按授权看到司机联系方式。"
+      },
+      carrier: {
+        rootClass: "mode-carrier",
+        desc: "嵌入车公司管理账户时显示统一订单大厅。车公司可出拍卖价，最低价优先；也可按一口价直接锁单。",
+        stats: ["可见订单", "42", "竞价中", "21", "我的报价", "7", "保证金/额度", "¥80k"],
+        sideTitle: "车公司管理账户可操作",
+        rules: [
+          "可查看公共订单池中符合等级和资质的订单。",
+          "可提交拍卖价，也可按一口价直接接单。",
+          "列表展示当前价、我的价、是否领先、一口价和距离落拍时间。",
+          "成交后订单进入车公司端“待分配订单”，来源标记为“大厅拍得”。"
+        ],
+        tableTitle: "我的报价",
+        table: [
+          ["MK-0618-022<br />KIX -> 大阪", "已报价 ¥470 / 领先"],
+          ["MK-0618-019<br />大阪 -> KIX", "一口价已接"],
+          ["MK-0618-028<br />京都 -> 伊丹", "竞价中"]
+        ],
+        afterText: "落拍后，最低价车公司成交，订单自动进入该车公司端的“待分配订单”，来源标记为“大厅拍得”。成交后解锁订单详细信息、客人联系方式、发单方负责人电话和微信。"
+      },
+      admin: {
+        rootClass: "mode-admin",
+        desc: "平台审核视角用于查看订单上架、拍卖价、一口价、成交结果和基础风控。前期平台不强控旅行社上架价格，只记录市场数据。",
+        stats: ["待审核", "11", "竞价中", "21", "今日成交", "16", "风控提醒", "5"],
+        sideTitle: "平台可操作",
+        rules: [
+          "可查看完整报价过程、一口价成交、落拍成交和风控提示。",
+          "可处理超时、异常、取消、信息解锁失败和客诉。",
+          "落拍后自动生成成交记录、双方联系方式解锁记录和订单来源标记。",
+          "所有关键动作写入审计日志。"
+        ],
+        tableTitle: "平台待处理",
+        table: [
+          ["AG-0618-022<br />KIX -> 大阪", "竞价中 / 当前 ¥480"],
+          ["AG-0618-019<br />大阪 -> KIX", "一口价成交"],
+          ["AG-0618-028<br />京都 -> 伊丹", "落拍待确认"]
+        ],
+        afterText: "平台在落拍后确认最低价成交，生成成交快照。若最低价公司保证金不足、资质异常或超时未确认，则进入平台人工处理，可顺延给下一有效报价。"
+      }
+    };
+
+    function setMode(mode) {
+      const data = modeData[mode];
+      const root = document.getElementById("hallRoot");
+      root.className = `hall ${data.rootClass}`;
+      document.getElementById("modeDescription").textContent = data.desc;
+      document.querySelectorAll(".context-switch button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === mode);
+      });
+      document.getElementById("statOneLabel").textContent = data.stats[0];
+      document.getElementById("statOne").textContent = data.stats[1];
+      document.getElementById("statTwoLabel").textContent = data.stats[2];
+      document.getElementById("statTwo").textContent = data.stats[3];
+      document.getElementById("statFourLabel").textContent = data.stats[4];
+      document.getElementById("statFour").textContent = data.stats[5];
+      document.getElementById("statFiveLabel").textContent = data.stats[6];
+      document.getElementById("statFive").textContent = data.stats[7];
+      document.getElementById("sideTitle").textContent = data.sideTitle;
+      document.getElementById("sideRules").innerHTML = data.rules.map((rule) => `<li>${rule}</li>`).join("");
+      document.getElementById("tableTitle").textContent = data.tableTitle;
+      document.getElementById("sideTable").innerHTML = data.table.map((row) => `<tr><td><b>${row[0]}</b></td><td>${row[1]}</td></tr>`).join("");
+      document.getElementById("afterAuctionText").textContent = data.afterText;
+    }
+
+    document.querySelectorAll(".context-switch button").forEach((button) => {
+      button.addEventListener("click", () => setMode(button.dataset.mode));
+    });
+    setMode("carrier");
+  </script>
+</body>
+</html>

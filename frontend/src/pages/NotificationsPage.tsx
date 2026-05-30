@@ -11,7 +11,7 @@ const typeLabels: Record<string, string> = {
   not_departed: "未出库",
   not_arrived: "未到达",
   missing_photo: "未上传照片",
-  pending_driver_expense: "未提交费用",
+  pending_driver_expense: "司机待处理记录",
   not_returned: "未入库",
   resource_reminder: "资源提醒",
   dispatch_assigned: "派车通知",
@@ -64,7 +64,7 @@ export function NotificationsPage() {
             <div>
               <p className="text-xs font-bold tracking-[0.18em] text-blue-600">NOTIFICATION RUNTIME</p>
               <h2 className="mt-1 text-xl font-bold text-slate-950">运营提醒中心</h2>
-              <p className="mt-1 text-sm text-slate-500">自动汇总未确认、未出库、未到达、未上传照片、未提交费用、未入库等关键提醒。</p>
+              <p className="mt-1 text-sm text-slate-500">自动汇总未确认、未出库、未到达、未上传照片、未入库等关键提醒。</p>
             </div>
             <Button disabled={markAll.isPending || unreadRows.length === 0} onClick={() => markAll.mutate()}>
               <CheckCheck size={16} />

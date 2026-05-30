@@ -18,6 +18,7 @@ export type PageKey =
   | "automation"
   | "copilot"
   | "audit"
+  | "system"
   | "settings";
 
 type NavigationState = {
@@ -45,6 +46,7 @@ function pageFromHash(): PageKey {
     "automation",
     "copilot",
     "audit",
+    "system",
     "settings",
   ];
   return known.includes(hash as PageKey) ? (hash as PageKey) : "dashboard";

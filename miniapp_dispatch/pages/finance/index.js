@@ -8,7 +8,20 @@ Page({
   },
 
   onShow() {
+    api.setActiveTab('/pages/finance/index');
+    this.refreshTabBar();
+    if (!api.canAccess('finance')) {
+      wx.showToast({ title: '当前账号没有财务权限', icon: 'none' });
+      wx.switchTab({ url: '/pages/index/index' });
+      return;
+    }
     this.loadFinance();
+  },
+
+  refreshTabBar() {
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().refresh();
+    }
   },
 
   loadFinance() {

@@ -1,5 +1,5 @@
 {
-  "appid": "wxb67c477b5ad50f64",
+  "appid": "wxfb6b69e5353308de",
   "projectname": "wx-dispatch-dispatcher-miniapp",
   "miniprogramRoot": "./",
   "compileType": "miniprogram",
@@ -34,5 +34,6 @@
     "include": []
   },
   "editorSetting": {},
-  "libVersion": "3.16.1"
+  "libVersion": "3.16.1",
+  "testRoot": "minitest/"
 }

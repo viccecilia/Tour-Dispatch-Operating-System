@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>订单大厅规则控制台 Demo</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --line: #d7e0ea;
+      --text: #162033;
+      --muted: #627089;
+      --blue: #2563eb;
+      --green: #16805d;
+      --amber: #b36b00;
+      --red: #c24137;
+      --ink: #0f172a;
+      --soft-blue: #e8f1ff;
+      --soft-green: #e8f7f0;
+      --soft-amber: #fff3dc;
+      --soft-red: #fff0ee;
+      --soft-gray: #eef2f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      background: #101827;
+      color: #dbe7f6;
+      padding: 20px 16px;
+      border-right: 1px solid #27344a;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #27344a;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #3b82f6, #16a34a);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 900;
+    }
+
+    .brand strong { display: block; color: #fff; font-size: 14px; }
+    .brand span { display: block; color: #91a2bb; font-size: 12px; margin-top: 2px; }
+
+    .nav {
+      display: grid;
+      gap: 6px;
+      margin-top: 20px;
+    }
+
+    .nav button {
+      border: 0;
+      background: transparent;
+      color: #b8c5d8;
+      height: 38px;
+      padding: 0 10px;
+      border-radius: 8px;
+      text-align: left;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .nav button.active,
+    .nav button:hover {
+      background: #1d2b42;
+      color: #fff;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 22px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: 24px;
+      line-height: 1.2;
+      color: var(--ink);
+    }
+
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: var(--soft-gray);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .badge.ok { background: var(--soft-green); color: var(--green); }
+    .badge.warn { background: var(--soft-amber); color: var(--amber); }
+    .badge.info { background: var(--soft-blue); color: var(--blue); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(420px, 1fr) minmax(360px, 0.88fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .panel-head h2 {
+      font-size: 16px;
+      color: var(--ink);
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    select,
+    input[type="number"],
+    input[type="range"] {
+      width: 100%;
+    }
+
+    select,
+    input[type="number"] {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 10px;
+      font-weight: 700;
+    }
+
+    input[type="range"] { accent-color: var(--blue); }
+
+    .price-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfdff;
+      min-height: 92px;
+    }
+
+    .metric small {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 22px;
+      color: var(--ink);
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .metric.floor strong { color: var(--red); }
+    .metric.suggest strong { color: var(--blue); }
+    .metric.accept strong { color: var(--green); }
+    .metric.cap strong { color: var(--amber); }
+
+    .formula {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .formula-row {
+      display: grid;
+      grid-template-columns: 1.15fr 0.7fr 1.25fr;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      align-items: center;
+    }
+
+    .formula-row:last-child { border-bottom: 0; }
+    .formula-row b { color: var(--ink); }
+    .formula-row code {
+      color: var(--blue);
+      font-weight: 900;
+      background: var(--soft-blue);
+      padding: 3px 6px;
+      border-radius: 6px;
+    }
+    .formula-row span { color: var(--muted); line-height: 1.4; }
+
+    .section-title {
+      margin: 22px 0 10px;
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .rule-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .rule {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .rule b {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .rule p {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .matrix {
+      display: grid;
+      gap: 10px;
+    }
+
+    .score-line {
+      display: grid;
+      grid-template-columns: 112px 1fr 42px;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    .bar {
+      height: 9px;
+      background: var(--soft-gray);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .score-line strong {
+      color: var(--ink);
+      text-align: right;
+    }
+
+    .case-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .case-tabs button {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .case-tabs button.active {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+
+    .case-box {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fbfdff;
+      padding: 14px;
+    }
+
+    .case-box h3 {
+      font-size: 15px;
+      color: var(--ink);
+    }
+
+    .case-box p {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .steps {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 9px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .step i {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--soft-blue);
+      color: var(--blue);
+      display: grid;
+      place-items: center;
+      font-style: normal;
+      font-weight: 900;
+      font-size: 11px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .table th,
+    .table td {
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .table th {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .table tr:last-child td { border-bottom: 0; }
+    .table b { color: var(--ink); }
+
+    @media (max-width: 1080px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .grid { grid-template-columns: 1fr; }
+      .price-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .main { padding: 14px; }
+      .topbar { display: block; }
+      .badge-row { justify-content: flex-start; margin-top: 12px; }
+      .controls { grid-template-columns: 1fr; }
+      .price-strip { grid-template-columns: 1fr; }
+      .formula-row { grid-template-columns: 1fr; }
+      .case-tabs { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">T</div>
+        <div>
+          <strong>TourFlow Market</strong>
+          <span>订单大厅规则原型</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="demo navigation">
+        <button class="active">定价规则</button>
+        <button>互评评分</button>
+        <button>等级匹配</button>
+        <button>保证金仲裁</button>
+        <button>急单救援</button>
+        <button>回程补位</button>
+        <button>规则审计</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>受控报价大厅细则 Demo</h1>
+          <p class="sub">规则由平台后台配置，车公司不能无限降价；评分采用多方互评和责任归因，并引入旅行社与车公司的双边等级匹配。</p>
+        </div>
+        <div class="badge-row">
+          <span class="badge info">规则版本 R001</span>
+          <span class="badge ok">审批后生效</span>
+          <span class="badge warn">保护价仅后台可见</span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>价格计算器</h2>
+            <span class="badge info">后台规则引擎</span>
+          </div>
+          <div class="panel-body">
+            <div class="controls">
+              <label>
+                路线
+                <select id="route">
+                  <option value="kix_osaka">关西机场 KIX 到大阪市内</option>
+                  <option value="osaka_kix">大阪市内到关西机场 KIX</option>
+                  <option value="itami_kyoto">伊丹机场到京都市内</option>
+                </select>
+              </label>
+              <label>
+                车型
+                <select id="vehicle">
+                  <option value="standard">标准 7 座</option>
+                  <option value="hiace">海狮 10 座</option>
+                  <option value="premium">高级商务车</option>
+                </select>
+              </label>
+              <label>
+                时间
+                <select id="timeMode">
+                  <option value="normal">普通时段</option>
+                  <option value="early">早班机 05:00-07:00</option>
+                  <option value="night">深夜 22:00-05:00</option>
+                  <option value="holiday">节假日/旺季</option>
+                </select>
+              </label>
+              <label>
+                语言
+                <select id="language">
+                  <option value="none">无指定语言</option>
+                  <option value="zh">中文司机</option>
+                  <option value="en">英文司机</option>
+                  <option value="multi">多语言接待</option>
+                </select>
+              </label>
+              <label>
+                乘客人数 <span id="paxText">4</span>
+                <input id="pax" type="range" min="1" max="10" value="4" />
+              </label>
+              <label>
+                行李件数 <span id="bagText">4</span>
+                <input id="bags" type="range" min="0" max="12" value="4" />
+              </label>
+              <label>
+                旅行社等级
+                <select id="agencyTier">
+                  <option value="A">A 级 稳定优质</option>
+                  <option value="B" selected>B 级 标准合作</option>
+                  <option value="C">C 级 观察合作</option>
+                </select>
+              </label>
+              <label>
+                目标服务等级
+                <select id="serviceTier">
+                  <option value="premium">优先高等级车公司</option>
+                  <option value="standard" selected>标准匹配</option>
+                  <option value="economy">经济匹配</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="price-strip">
+              <div class="metric suggest">
+                <small>平台建议成交价</small>
+                <strong id="suggestPrice">500</strong>
+                <span>给旅行社和车公司共同参考</span>
+              </div>
+              <div class="metric floor">
+                <small>保护底价</small>
+                <strong id="floorPrice">470</strong>
+                <span>车公司端不公开，低于此价不可报</span>
+              </div>
+              <div class="metric accept">
+                <small>一口接单价</small>
+                <strong id="acceptPrice">500</strong>
+                <span>符合评分门槛可直接接单</span>
+              </div>
+              <div class="metric cap">
+                <small>合理上限</small>
+                <strong id="capPrice">560</strong>
+                <span>超过上限需要加价说明</span>
+              </div>
+            </div>
+
+            <h3 class="section-title">计算规则</h3>
+            <div class="formula">
+              <div class="formula-row">
+                <b>基础路线价</b>
+                <code id="baseFormula">KIX -> 大阪 = 500</code>
+                <span>由平台后台维护路线价格表，按城市、机场、公里数、常规耗时和历史成交价制定。</span>
+              </div>
+              <div class="formula-row">
+                <b>服务修正</b>
+                <code id="modifierFormula">车型 + 语言 + 时段</code>
+                <span>车型、语言、早晚班、节假日、人数和行李都会形成加减价。</span>
+              </div>
+              <div class="formula-row">
+                <b>保护底价</b>
+                <code>成本线 + 最低毛利</code>
+                <span>由燃油、人工、停车高速、空驶、平台保障费和最低毛利组成，不允许被竞价打穿。</span>
+              </div>
+              <div class="formula-row">
+                <b>成交推荐</b>
+                <code>价格不是唯一条件</code>
+                <span>系统结合履约、服务、响应、责任记录和报价合理性推荐，不默认最低价中标。</span>
+              </div>
+              <div class="formula-row">
+                <b>等级溢价</b>
+                <code id="tierFormula">B 级旅行社 / 标准匹配 = +0</code>
+                <span>高等级旅行社优先匹配高等级车公司；高等级车公司可获得服务溢价，低等级组合进入观察或人工确认。</span>
+              </div>
+            </div>
+
+            <h3 class="section-title">谁制定和控制规则</h3>
+            <div class="rule-list">
+              <div class="rule">
+                <b>平台运营制定，财务和服务负责人共同审批</b>
+                <p>路线基准价、保护底价、急单加价、回程折扣必须有版本号、生效日期和审批人。普通调度员不能临时改保护价。</p>
+              </div>
+              <div class="rule">
+                <b>依据不是拍脑袋，而是成本和服务事实</b>
+                <p>参考历史订单、平均耗时、燃油停车高速、司机工时、空驶率、季节波动、投诉率、迟到风险和旅行社预算接受度。</p>
+              </div>
+              <div class="rule">
+                <b>规则可灰度，不可暗箱</b>
+                <p>后台记录每次规则改动；对车公司公开“可报价区间”和“评分影响因素”，但不公开保护底价和其他公司报价。</p>
+              </div>
+            </div>
+
+            <h3 class="section-title">等级匹配规则</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>旅行社等级</th>
+                  <th>匹配策略</th>
+                  <th>价格策略</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>A 级</b><br />准确、及时、结账稳定</td>
+                  <td>优先推送 A/B 级车公司，可预约核心时段运力。</td>
+                  <td>接受优质服务价，高等级车公司可有 3%-8% 服务溢价。</td>
+                </tr>
+                <tr>
+                  <td><b>B 级</b><br />标准合作</td>
+                  <td>匹配 B 级为主，A 级车公司视价格和运力开放。</td>
+                  <td>按平台建议价和正常报价区间成交。</td>
+                </tr>
+                <tr>
+                  <td><b>C 级</b><br />信息错误或结算风险较高</td>
+                  <td>限制高峰优先权，关键订单需预付或人工审核。</td>
+                  <td>可能增加风险保证金或降低车公司接单优先级。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>互评评分系统</h2>
+            <span class="badge ok">多方归因</span>
+          </div>
+          <div class="panel-body">
+            <div class="matrix">
+              <div class="score-line"><span>车公司履约</span><div class="bar"><i style="width: 28%"></i></div><strong>28</strong></div>
+              <div class="score-line"><span>服务体验</span><div class="bar"><i style="width: 20%; background: var(--green)"></i></div><strong>20</strong></div>
+              <div class="score-line"><span>报价合理</span><div class="bar"><i style="width: 13%; background: var(--amber)"></i></div><strong>13</strong></div>
+              <div class="score-line"><span>旅行社配合</span><div class="bar"><i style="width: 14%; background: #7c3aed"></i></div><strong>14</strong></div>
+              <div class="score-line"><span>旅客行为</span><div class="bar"><i style="width: 10%; background: #0891b2"></i></div><strong>10</strong></div>
+              <div class="score-line"><span>证据完整</span><div class="bar"><i style="width: 8%; background: #475569"></i></div><strong>8</strong></div>
+              <div class="score-line"><span>平台协作</span><div class="bar"><i style="width: 7%; background: #dc2626"></i></div><strong>7</strong></div>
+            </div>
+
+            <h3 class="section-title">互评不是单向扣车公司</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>评分方</th>
+                  <th>评价对象</th>
+                  <th>主要内容</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>旅行社/旅客</b></td>
+                  <td>车公司与司机</td>
+                  <td>准时、车辆、礼貌、语言、沟通、是否按约执行。</td>
+                </tr>
+                <tr>
+                  <td><b>车公司/司机</b></td>
+                  <td>旅行社与旅客</td>
+                  <td>资料是否准确、航班是否变更未通知、客人迟到、超行李、临时改路线。</td>
+                </tr>
+                <tr>
+                  <td><b>平台</b></td>
+                  <td>双方责任</td>
+                  <td>根据定位、聊天、航班、照片、时间戳和调度记录做责任归因。</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3 class="section-title">责任归因规则</h3>
+            <div class="rule-list">
+              <div class="rule">
+                <b>车公司责任</b>
+                <p>未按时出车、车况不符、司机联系不上、无故取消、未及时上报异常。</p>
+              </div>
+              <div class="rule">
+                <b>旅行社/旅客责任</b>
+                <p>航班或人数行李变更未同步、客人迟到、临时加点绕路、联系人失联、订单信息错误。</p>
+              </div>
+              <div class="rule">
+                <b>不可抗力或平台责任</b>
+                <p>事故、道路封闭、极端天气、系统通知失败、平台错误派发。此类不自动扣车公司分。</p>
+              </div>
+            </div>
+
+            <h3 class="section-title">客诉仲裁与保证金</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>场景</th>
+                  <th>处置方式</th>
+                  <th>资金与扣分</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>旅行社乱发单或不结算</b></td>
+                  <td>平台核对订单记录、聊天确认、取消时间、客人是否真实存在；高风险旅行社进入预付或保证金模式。</td>
+                  <td>冻结旅行社保证金；扣旅行社信用分；严重时暂停发布大厅订单。</td>
+                </tr>
+                <tr>
+                  <td><b>车公司接单后迟到/晚点</b></td>
+                  <td>核对司机定位、出发时间、交通异常、航班变化、平台通知时间；区分可抗辩迟到和责任迟到。</td>
+                  <td>责任成立时扣车公司保证金或运费；扣履约分；造成旅行社实际损失时按规则赔付。</td>
+                </tr>
+                <tr>
+                  <td><b>司机态度或服务问题</b></td>
+                  <td>要求旅行社/旅客提交文字、录音、照片、聊天截图；车公司可提交司机说明和现场证据。</td>
+                  <td>有效客诉扣服务分；严重服务事故可部分退款、赔付或限制司机继续接高等级订单。</td>
+                </tr>
+                <tr>
+                  <td><b>双方都有责任</b></td>
+                  <td>按责任比例处理，例如旅行社航班变更未通知 60%，车公司未及时确认 40%。</td>
+                  <td>保证金和扣分按比例分摊，不做单边处罚。</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="rule-list" style="margin-top: 10px;">
+              <div class="rule">
+                <b>保证金不是罚款池</b>
+                <p>保证金只用于已确认责任的赔付、未结算订单、恶意取消和严重服务事故。冻结、扣款、申诉、解冻都必须有记录。</p>
+              </div>
+              <div class="rule">
+                <b>赔付要有上限和证据</b>
+                <p>普通迟到按订单金额比例赔付；误机、严重客诉、替换车辆等重大损失进入人工仲裁，不允许无限扩大赔偿。</p>
+              </div>
+            </div>
+
+            <h3 class="section-title">等级升降机制</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>对象</th>
+                  <th>升级依据</th>
+                  <th>降级依据</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>车公司</b></td>
+                  <td>准时率高、客诉低、车辆语言匹配稳定、异常上报及时、合理报价。</td>
+                  <td>无故取消、迟到不报备、车况不符、恶意低价、绕开平台交易。</td>
+                </tr>
+                <tr>
+                  <td><b>旅行社</b></td>
+                  <td>订单资料准确、变更及时、客人配合度好、确认和结账及时。</td>
+                  <td>频繁错单、航班变更不通知、客人长期迟到、压价后追加要求、拖欠结算。</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3 class="section-title">特殊订单处理</h3>
+            <div class="case-tabs">
+              <button class="active" data-case="normal">标准单</button>
+              <button data-case="urgent">即时救急</button>
+              <button data-case="backhaul">回程补位</button>
+            </div>
+            <div class="case-box" id="caseBox"></div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const routeBase = {
+      kix_osaka: { label: "KIX -> 大阪", price: 500, floor: 0.92 },
+      osaka_kix: { label: "大阪 -> KIX", price: 500, floor: 0.92 },
+      itami_kyoto: { label: "伊丹 -> 京都", price: 620, floor: 0.9 }
+    };
+    const vehicleAdd = { standard: 0, hiace: 90, premium: 140 };
+    const timeAdd = { normal: 0, early: 60, night: 80, holiday: 70 };
+    const languageAdd = { none: 0, zh: 40, en: 50, multi: 80 };
+    const agencyTierAdd = { A: 20, B: 0, C: -10 };
+    const serviceTierAdd = { premium: 40, standard: 0, economy: -20 };
+    const agencyTierLabel = { A: "A 级旅行社", B: "B 级旅行社", C: "C 级旅行社" };
+    const serviceTierLabel = { premium: "优先高等级", standard: "标准匹配", economy: "经济匹配" };
+
+    function yuan(n) {
+      return Math.round(n / 10) * 10;
+    }
+
+    function calculate() {
+      const route = document.getElementById("route").value;
+      const vehicle = document.getElementById("vehicle").value;
+      const timeMode = document.getElementById("timeMode").value;
+      const language = document.getElementById("language").value;
+      const agencyTier = document.getElementById("agencyTier").value;
+      const serviceTier = document.getElementById("serviceTier").value;
+      const pax = Number(document.getElementById("pax").value);
+      const bags = Number(document.getElementById("bags").value);
+      document.getElementById("paxText").textContent = pax;
+      document.getElementById("bagText").textContent = bags;
+
+      const base = routeBase[route];
+      const paxAdd = Math.max(0, pax - 4) * 12;
+      const bagAdd = Math.max(0, bags - 4) * 8;
+      const tierAdd = agencyTierAdd[agencyTier] + serviceTierAdd[serviceTier];
+      const suggest = yuan(base.price + vehicleAdd[vehicle] + timeAdd[timeMode] + languageAdd[language] + paxAdd + bagAdd + tierAdd);
+      const floor = yuan(suggest * base.floor);
+      const accept = suggest;
+      const cap = yuan(suggest * 1.12);
+
+      document.getElementById("suggestPrice").textContent = suggest;
+      document.getElementById("floorPrice").textContent = floor;
+      document.getElementById("acceptPrice").textContent = accept;
+      document.getElementById("capPrice").textContent = cap;
+      document.getElementById("baseFormula").textContent = `${base.label} = ${base.price}`;
+      document.getElementById("modifierFormula").textContent = `+${vehicleAdd[vehicle] + timeAdd[timeMode] + languageAdd[language] + paxAdd + bagAdd}`;
+      document.getElementById("tierFormula").textContent = `${agencyTierLabel[agencyTier]} / ${serviceTierLabel[serviceTier]} = ${tierAdd >= 0 ? "+" : ""}${tierAdd}`;
+    }
+
+    const cases = {
+      normal: {
+        title: "标准单：受控报价，不按最低价自动中标",
+        desc: "适用于普通预约、机场送迎、包车。车公司只能在平台允许区间内报价；其他公司看不到具体报价；系统按综合评分推荐。",
+        steps: [
+          "旅行社发布预算价，平台生成建议价、保护底价和一口价。",
+          "车公司可按建议价接单，也可在区间内报价。",
+          "如果低价接近保护线，系统降权并可能要求人工确认。",
+          "成交后订单锁定，车公司再安排司机和车辆。"
+        ]
+      },
+      urgent: {
+        title: "即时救急单：优先救到，不鼓励低价抢",
+        desc: "适用于车坏、事故、堵车、原司机无法执行。急单不是低价拍卖，而是救援调度，可以高于标准价。",
+        steps: [
+          "系统标记责任来源：车公司、旅行社/旅客、不可抗力或平台。",
+          "推送给附近空车、高评分、有匹配车型的车公司。",
+          "中标排序优先 ETA，其次履约评分，最后才是价格。",
+          "若原车公司责任明确，救援差价进入责任结算。"
+        ]
+      },
+      backhaul: {
+        title: "回程补位单：允许合理低价，但必须有路线依据",
+        desc: "适用于车公司已有送机或单程订单，需要回城或顺路补位。它不是恶性低价，而是降低空驶。",
+        steps: [
+          "车公司提交前序订单或当前车辆位置证明。",
+          "系统判断结束地点、下一单起点、时间窗口和绕行距离。",
+          "符合条件时启用回程保护价，可低于普通保护价。",
+          "回程低价单不计入恶性低价统计，但不能影响原订单服务。"
+        ]
+      }
+    };
+
+    function renderCase(name) {
+      const item = cases[name];
+      document.getElementById("caseBox").innerHTML = `
+        <h3>${item.title}</h3>
+        <p>${item.desc}</p>
+        <div class="steps">
+          ${item.steps.map((step, index) => `<div class="step"><i>${index + 1}</i><span>${step}</span></div>`).join("")}
+        </div>
+      `;
+      document.querySelectorAll(".case-tabs button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.case === name);
+      });
+    }
+
+    document.querySelectorAll("select, input").forEach((input) => input.addEventListener("input", calculate));
+    document.querySelectorAll(".case-tabs button").forEach((button) => {
+      button.addEventListener("click", () => renderCase(button.dataset.case));
+    });
+    calculate();
+    renderCase("normal");
+  </script>
+</body>
+</html>

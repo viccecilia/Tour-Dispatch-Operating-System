@@ -21,6 +21,7 @@ import { NotificationsPage } from "@/pages/NotificationsPage";
 import { OrdersPage } from "@/pages/OrdersPage";
 import { ParserPage } from "@/pages/ParserPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { SystemMaintenancePage } from "@/pages/SystemMaintenancePage";
 import { VehiclesPage } from "@/pages/VehiclesPage";
 import { api, clearAuthToken, getAuthToken } from "@/services/apiClient";
 import type { AuthUser } from "@/types/api";
@@ -91,8 +92,9 @@ export function App() {
     automation: <AutomationPage />,
     copilot: <CopilotPage />,
     audit: <AuditPage />,
-    settings: <SettingsPage />,
-  }[activePage];
+    system: <SystemMaintenancePage />,
+    settings: <SettingsPage currentUser={user} />,
+  }[canAccessPage(user.role, activePage) ? activePage : "dashboard"];
 
   return (
     <SaasShell user={user} onLogout={() => {
@@ -102,4 +104,13 @@ export function App() {
       {page}
     </SaasShell>
   );
+}
+
+function canAccessPage(role: string, page: string) {
+  if (page === "system") return role === "admin";
+  if (page === "finance") return role === "admin";
+  if (page === "analytics") return role === "admin";
+  if (role === "operations_manager") return !["parser", "orders", "dispatch", "finance", "analytics", "system"].includes(page);
+  if (role === "dispatcher") return !["finance", "analytics", "system"].includes(page);
+  return true;
 }

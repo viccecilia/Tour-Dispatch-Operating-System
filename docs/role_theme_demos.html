@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>角色端口主色调 Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #edf2f7;
+      color: #102033;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    main { padding: 28px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .sub { margin: 0 0 22px; color: #64748b; font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(220px, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+    .phone {
+      border-radius: 28px;
+      background: #f7f9fc;
+      border: 1px solid #d8e2ee;
+      overflow: hidden;
+      box-shadow: 0 18px 42px rgba(15, 23, 42, .12);
+    }
+    .nav {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: #071126;
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .screen { padding: 16px; min-height: 520px; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 22px;
+      padding: 20px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--dark), var(--main));
+      box-shadow: 0 14px 28px color-mix(in srgb, var(--main) 24%, transparent);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -26px;
+      top: -30px;
+      width: 120px;
+      height: 120px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .16);
+    }
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 900;
+      opacity: .8;
+      letter-spacing: .04em;
+    }
+    .title {
+      margin-top: 8px;
+      font-size: 28px;
+      font-weight: 950;
+    }
+    .desc {
+      margin-top: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      opacity: .86;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .stat {
+      border-radius: 14px;
+      padding: 10px;
+      background: #fff;
+      border: 1px solid #e1e9f2;
+    }
+    .stat span {
+      display: block;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .stat b {
+      display: block;
+      margin-top: 4px;
+      font-size: 24px;
+    }
+    .card {
+      margin-top: 12px;
+      border-radius: 18px;
+      padding: 14px;
+      background: #fff;
+      border: 1px solid #e1e9f2;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, .05);
+    }
+    .card-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 15px;
+      font-weight: 900;
+    }
+    .pill {
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: var(--dark);
+      background: var(--soft);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .row {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 13px;
+      background: #f8fafc;
+      border-left: 4px solid var(--main);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .row small {
+      display: block;
+      margin-top: 4px;
+      color: #64748b;
+      font-weight: 700;
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 14px;
+      border-radius: 17px;
+      padding: 6px;
+      background: #fff;
+      border: 1px solid #e1e9f2;
+    }
+    .tab {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .tab.active {
+      color: #fff;
+      background: var(--main);
+      box-shadow: 0 8px 16px color-mix(in srgb, var(--main) 24%, transparent);
+    }
+    .admin { --main: #2563eb; --dark: #153b92; --soft: #eaf2ff; }
+    .dispatch { --main: #0f766e; --dark: #115e59; --soft: #def7f2; }
+    .ops { --main: #7c3aed; --dark: #5b21b6; --soft: #f0e8ff; }
+    .driver { --main: #0891b2; --dark: #155e75; --soft: #e6f8fb; }
+    .note {
+      margin-top: 18px;
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid #dbe4ef;
+      color: #475569;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      main { padding: 16px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>角色端口主色调 Demo</h1>
+    <p class="sub">同一个小程序入口，根据登录账号角色切换主色、标题和可见功能。这样不用换端口，也能一眼知道当前身份。</p>
+    <div class="grid">
+      <section class="phone admin">
+        <div class="nav">管理端</div>
+        <div class="screen">
+          <div class="hero">
+            <div class="eyebrow">ADMIN CONTROL</div>
+            <div class="title">管理总览</div>
+            <div class="desc">账号、车辆、订单、通知和系统状态统一管理。</div>
+          </div>
+          <div class="stats"><div class="stat"><span>今日</span><b>42</b></div><div class="stat"><span>异常</span><b>3</b></div><div class="stat"><span>通知</span><b>18</b></div></div>
+          <div class="card"><div class="card-title">系统事项 <span class="pill">全权限</span></div><div class="row">账号新增与停用<small>管理者可维护全部角色权限</small></div><div class="row">订单与财务总览<small>能看到全部数据和审计</small></div></div>
+          <div class="tabs"><div class="tab active">总览</div><div class="tab">派车</div><div class="tab">车辆</div><div class="tab">我的</div></div>
+        </div>
+      </section>
+
+      <section class="phone dispatch">
+        <div class="nav">调度端</div>
+        <div class="screen">
+          <div class="hero">
+            <div class="eyebrow">DISPATCH WORKBENCH</div>
+            <div class="title">快速派车</div>
+            <div class="desc">导入订单、修正内容、选择司机车辆、批量分配。</div>
+          </div>
+          <div class="stats"><div class="stat"><span>未派</span><b>12</b></div><div class="stat"><span>已选</span><b>4</b></div><div class="stat"><span>冲突</span><b>1</b></div></div>
+          <div class="card"><div class="card-title">派车队列 <span class="pill">调度</span></div><div class="row">D260529-0002-TMP<small>KIX -> 大阪市内 / 08:00</small></div><div class="row">批量分配订单<small>司机和车辆已选后显示分配按钮</small></div></div>
+          <div class="tabs"><div class="tab">首页</div><div class="tab active">派车</div><div class="tab">地图</div><div class="tab">我的</div></div>
+        </div>
+      </section>
+
+      <section class="phone ops">
+        <div class="nav">运管端</div>
+        <div class="screen">
+          <div class="hero">
+            <div class="eyebrow">OPERATIONS</div>
+            <div class="title">运行管理</div>
+            <div class="desc">车辆点检、车检、司机体检、驾照到期和紧急通知。</div>
+          </div>
+          <div class="stats"><div class="stat"><span>点检</span><b>6</b></div><div class="stat"><span>车检</span><b>2</b></div><div class="stat"><span>体检</span><b>5</b></div></div>
+          <div class="card"><div class="card-title">运行提醒 <span class="pill">无财务</span></div><div class="row">なにわ300あ6637 点检临近<small>运行管理只看运营安全事项</small></div><div class="row">司机健康诊断即将满一年<small>不显示费用、工资、报销</small></div></div>
+          <div class="tabs"><div class="tab active">总览</div><div class="tab">车辆</div><div class="tab">通知</div><div class="tab">我的</div></div>
+        </div>
+      </section>
+
+      <section class="phone driver">
+        <div class="nav">司机端</div>
+        <div class="screen">
+          <div class="hero">
+            <div class="eyebrow">DRIVER TASKS</div>
+            <div class="title">司机工作台</div>
+            <div class="desc">确认接单、出入库、当前任务、地图和费用申报。</div>
+          </div>
+          <div class="stats"><div class="stat"><span>今日</span><b>3</b></div><div class="stat"><span>下一单</span><b>13:30</b></div><div class="stat"><span>车辆</span><b>1001</b></div></div>
+          <div class="card"><div class="card-title">当前任务 <span class="pill">司机</span></div><div class="row">KIX -> 大阪市内<small>只显示自己的任务和通知</small></div><div class="row">费用申报<small>垫付、代收、司机收入记录</small></div></div>
+          <div class="tabs"><div class="tab active">首页</div><div class="tab">任务</div><div class="tab">地图</div><div class="tab">我的</div></div>
+        </div>
+      </section>
+    </div>
+    <div class="note">
+      当前预览：管理端保留蓝色，调度端青绿色，运管端紫色，司机端青色。四个颜色都不刺眼，也不会破坏现在的大圆角专业车队风格。
+    </div>
+  </main>
+</body>
+</html>

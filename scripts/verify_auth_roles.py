@@ -159,7 +159,7 @@ def main() -> None:
 
     reset = request("POST", "/api/auth/admin/reset-password", {"user_id": dispatcher_reg["user"]["id"]}, token=admin_token)
     assert_true("password_reset", reset.get("_status") == 200, reset)
-    tail = "".join(ch for ch in phones["dispatcher"] if ch.isdigit())[-4:]
+    tail = "".join(ch for ch in phones["dispatcher"] if ch.isdigit())[-6:]
     dispatcher_tail_login = request("POST", "/api/auth/login-phone", {"phone": phones["dispatcher"], "password": tail, "wx_openid": "wx_dispatcher_1", "client_type": "dispatch_miniapp"})
     assert_true("password_reset_login", dispatcher_tail_login.get("_status") == 200, dispatcher_tail_login)
 

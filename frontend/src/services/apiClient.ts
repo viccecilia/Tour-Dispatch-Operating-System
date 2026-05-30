@@ -7,6 +7,7 @@ import type {
   AssignmentEvidenceChain,
   AnalyticsSummary,
   AttendanceDaily,
+  AttendanceLedger,
   AuditLog,
   AuthUser,
   BillingOverview,
@@ -38,12 +39,17 @@ import type {
   ResourceAlert,
   Team,
   Vehicle,
+  VehicleInspectionRecord,
   WorkflowRule,
   WorkflowRun,
   WorkflowRunResult,
 } from "@/types/api";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:18765";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ? window.location.origin
+    : "http://127.0.0.1:18765");
 const TOKEN_KEY = "wx_dispatch_token";
 const AGENCY_TOKEN_KEY = "wx_dispatch_agency_token";
 
@@ -188,6 +194,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ phone, password, client_type: "web" }),
     }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    request<{ user: AuthUser }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    }),
   me: () => request<{ user: AuthUser }>("/api/auth/me"),
   dashboardSummary: () => request<DashboardSummary>("/api/dashboard/summary"),
   copilotSummary: (date?: string) => request<CopilotSummary>(`/api/copilot/summary${date ? `?date=${date}` : ""}`),
@@ -199,6 +210,20 @@ export const api = {
     return request<AnalyticsSummary>(`/api/analytics/summary${search.toString() ? `?${search}` : ""}`);
   },
   attendanceDaily: (date?: string) => request<AttendanceDaily>(`/api/attendance/daily${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  attendanceLedger: (params?: { date_from?: string; date_to?: string; keyword?: string; risk?: string }) => {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value) search.set(key, value);
+    });
+    return request<AttendanceLedger>(`/api/attendance/ledger${search.toString() ? `?${search}` : ""}`);
+  },
+  attendanceExportCsv: (params?: { date_from?: string; date_to?: string; keyword?: string; risk?: string }) => {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value) search.set(key, value);
+    });
+    return requestText(`/api/attendance/export${search.toString() ? `?${search}` : ""}`);
+  },
   auditLogs: async (params?: { action?: string; entity_type?: string; entity_id?: string; keyword?: string; limit?: number }) => {
     const search = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {
@@ -246,7 +271,18 @@ export const api = {
     }),
   orgOverview: () => request<OrgOverview>("/api/org/overview"),
   accountOverview: () => request<AccountOverview>("/api/accounts/overview"),
-  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; password?: string }) =>
+  systemStatus: () => request<Record<string, unknown>>("/api/system/status"),
+  systemHealth: () => request<{ ok: boolean; checks: Array<{ name: string; ok: boolean; detail?: string }> }>("/api/system/health"),
+  systemLogs: (lines = 120) => request<{ ok: boolean; log_file: string; lines: string[] }>(`/api/system/logs?lines=${lines}`),
+  systemBackup: () =>
+    request<{ ok: boolean; backup_name: string; backup_path: string; size_mb: number; created_at: string }>("/api/system/backup", {
+      method: "POST",
+    }),
+  systemRestartApi: () =>
+    request<{ ok: boolean; scheduled: boolean; service: string; message: string }>("/api/system/restart-api", {
+      method: "POST",
+    }),
+  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; operator_code?: string; password?: string }) =>
     request<{ account: ManagedAccount }>("/api/accounts", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -258,6 +294,10 @@ export const api = {
     }),
   disableAccount: (id: number) =>
     request<{ account: ManagedAccount }>(`/api/accounts/${id}/disable`, {
+      method: "POST",
+    }),
+  enableAccount: (id: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/enable`, {
       method: "POST",
     }),
   resetAccountPassword: (id: number) =>
@@ -365,6 +405,16 @@ export const api = {
     return requestText(`/api/finance/export${search.toString() ? `?${search}` : ""}`);
   },
   orders: async () => listFrom<Order>(await request<unknown>("/api/orders"), ["orders", "items", "data"]),
+  createOrder: (payload: Partial<Order>) =>
+    request<{ order: Order }>("/api/orders", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateOrder: (id: number, payload: Partial<Order>) =>
+    request<{ order: Order }>(`/api/orders/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   drafts: async () => listFrom<Draft>(await request<unknown>("/api/parser/drafts"), ["drafts", "items", "data"]),
   parseText: (text: string) =>
     request<{ draft: Draft; parse_status?: string; parse_result?: unknown }>("/api/parser/text", {
@@ -435,6 +485,20 @@ export const api = {
     }),
   deleteVehicle: (id: number) =>
     request<{ deleted: boolean }>(`/api/resources/vehicles/${id}`, {
+      method: "DELETE",
+    }),
+  createVehicleInspectionRecord: (vehicleId: number, payload: Partial<VehicleInspectionRecord>) =>
+    request<{ record: VehicleInspectionRecord }>(`/api/resources/vehicles/${vehicleId}/inspection-records`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateVehicleInspectionRecord: (id: number, payload: Partial<VehicleInspectionRecord>) =>
+    request<{ record: VehicleInspectionRecord }>(`/api/resources/vehicle-inspection-records/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteVehicleInspectionRecord: (id: number) =>
+    request<{ deleted: boolean }>(`/api/resources/vehicle-inspection-records/${id}`, {
       method: "DELETE",
     }),
   assign: (orderIds: number[], driverId: number, vehicleId: number) =>

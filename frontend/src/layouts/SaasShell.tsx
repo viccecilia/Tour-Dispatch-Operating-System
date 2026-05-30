@@ -17,6 +17,7 @@ import {
   Receipt,
   Route,
   Settings,
+  ServerCog,
   Truck,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -47,15 +48,18 @@ const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
   { key: "automation", labelKey: "nav.automation", icon: Bot },
   { key: "copilot", labelKey: "nav.copilot", icon: Bot },
   { key: "audit", labelKey: "nav.audit", icon: FileClock },
+  { key: "system", labelKey: "后台控制", icon: ServerCog },
   { key: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
 function visibleNavItems(role: string) {
   return navItems.filter((item) => {
     const key = String(item.key);
+    if (key === "system") return role === "admin";
     if (key === "finance") return role === "admin";
-    if (role === "operations_manager") return !["parser", "orders", "finance", "analytics"].includes(key);
-    if (role === "dispatcher") return key !== "finance";
+    if (key === "analytics") return role === "admin";
+    if (role === "operations_manager") return !["parser", "orders", "dispatch", "finance", "analytics", "system"].includes(key);
+    if (role === "dispatcher") return !["finance", "analytics", "system"].includes(key);
     return true;
   });
 }
@@ -78,6 +82,7 @@ const titleKeys: Record<PageKey, string> = {
   automation: "page.automation",
   copilot: "page.copilot",
   audit: "page.audit",
+  system: "后台控制",
   settings: "page.settings",
 };
 
@@ -91,7 +96,6 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
   const { activePage, setActivePage } = useNavigationStore();
   const { locale, setLocale, t } = useLanguageStore();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const ping = useQuery({ queryKey: ["ping"], queryFn: api.ping, refetchInterval: 30_000 });
   const notifications = useQuery({
     queryKey: ["notification-summary"],
     queryFn: api.notificationSummary,
@@ -135,7 +139,6 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
           <p className="font-bold text-slate-950">{user.display_name || user.username}</p>
           <p className="mt-1">{user.tenant?.name || `租户 ${user.tenant_id}`}</p>
           <p>{t("topbar.demo")}</p>
-          <p className="mt-1 truncate">{api.baseUrl}</p>
         </div>
       </aside>
 
@@ -220,14 +223,6 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
             </div>
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{t("topbar.demo")}</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{roleLabel(user.role)}</span>
-            <span
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold",
-                ping.isError ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700",
-              )}
-            >
-              {ping.isError ? t("topbar.apiOffline") : t("topbar.apiOnline")}
-            </span>
             <button className="micro-press focus-runtime rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white" onClick={onLogout}>
               {t("topbar.logout")}
             </button>

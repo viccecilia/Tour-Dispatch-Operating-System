@@ -96,7 +96,7 @@ def main() -> None:
     print(f"source_database={source_path if source_path.exists() else 'none'}")
     print(table_counts([table for table in COUNT_TABLES if _table_exists_runtime(table)]))
     print("trial_database_ready=true")
-    print("trial_credentials=admin/admin123, dispatcher 090-72-0001/0001, operations 090-73-0001/0001, driver phone/last4")
+    print("trial_credentials=admin/admin123, dispatcher 090-72-0001/720001, operations 090-73-0001/730001, driver phone/last6")
     print("super_wechat_id=zongzou")
 
 
@@ -149,7 +149,7 @@ def _username_from_phone(phone: str) -> str:
 
 def _password_tail(phone: str) -> str:
     digits = _normalize_phone(phone)
-    return digits[-4:] if len(digits) >= 4 else "1234"
+    return digits[-6:] if len(digits) >= 6 else "123456"
 
 
 def _keep_only_real_drivers(conn: sqlite3.Connection) -> None:

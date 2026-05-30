@@ -1,4 +1,57 @@
-<view class="map-page">
+<view wx:if="{{isDriver}}" class="map-page driver-map-page driver-theme">
+  <map
+    class="fleet-map"
+    latitude="{{latitude}}"
+    longitude="{{longitude}}"
+    scale="{{scale}}"
+    show-location
+  ></map>
+
+  <view class="map-top driver-task-panel">
+    <view class="map-title-row">
+      <view>
+        <view class="map-eyebrow">TODAY TASK</view>
+        <view class="map-title">当前任务</view>
+      </view>
+      <button class="refresh-button" bindtap="loadDriverMap">刷新</button>
+    </view>
+
+    <view wx:if="{{currentAssignment}}" class="current-task-card">
+      <view class="result-badge online">{{currentAssignment.statusLabel}}</view>
+      <view class="current-order">{{currentAssignment.oid || currentAssignment.order_id}}</view>
+      <view class="current-time">{{currentAssignment.timeText}}</view>
+      <view class="current-route">{{currentAssignment.routeText}}</view>
+      <button
+        class="node-action"
+        disabled="{{nextAction.disabled}}"
+        bindtap="submitCurrentReport"
+      >{{nextAction.label}}</button>
+    </view>
+
+    <view wx:else class="current-task-card empty-current">
+      <view class="current-order">今日暂无当前任务</view>
+      <view class="current-time">调度派车后会显示当前订单和节点汇报按钮。</view>
+    </view>
+  </view>
+
+  <view class="map-bottom driver-upcoming-panel">
+    <view class="selected-title">待执行任务</view>
+    <scroll-view scroll-y class="result-list">
+      <view wx:for="{{upcomingAssignments}}" wx:key="assignment_id" class="result-row compact-task">
+        <view>
+          <view class="result-title">{{item.oid || item.order_id}}</view>
+          <view class="result-meta">{{item.timeText}} · {{item.routeText}}</view>
+        </view>
+        <text class="result-badge">{{item.statusLabel}}</text>
+      </view>
+      <view wx:if="{{!upcomingAssignments.length}}" class="result-row">
+        <view class="result-meta">后续待执行订单会折叠显示在这里。</view>
+      </view>
+    </scroll-view>
+  </view>
+</view>
+
+<view wx:else class="map-page">
   <map
     class="fleet-map"
     latitude="{{latitude}}"

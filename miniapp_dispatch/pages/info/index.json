@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "信息",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
+}

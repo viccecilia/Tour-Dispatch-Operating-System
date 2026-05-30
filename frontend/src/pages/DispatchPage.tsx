@@ -744,7 +744,7 @@ export function DispatchPage() {
                 <div key={`${item.assignment_id || item.id}-${item.order_id}`} className="rounded-lg border border-border bg-white p-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-bold text-slate-950">{item.plate_number || "-"}</p>
-                    <StatusBadge status={item.execution_status || item.dispatch_status || item.status} />
+                    <StatusBadge status={item.calendar_status || item.execution_status || item.dispatch_status || item.status} />
                   </div>
                   <p className="mt-2 text-sm text-slate-700">{item.start_time}-{item.end_time} · {shortRoute(item.pickup_location, item.dropoff_location)}</p>
                   <p className="mt-1 text-xs text-slate-500">{item.driver_name || "-"} · {item.oid || item.order_id}</p>

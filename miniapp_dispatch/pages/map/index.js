@@ -2,8 +2,14 @@ const api = require('../../utils/api');
 
 Page({
   data: {
+    role: '',
+    isDriver: false,
+    driverId: 0,
     locations: [],
     assignments: [],
+    currentAssignment: null,
+    upcomingAssignments: [],
+    nextAction: null,
     filteredDrivers: [],
     filteredOrders: [],
     markers: [],
@@ -16,10 +22,30 @@ Page({
   },
 
   onShow() {
+    api.setActiveTab('/pages/map/index');
+    this.refreshTabBar();
+    const session = api.getSession();
+    const role = api.getRole(session);
+    const isDriver = role === 'driver';
+    this.setData({
+      role,
+      isDriver,
+      driverId: Number(session && session.user && session.user.profile_id || 0)
+    });
     this.loadData();
   },
 
+  refreshTabBar() {
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().refresh();
+    }
+  },
+
   loadData() {
+    if (this.data.isDriver) {
+      this.loadDriverMap();
+      return;
+    }
     Promise.all([
       api.fleetLocations().catch(() => ({ locations: [] })),
       api.assignments().catch(() => ({ assignments: [] }))
@@ -37,6 +63,31 @@ Page({
         selected: null
       });
       this.applyFilter();
+    });
+  },
+
+  loadDriverMap() {
+    const driverId = this.data.driverId;
+    if (!driverId) return;
+    Promise.all([
+      api.driverAssignments(driverId).catch(() => ({ assignments: [] })),
+      api.driverWorkbench(driverId).catch(() => ({}))
+    ]).then(([assignmentRes, workbench]) => {
+      const today = this.today();
+      const assignments = (assignmentRes.assignments || [])
+        .filter((item) => this.isOnDate(item, today))
+        .map((item) => this.decorateDriverAssignment(item))
+        .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+      const current = this.pickCurrentAssignment(assignments, workbench.current_assignment);
+      const upcoming = assignments.filter((item) => !current || Number(item.assignment_id || item.id) !== Number(current.assignment_id || current.id));
+      this.setData({
+        assignments,
+        currentAssignment: current,
+        upcomingAssignments: upcoming,
+        nextAction: this.nextDriverAction(current),
+        filteredOrders: assignments,
+        selected: null
+      });
     });
   },
 
@@ -76,6 +127,17 @@ Page({
         item.status
       ].filter(Boolean).join(' ').toLowerCase()
     }));
+  },
+
+  decorateDriverAssignment(item) {
+    const status = item.execution_status || item.status || 'assigned';
+    return {
+      ...item,
+      rawStatus: status,
+      routeText: `${item.pickup_location || '-'} -> ${item.dropoff_location || '-'}`,
+      timeText: `${item.order_date || '-'} ${item.start_time || '--:--'}`,
+      statusLabel: this.driverStatusLabel(status)
+    };
   },
 
   buildMarkers(locations) {
@@ -171,5 +233,88 @@ Page({
         sub: driver.reported_at || driver.created_at || ''
       }
     });
+  },
+
+  submitCurrentReport() {
+    const item = this.data.currentAssignment;
+    const action = this.data.nextAction;
+    if (!item || !action || action.disabled) return;
+    this.setData({ selected: { title: '正在提交', meta: action.label, sub: '' } });
+    this.withLocation((location) => {
+      api.submitDriverReport({
+        driver_id: this.data.driverId,
+        assignment_id: item.assignment_id || item.id,
+        report_type: action.reportType,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        location_text: action.label,
+        note: JSON.stringify({ action: action.reportType })
+      }).then((result) => {
+        if (result && result.success === false) {
+          wx.showToast({ title: this.reportError(result), icon: 'none' });
+          return;
+        }
+        wx.showToast({ title: action.success, icon: 'success' });
+        this.loadDriverMap();
+      }).catch(() => {
+        wx.showToast({ title: '提交失败', icon: 'none' });
+      });
+    });
+  },
+
+  withLocation(done) {
+    wx.getLocation({
+      type: 'gcj02',
+      success: (res) => done({ latitude: res.latitude, longitude: res.longitude }),
+      fail: () => done({ latitude: null, longitude: null })
+    });
+  },
+
+  pickCurrentAssignment(assignments, workbenchCurrent) {
+    const id = Number(workbenchCurrent && (workbenchCurrent.assignment_id || workbenchCurrent.id) || 0);
+    if (id) {
+      const matched = assignments.find((item) => Number(item.assignment_id || item.id) === id);
+      if (matched) return matched;
+    }
+    return assignments.find((item) => ['departed', 'arrived', 'in_service'].indexOf(item.rawStatus) >= 0)
+      || assignments.find((item) => ['assigned', 'confirmed'].indexOf(item.rawStatus) >= 0)
+      || null;
+  },
+
+  nextDriverAction(item) {
+    if (!item) return { label: '今日暂无当前任务', disabled: true };
+    const status = item.rawStatus || 'assigned';
+    if (status === 'assigned') return { label: '确认接单', reportType: 'confirm_order', success: '已确认' };
+    if (status === 'confirmed') return { label: '出发上车点', reportType: 'depart_yard', success: '已出发' };
+    if (status === 'departed') return { label: '到达上车点', reportType: 'arrive_pickup', success: '已到达上车点' };
+    if (status === 'arrived') return { label: '开始服务', reportType: 'start_service', success: '已开始服务' };
+    if (status === 'in_service') return { label: '到达终点', reportType: 'complete_order', success: '已到达终点' };
+    return { label: '任务已完成', disabled: true };
+  },
+
+  driverStatusLabel(status) {
+    if (['departed', 'arrived', 'in_service'].indexOf(status) >= 0) return '正在执行';
+    if (status === 'completed' || status === 'returned') return '已完成';
+    return '待执行';
+  },
+
+  reportError(result) {
+    return {
+      execution_status_duplicate_or_regression_not_allowed: '状态已更新，请刷新',
+      execution_status_skip_not_allowed: '请按流程顺序操作',
+      assignment_not_found_for_driver: '未找到司机任务',
+      location_out_of_range: '当前位置不在节点附近'
+    }[result && result.error] || '提交失败';
+  },
+
+  isOnDate(item, date) {
+    const start = item.order_date || date;
+    const end = item.end_date || start;
+    return start <= date && end >= date;
+  },
+
+  today() {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 });

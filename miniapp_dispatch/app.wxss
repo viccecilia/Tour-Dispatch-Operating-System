@@ -32,6 +32,36 @@ page {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+.driver-theme {
+  --c-primary: #0f766e;
+  --c-primary-dark: #115e59;
+  --c-primary-soft: #ecfeff;
+  --c-bg: #f0fdfa;
+  --c-surface-soft: #f8fffe;
+  --shadow-card: 0 12rpx 30rpx rgba(15, 118, 110, 0.08);
+  --shadow-float: 0 20rpx 50rpx rgba(15, 118, 110, 0.14);
+}
+
+.page.driver-theme,
+.map-page.driver-theme {
+  background: var(--c-bg);
+}
+
+.driver-theme .hero {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+}
+
+.driver-theme .button-primary {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  box-shadow: 0 14rpx 30rpx rgba(20, 184, 166, 0.22);
+}
+
+.driver-theme .button-secondary,
+.driver-theme .badge {
+  color: #115e59;
+  background: #ecfeff;
+}
+
 .page {
   min-height: 100vh;
   padding: 24rpx 24rpx 138rpx;

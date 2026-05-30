@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>出勤日历样式 Demo</title>
+  <style>
+    :root {
+      --bg: #eef4f7;
+      --card: #ffffff;
+      --ink: #102033;
+      --muted: #6b7890;
+      --line: #dce7ef;
+      --teal: #0f766e;
+      --green: #16a34a;
+      --red: #dc2626;
+      --red-bg: #fff7f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      padding: 28px;
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .lead { margin: 0 0 22px; color: var(--muted); font-weight: 650; }
+    .wrap {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+    }
+    .demo {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: 0 14px 32px rgba(30, 54, 92, .08);
+      padding: 18px;
+    }
+    .demo h2 { margin: 0; font-size: 18px; }
+    .note {
+      margin: 6px 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .weekday-row,
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .weekday-row {
+      margin-bottom: 8px;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 900;
+      text-align: center;
+    }
+    .weekday-row .holiday { color: #ef4444; }
+    .day {
+      position: relative;
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 8px;
+      overflow: hidden;
+    }
+    .date { font-size: 12px; font-weight: 900; color: #334155; }
+    .count {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 950;
+      color: #15803d;
+      background: #dcfce7;
+    }
+    .holiday .date { color: #dc2626; }
+    .holiday .count { color: #dc2626; background: #fef2f2; }
+    .active { outline: 2px solid var(--teal); outline-offset: 0; }
+    .tag { margin-top: 16px; font-size: 11px; font-weight: 900; color: var(--teal); }
+
+    .a .day { box-shadow: none; border-radius: 10px; }
+    .a .holiday { background: #fff; border-color: #f1d4d4; border-bottom: 2px solid #fca5a5; }
+    .a .active { background: #ecfdf5; }
+
+    .b .day { border-radius: 16px; background: #f8fafc; border-color: transparent; }
+    .b .holiday { background: #fff; border-color: #f1d4d4; }
+    .b .active { background: linear-gradient(180deg, #ecfdf5 0%, #fff 100%); box-shadow: inset 0 0 0 2px var(--teal); }
+    .b .tag { color: #64748b; }
+
+    .c .day { padding-left: 12px; border-radius: 10px; }
+    .c .day::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 5px;
+      background: #dbeafe;
+    }
+    .c .day.has-work::before { background: var(--green); }
+    .c .day.holiday::before { background: #fca5a5; }
+    .c .active { background: #f8fffe; }
+
+    .d .day { min-height: 68px; border-radius: 999px; display: grid; place-items: center; padding: 6px; }
+    .d .date { font-size: 13px; }
+    .d .count {
+      top: auto;
+      right: 50%;
+      bottom: 7px;
+      transform: translateX(50%);
+      width: 6px;
+      min-width: 6px;
+      height: 6px;
+      font-size: 0;
+      background: var(--green);
+    }
+    .d .holiday { background: #fff; border-color: #f1d4d4; }
+    .d .holiday .count { background: #ef4444; }
+    .d .active { background: #0f766e; }
+    .d .active .date { color: #fff; }
+
+    .e .day { min-height: 58px; border-radius: 8px; padding: 7px; }
+    .e .date { font-size: 11px; }
+    .e .count { border-radius: 6px; }
+    .e .holiday { background: #fff; border-color: #f1d4d4; }
+  </style>
+</head>
+<body>
+  <h1>出勤日历标识样式 Demo</h1>
+  <p class="lead">星期统一放在顶部，日期卡片里只保留日期、出勤数字和必要标识。</p>
+  <div class="wrap" id="wrap"></div>
+
+  <script>
+    const demos = [
+      ["A. 极简底线版", "红日只用底线强调，最轻，不占空间。", "a"],
+      ["B. 柔和卡片版", "当前选中更明显，整体轻，干净。", "b"],
+      ["C. 左侧色条版", "适合运营看状态，绿色有出勤，红色是假日。", "c"],
+      ["D. 圆点日历版", "最像手机日历，信息少，视觉最清爽。", "d"],
+      ["E. 紧凑运营版", "一屏能看更多天数，适合月视图。", "e"]
+    ];
+    const headers = [
+      ["周一", false],
+      ["周二", false],
+      ["周三", false],
+      ["周四", false],
+      ["周五", false],
+      ["周六", true],
+      ["周日", true]
+    ];
+    const days = [
+      ["05-25", 0, false],
+      ["05-26", 0, false],
+      ["05-27", 0, false],
+      ["05-28", 3, false],
+      ["05-29", 0, false],
+      ["05-30", 0, true],
+      ["05-31", 0, true]
+    ];
+    const wrap = document.getElementById("wrap");
+    demos.forEach(([title, note, cls]) => {
+      const demo = document.createElement("section");
+      demo.className = `demo ${cls}`;
+      demo.innerHTML = `<h2>${title}</h2><p class="note">${note}</p><div class="weekday-row"></div><div class="grid"></div>`;
+      const weekdayRow = demo.querySelector(".weekday-row");
+      headers.forEach(([label, holiday]) => {
+        const head = document.createElement("div");
+        head.className = holiday ? "holiday" : "";
+        head.textContent = label;
+        weekdayRow.appendChild(head);
+      });
+      const grid = demo.querySelector(".grid");
+      days.forEach(([date, count, holiday], index) => {
+        const cell = document.createElement("div");
+        cell.className = `day ${count ? "has-work" : ""} ${holiday ? "holiday" : ""} ${index === 3 ? "active" : ""}`;
+        cell.innerHTML = `<div class="date">${date}</div><div class="count">${count}</div>${count ? `<div class="tag">出勤</div>` : ""}`;
+        grid.appendChild(cell);
+      });
+      wrap.appendChild(demo);
+    });
+  </script>
+</body>
+</html>
