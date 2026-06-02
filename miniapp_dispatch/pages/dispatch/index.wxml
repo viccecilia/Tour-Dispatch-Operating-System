@@ -1,9 +1,11 @@
 <view class="page dispatch-page">
   <view class="hero quick-hero">
-    <view>
+    <view class="preview-copy">
       <view class="hero-eyebrow">DISPATCH WORKBENCH</view>
-      <view class="hero-title">导入与派车</view>
-      <view class="hero-meta">粘贴订单 → 后台解析 → 表内修正 → 选司机车辆 → 一键派车</view>
+      <view class="title-with-help">
+        <view class="hero-title">导入与派车</view>
+        <view class="help-dot hero-help" data-type="hero" bindtap="showHelp">?</view>
+      </view>
     </view>
     <view class="hero-count">
       <text>已选</text>
@@ -13,14 +15,14 @@
 
   <view class="toolbar">
     <button class="tool-button primary" bindtap="toggleImport">{{importOpen ? '收起导入' : '批量导入'}}</button>
-    <button class="tool-button" bindtap="toggleSortMode">{{sortMode ? '完成排序' : '排序'}}</button>
-    <button class="tool-button dispatch-top {{canAssign ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">批量分配订单</button>
-    <button class="tool-button reassign-top {{canAssign ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="reassignSelected">重新分配订单</button>
-    <button class="tool-button auction-top {{selectedKeys.length ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
+    <button wx:if="{{canAuction}}" class="tool-button auction-top {{selectedKeys.length ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
   </view>
 
   <view wx:if="{{importOpen}}" class="panel import-panel">
-    <view class="panel-title">微信 / LINE 订单文本</view>
+    <view class="title-with-help">
+      <view class="panel-title">微信 / LINE 订单文本</view>
+      <view class="help-dot" data-type="import" bindtap="showHelp">?</view>
+    </view>
     <textarea class="textarea" value="{{importText}}" bindinput="onImportText" placeholder="粘贴订单文本，一次可导入 50-80 单" />
     <button class="button-primary" loading="{{loading}}" bindtap="parseOrders">解析并分类</button>
   </view>
@@ -31,8 +33,10 @@
   <view class="panel charter-panel">
     <view class="section-head" bindtap="toggleCharter">
       <view>
-        <view class="panel-title">包车</view>
-        <view class="muted">信息较多，横向占满；双击订单展开修改。</view>
+        <view class="title-with-help">
+          <view class="panel-title">包车</view>
+          <view class="help-dot" data-type="charter" bindtap="showHelp">?</view>
+        </view>
       </view>
       <view class="count-pill">{{charterRows.length}} 单 · {{charterCollapsed ? '展开' : '收起'}}</view>
     </view>
@@ -48,9 +52,6 @@
             </view>
             <view class="compact-line">{{item.timeText}} · {{item.routeText}}</view>
             <view class="compact-meta">{{item.vehicle_type || '车型待确认'}} · {{item.charterDetailText}}</view>
-          </view>
-          <view class="mini-actions" catchtap="noop">
-            <button wx:if="{{item.kind === 'draft'}}" class="mini-btn compact-confirm" data-key="{{item.key}}" bindtap="confirmRow">入库</button>
           </view>
         </view>
         <view wx:if="{{editingKey === item.key}}" class="inline-edit" catchtap="noop">
@@ -78,7 +79,10 @@
   <view class="airport-grid">
     <view class="panel list-panel">
       <view class="section-head small">
-        <view class="panel-title">接机</view>
+        <view class="title-with-help">
+          <view class="panel-title">接机</view>
+          <view class="help-dot" data-type="pickup" bindtap="showHelp">?</view>
+        </view>
         <view class="count-pill">{{pickupRows.length}}</view>
       </view>
       <scroll-view scroll-y class="airport-scroll">
@@ -112,7 +116,10 @@
 
     <view class="panel list-panel">
       <view class="section-head small">
-        <view class="panel-title">送机</view>
+        <view class="title-with-help">
+          <view class="panel-title">送机</view>
+          <view class="help-dot" data-type="dropoff" bindtap="showHelp">?</view>
+        </view>
         <view class="count-pill">{{dropoffRows.length}}</view>
       </view>
       <scroll-view scroll-y class="airport-scroll">
@@ -148,8 +155,10 @@
   <view class="resource-grid">
     <view class="panel resource-box">
       <view class="section-head small">
-        <view class="panel-title">司机</view>
-        <view class="muted">空闲优先，冲突置后</view>
+        <view class="title-with-help">
+          <view class="panel-title">司机</view>
+          <view class="help-dot" data-type="drivers" bindtap="showHelp">?</view>
+        </view>
       </view>
       <scroll-view scroll-y class="resource-scroll">
         <view wx:for="{{drivers}}" wx:key="id" data-id="{{item.id}}" bindtap="selectDriver" class="resource-row driver-row {{item.selected ? 'selected' : ''}} {{item.disabled ? 'disabled' : ''}}">
@@ -161,8 +170,10 @@
 
     <view class="panel resource-box">
       <view class="section-head small">
-        <view class="panel-title">车辆</view>
-        <view class="muted">空闲优先，冲突置后</view>
+        <view class="title-with-help">
+          <view class="panel-title">车辆</view>
+          <view class="help-dot" data-type="vehicles" bindtap="showHelp">?</view>
+        </view>
       </view>
       <scroll-view scroll-y class="resource-scroll">
         <view wx:for="{{vehicles}}" wx:key="id" data-id="{{item.id}}" bindtap="selectVehicle" class="resource-row {{item.selected ? 'selected' : ''}} {{item.disabled ? 'disabled' : ''}}">
@@ -180,10 +191,17 @@
       <view class="preview-sub">{{canAssign ? '司机和车辆已选，可以派单。' : '请在下方选择司机和车辆。'}}</view>
     </view>
     <view class="preview-actions">
-      <button class="dispatch-button secondary" loading="{{loading}}" bindtap="confirmSelectedDrafts">确认草稿</button>
-      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">批量分配</button>
-      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="reassignSelected">重新分配</button>
-      <button class="dispatch-button secondary" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
+      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">派单</button>
+    </view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
     </view>
   </view>
 </view>

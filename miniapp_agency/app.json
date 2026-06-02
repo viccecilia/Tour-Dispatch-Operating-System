@@ -1,0 +1,47 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/orders/index",
+    "pages/hall/index",
+    "pages/tracking/index",
+    "pages/calendar/index",
+    "pages/settings/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "TourFlow",
+    "navigationBarBackgroundColor": "#12324a",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f4f7fb"
+  },
+  "tabBar": {
+    "color": "#65758b",
+    "selectedColor": "#0f766e",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "??"
+      },
+      {
+        "pagePath": "pages/orders/index",
+        "text": "??"
+      },
+      {
+        "pagePath": "pages/hall/index",
+        "text": "??"
+      },
+      {
+        "pagePath": "pages/tracking/index",
+        "text": "??"
+      },
+      {
+        "pagePath": "pages/calendar/index",
+        "text": "??"
+      }
+    ],
+    "custom": true
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

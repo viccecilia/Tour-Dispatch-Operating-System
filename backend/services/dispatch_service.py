@@ -38,11 +38,10 @@ def list_available_vehicles() -> list[dict[str, Any]]:
                 FROM vehicles
                 WHERE tenant_id = ?
                   AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
-                  AND (plate_number LIKE ? OR plate_no LIKE ?)
                 ORDER BY id
                 """
                 ,
-                (get_current_tenant_id(), "\u306a\u306b\u308f%", "\u306a\u306b\u308f%"),
+                (get_current_tenant_id(),),
             ).fetchall()
         ]
 

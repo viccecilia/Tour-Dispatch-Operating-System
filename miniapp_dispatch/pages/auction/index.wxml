@@ -1,15 +1,17 @@
 <view class="page auction-page">
   <view class="hero auction-hero">
     <view class="hero-eyebrow">ORDER HALL</view>
-    <view class="hero-title">订单大厅</view>
-    <view class="hero-meta">把公司暂时无法执行的订单发布到大厅，后续由其他车公司接单。</view>
+    <view class="title-with-help hero-title-row">
+      <view class="hero-title">订单大厅</view>
+      <view class="help-dot hero-help" data-type="hero" bindtap="showHelp">?</view>
+    </view>
   </view>
 
   <view class="panel publish-panel">
     <view class="panel-header">
-      <view>
+      <view class="title-with-help">
         <view class="panel-title">发布到大厅</view>
-        <view class="muted">从派车页选中订单后跳到这里，填写起拍价和一口价。</view>
+        <view class="help-dot" data-type="publish" bindtap="showHelp">?</view>
       </view>
       <button class="mini-button" bindtap="goDispatch">去选订单</button>
     </view>
@@ -19,25 +21,39 @@
         <view wx:for="{{draft.orders}}" wx:key="id" class="draft-row">
           <view>
             <view class="row-title">{{item.oid || item.id}}</view>
-            <view class="muted">{{item.order_date || '-'}} {{item.start_time || ''}} · {{item.pickup_location || '-'}} → {{item.dropoff_location || '-'}}</view>
+            <view class="muted">{{item.order_date || '-'}} {{item.start_time || ''}} · {{item.pickup_location || '-'}} -> {{item.dropoff_location || '-'}}</view>
           </view>
-          <view class="price-pill">¥{{item.price || 0}}</view>
+          <view class="price-pill">￥{{item.price || item.price_jpy || 0}}</view>
         </view>
       </view>
 
       <view class="price-form">
         <view class="field">
-          <view class="field-label">起拍价</view>
-          <input class="input" type="number" value="{{startPrice}}" data-key="startPrice" bindinput="onInput" placeholder="JPY" />
+          <view class="field-label">起拍价 人民币</view>
+          <input class="input" type="number" value="{{startPrice}}" data-key="startPrice" bindinput="onInput" placeholder="例如 450" />
         </view>
         <view class="field">
-          <view class="field-label">一口价</view>
-          <input class="input" type="number" value="{{buyoutPrice}}" data-key="buyoutPrice" bindinput="onInput" placeholder="JPY" />
+          <view class="field-label">一口价 人民币</view>
+          <input class="input" type="number" value="{{buyoutPrice}}" data-key="buyoutPrice" bindinput="onInput" placeholder="例如 360" />
         </view>
       </view>
+
+      <view class="duration-row">
+        <view class="field-label">拍卖时间</view>
+        <view class="duration-options">
+          <view
+            wx:for="{{durationOptions}}"
+            wx:key="*this"
+            data-hours="{{item}}"
+            class="duration-button {{durationHours === item ? 'active' : ''}}"
+            bindtap="chooseDuration"
+          >{{item}}小时</view>
+        </view>
+      </view>
+
       <view class="field">
         <view class="field-label">备注</view>
-        <textarea class="textarea note-input" value="{{note}}" data-key="note" bindinput="onInput" placeholder="例如：需要中文司机、限大阪本地车队等" />
+        <textarea class="textarea note-input" value="{{note}}" data-key="note" bindinput="onInput" placeholder="例如：先大阪车，行程信息已确认" />
       </view>
       <view class="publish-actions">
         <button class="button-secondary" bindtap="clearDraft">取消</button>
@@ -47,7 +63,7 @@
 
     <view wx:else class="empty-state">
       <view class="empty-title">暂无待发布订单</view>
-      <view class="muted">请先在派车页选中订单，再点击“放入大厅”。</view>
+      <view class="muted">请先到派车页选择订单，再点击“放入大厅”。</view>
     </view>
   </view>
 
@@ -55,9 +71,9 @@
 
   <view class="panel">
     <view class="panel-header">
-      <view>
+      <view class="title-with-help">
         <view class="panel-title">大厅订单</view>
-        <view class="muted">当前显示已发布中的订单。</view>
+        <view class="help-dot" data-type="list" bindtap="showHelp">?</view>
       </view>
       <button class="mini-button" loading="{{loading}}" bindtap="loadListings">刷新</button>
     </view>
@@ -67,16 +83,39 @@
         <view class="auction-main">
           <view class="row-title">{{item.oid || item.order_id}}</view>
           <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
-          <view class="muted">发布公司：{{item.seller_company_name || item.seller_company_code || '-'}}</view>
+          <view class="meta-line">
+            <text>{{item.order_type || '-'}}</text>
+            <text>{{item.vehicle_type || '-'}}</text>
+            <text>{{item.passenger_count || '-'}}人 / {{item.luggage_count || '-'}}件</text>
+            <text>{{item.durationText}}</text>
+          </view>
         </view>
         <view class="auction-price">
-          <text>起 {{item.startPriceText}}</text>
-          <strong>一口 {{item.buyoutPriceText}}</strong>
+          <text>起拍价 {{item.startPriceText}}</text>
+          <strong>当前 {{item.currentPriceText}}</strong>
+          <text>一口 {{item.buyoutPriceText}}</text>
+        </view>
+        <view class="auction-actions">
+          <view wx:if="{{item.isOwnListing}}" class="own-listing-note">本公司发布</view>
+          <block wx:else>
+            <button class="small-action bid-action {{item.canBid ? '' : 'disabled'}}" disabled="{{!item.canBid}}" data-id="{{item.id}}" data-current="{{item.current_bid_jpy || item.start_price_jpy}}" data-buyout="{{item.buyout_price_jpy}}" bindtap="placeBid">{{item.bidActionText}}</button>
+            <button class="small-action primary" data-id="{{item.id}}" data-price="{{item.buyout_price_jpy}}" bindtap="claimListing">一口价</button>
+          </block>
         </view>
       </view>
       <view wx:if="{{!listings.length}}" class="empty-state">
-        <view class="empty-title">大厅暂无订单</view>
+        <view class="empty-title">暂无可接大厅订单</view>
       </view>
+    </view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
     </view>
   </view>
 

@@ -32,6 +32,8 @@ AGENCY_COLUMNS = {
     "status": "TEXT NOT NULL DEFAULT 'active'",
     "remark": "TEXT",
     "portal_code": "TEXT",
+    "portal_password_hash": "TEXT",
+    "portal_password_updated_at": "TEXT",
     "is_portal_enabled": "INTEGER NOT NULL DEFAULT 1",
     "updated_at": "TEXT",
 }

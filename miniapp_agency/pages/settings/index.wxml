@@ -1,0 +1,65 @@
+<view class="page">
+  <view class="hero">
+    <view class="hero-eyebrow">AGENCY SETTINGS</view>
+    <view class="hero-title">旅行社设置</view>
+    <view class="hero-meta">维护本旅行社藤本 PDF、打款账号、担当姓名和担当电话。</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">基本信息</view>
+    <view class="field">
+      <view class="field-label">旅行社</view>
+      <input class="input" value="{{form.name}}" disabled />
+    </view>
+    <view class="field">
+      <view class="field-label">担当姓名</view>
+      <input class="input" value="{{form.contact_name}}" data-field="contact_name" bindinput="onFieldInput" placeholder="例：Mico Yamamoto" />
+    </view>
+    <view class="field">
+      <view class="field-label">担当电话</view>
+      <input class="input" value="{{form.contact_phone}}" data-field="contact_phone" bindinput="onFieldInput" placeholder="例：080-7101-0000" />
+    </view>
+    <view class="field">
+      <view class="field-label">公司地址</view>
+      <textarea class="textarea compact-textarea" value="{{form.company_address}}" data-field="company_address" bindinput="onFieldInput" placeholder="公司注册地址或办公地址" />
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">藤本 PDF</view>
+    <view class="file-row">
+      <view>
+        <view class="file-name">{{form.registry_pdf_name || '未上传'}}</view>
+        <view class="muted">用于平台审核和资料留存，仅当前旅行社和平台权限可见。</view>
+      </view>
+      <button class="mini-button" loading="{{uploading}}" bindtap="uploadRegistryPdf">上传 PDF</button>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">打款账号</view>
+    <view class="field">
+      <view class="field-label">银行名称</view>
+      <input class="input" value="{{form.bank_name}}" data-field="bank_name" bindinput="onFieldInput" placeholder="例：三井住友银行" />
+    </view>
+    <view class="field">
+      <view class="field-label">支店名</view>
+      <input class="input" value="{{form.bank_branch}}" data-field="bank_branch" bindinput="onFieldInput" placeholder="例：大阪支店" />
+    </view>
+    <view class="field">
+      <view class="field-label">账户类型</view>
+      <input class="input" value="{{form.bank_account_type}}" data-field="bank_account_type" bindinput="onFieldInput" placeholder="普通 / 当座" />
+    </view>
+    <view class="field">
+      <view class="field-label">账号</view>
+      <input class="input" value="{{form.bank_account_number}}" data-field="bank_account_number" bindinput="onFieldInput" placeholder="银行账号" />
+    </view>
+    <view class="field">
+      <view class="field-label">账户名义</view>
+      <input class="input" value="{{form.bank_account_holder}}" data-field="bank_account_holder" bindinput="onFieldInput" placeholder="账户名义 / 法人名义" />
+    </view>
+  </view>
+
+  <button class="button-primary bottom-action" loading="{{saving}}" bindtap="saveProfile">保存设置</button>
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+</view>

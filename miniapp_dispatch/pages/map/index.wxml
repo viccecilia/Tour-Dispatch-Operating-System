@@ -11,7 +11,10 @@
     <view class="map-title-row">
       <view>
         <view class="map-eyebrow">TODAY TASK</view>
-        <view class="map-title">当前任务</view>
+        <view class="title-with-help">
+          <view class="map-title">当前任务</view>
+          <view class="help-dot" data-type="driver" bindtap="showHelp">?</view>
+        </view>
       </view>
       <button class="refresh-button" bindtap="loadDriverMap">刷新</button>
     </view>
@@ -49,6 +52,16 @@
       </view>
     </scroll-view>
   </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
+    </view>
+  </view>
 </view>
 
 <view wx:else class="map-page">
@@ -66,7 +79,10 @@
     <view class="map-title-row">
       <view>
         <view class="map-eyebrow">FLEET LIVE</view>
-        <view class="map-title">车队地图</view>
+        <view class="title-with-help">
+          <view class="map-title">车队地图</view>
+          <view class="help-dot" data-type="fleet" bindtap="showHelp">?</view>
+        </view>
       </view>
       <button class="refresh-button" bindtap="loadData">刷新</button>
     </view>
@@ -134,5 +150,15 @@
         <text class="result-badge">{{item.execution_status || item.status}}</text>
       </view>
     </scroll-view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
+    </view>
   </view>
 </view>

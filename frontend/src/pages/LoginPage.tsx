@@ -80,7 +80,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
       <form className="grid gap-4" onSubmit={submit}>
         <label className="grid gap-1 text-sm font-semibold text-slate-600">
           公司账号
-          <input className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary" value={account} onChange={(event) => setAccount(event.target.value)} placeholder="DAITORA-08046447554" />
+          <input className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary" value={account} onChange={(event) => setAccount(event.target.value)} placeholder="SKR-08070010000" />
         </label>
         <label className="grid gap-1 text-sm font-semibold text-slate-600">
           密码
@@ -90,7 +90,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
         <Button type="submit" className="h-12" disabled={loading}>
           {loading ? "登录中..." : "登录"}
         </Button>
-        <p className="text-xs text-slate-500">账号格式为公司名-手机号，例如 DAITORA-08046447554。初始密码为手机号后 6 位，Web 首次登录后必须修改。</p>
+        <p className="text-xs text-slate-500">账号格式为公司代码-手机号数字，例如 SKR-08070010000。初始密码为手机号后 6 位，Web 首次登录后必须修改。</p>
       </form>
     </Shell>
   );

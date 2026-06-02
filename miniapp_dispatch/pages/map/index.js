@@ -18,7 +18,8 @@ Page({
     scale: 11,
     query: '',
     mode: 'drivers',
-    selected: null
+    selected: null,
+    helpTip: null
   },
 
   onShow() {
@@ -40,6 +41,26 @@ Page({
       this.getTabBar().refresh();
     }
   },
+
+  showHelp(e) {
+    const type = e.currentTarget.dataset.type;
+    const contentMap = {
+      driver: '司机端地图只围绕本人今日任务，查看当前订单和后续任务，并按节点上报出发、到达等状态。',
+      fleet: '车队地图显示在线司机、执行订单和目标位置。可以按司机、车辆、订单或路线搜索。'
+    };
+    this.setData({
+      helpTip: {
+        title: type === 'driver' ? '当前任务' : '车队地图',
+        content: contentMap[type] || '暂无说明'
+      }
+    });
+  },
+
+  hideHelp() {
+    this.setData({ helpTip: null });
+  },
+
+  noop() {},
 
   loadData() {
     if (this.data.isDriver) {

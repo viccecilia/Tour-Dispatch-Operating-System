@@ -130,7 +130,7 @@ export function SettingsPage({ currentUser }: { currentUser: AuthUser }) {
             <p className="mt-1 text-sm text-slate-500">当前内部运营版只显示账号、角色、提醒和基础组织设置。</p>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
-            <Info label="租户" value="Demo Travel Company" />
+            <Info label="本公司" value={currentUser.tenant?.name || currentUser.company_code || currentUser.username} />
             <Info label="默认语言" value="中文" />
             <Info label="演示模式" value="已开启" />
             <Info label="API 状态" value={org.isError || reminderSettings.isError ? "局部异常" : "在线"} />

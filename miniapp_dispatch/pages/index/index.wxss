@@ -155,17 +155,23 @@
 }
 
 .ops-grid-compact {
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
+  gap: 12rpx;
 }
 
 .ops-card {
-  min-height: 142rpx;
+  min-height: 132rpx;
   box-sizing: border-box;
   border-radius: 28rpx;
-  padding: 20rpx;
+  padding: 18rpx;
   background: #ffffff;
   border: 1rpx solid var(--c-border);
   box-shadow: var(--shadow-card);
+}
+
+.ops-card-wide {
+  grid-column: 1 / -1;
+  min-height: 118rpx;
 }
 
 .ops-card.active {

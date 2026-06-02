@@ -1,8 +1,8 @@
 <view class="page info-page">
   <view class="hero info-hero">
     <view class="hero-eyebrow">OPERATIONS INFO</view>
-    <view class="hero-title">信息查询</view>
-    <view class="hero-meta">小程序只读，录入和修改在 Web 后台完成</view>
+    <view class="hero-title">司机车辆</view>
+    <view class="hero-meta">运行管理查看司机、车辆和今日出勤基础信息</view>
   </view>
 
   <view class="info-tabs">

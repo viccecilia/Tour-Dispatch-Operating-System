@@ -19,9 +19,29 @@ from backend.services.auth_service import (
 )
 from backend.services.agency_portal_service import (
     agency_portal_login,
+    change_agency_portal_password,
+    confirm_carrier_payment,
     create_agency_order,
+    get_agency_profile,
+    list_agency_change_requests,
+    list_agency_auction_hall,
     list_agency_orders,
+    list_carrier_change_requests,
     list_public_agencies,
+    parse_agency_order_text,
+    publish_agency_order_to_hall,
+    query_agency_flight_info,
+    request_carrier_payment,
+    review_agency_change_request,
+    submit_agency_order_change_request,
+    update_agency_order,
+    update_agency_profile,
+    update_agency_order_flight_info,
+    upload_agency_order_itinerary_pdf,
+    upload_agency_payment_receipt,
+    upload_agency_profile_registry_pdf,
+    resolve_agency_portal_account,
+    withdraw_agency_order_from_hall,
 )
 from backend.services.agency_service import create_agency, delete_agency, list_agencies, update_agency
 from backend.services.account_service import (
@@ -42,7 +62,7 @@ from backend.services.audit_service import (
     record_audit,
     scan_data_anomalies,
 )
-from backend.services.auction_service import create_auction_listings, list_auction_listings
+from backend.services.auction_service import bid_auction_listing, claim_auction_listing, create_auction_listings, get_auction_listing_detail, list_auction_listings
 from backend.services.billing_service import (
     get_billing_overview,
     get_feature_flags,
@@ -53,6 +73,12 @@ from backend.services.billing_service import (
     update_subscription,
 )
 from backend.services.calendar_service import get_dispatch_calendar, get_dispatch_detail
+from backend.services.company_registration_service import (
+    create_company_registration,
+    list_company_registrations,
+    update_company_registration,
+    upload_company_registration_file,
+)
 from backend.services.dashboard_service import get_summary
 from backend.services.dispatch_service import (
     assign_orders,
@@ -163,6 +189,7 @@ from backend.services.resource_service import (
     update_vehicle,
     update_vehicle_inspection_record,
 )
+from backend.services.flight_info_service import build_flight_update, query_flight_info
 from backend.services.settings_service import get_reminder_settings, update_reminder_settings
 from backend.services.system_maintenance_service import (
     backup_database,
@@ -172,6 +199,30 @@ from backend.services.system_maintenance_service import (
     tail_backend_log,
 )
 from backend.services.tenant_context import set_current_tenant_id
+from backend.services.travel_agency_service import (
+    award_listing as ta_award_listing,
+    create_account as ta_create_account,
+    create_company as ta_create_company,
+    create_customer as ta_create_customer,
+    create_guide as ta_create_guide,
+    create_marketplace_draft as ta_create_marketplace_draft,
+    create_order as ta_create_order,
+    finance_export_csv as ta_finance_export_csv,
+    finance_ledger as ta_finance_ledger,
+    list_accounts as ta_list_accounts,
+    list_audit as ta_list_audit,
+    list_companies as ta_list_companies,
+    list_customers as ta_list_customers,
+    list_guide_events as ta_list_guide_events,
+    list_guides as ta_list_guides,
+    list_marketplace as ta_list_marketplace,
+    list_orders as ta_list_orders,
+    parse_order_text as ta_parse_order_text,
+    record_guide_event as ta_record_guide_event,
+    stage_summary as ta_stage_summary,
+    submit_quote as ta_submit_quote,
+    transition_order as ta_transition_order,
+)
 from backend.services.workflow_service import create_rule, list_rules, list_runs, run_workflows, update_rule
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -223,9 +274,25 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/agency-portal/agencies":
             self.send_json({"agencies": list_public_agencies()})
             return
+        if path == "/api/agency-portal/resolve":
+            agency = resolve_agency_portal_account(params)
+            self.send_json({"agency": agency} if agency else {"error": "agency_not_found"}, HTTPStatus.OK if agency else HTTPStatus.NOT_FOUND)
+            return
         if path == "/api/agency-portal/orders":
             self.safe_agency(lambda: {"orders": list_agency_orders(self.agency_token())})
             return
+        if path == "/api/agency-portal/profile":
+            self.safe_agency(lambda: {"profile": get_agency_profile(self.agency_token())})
+            return
+        if path == "/api/agency-portal/change-requests":
+            self.safe_agency(lambda: {"requests": list_agency_change_requests(self.agency_token())})
+            return
+        if path == "/api/agency-portal/auction-listings":
+            self.safe_agency(lambda: {"listings": list_agency_auction_hall(self.agency_token(), params.get("status", "listed"))})
+            return
+        if path.startswith("/api/dispatch-mobile/"):
+            if not self.require_api_user():
+                return
         if path.startswith("/api/") and path != "/api/auth/me" and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
             user = self.require_api_user()
             if not user:
@@ -419,6 +486,66 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/agencies":
             self.send_json({"agencies": list_agencies(params)})
             return
+        if path == "/api/company-registrations":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"registrations": list_company_registrations(params)})
+            return
+        if path == "/api/travel-agency/summary":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.safe_create(lambda: ta_stage_summary())
+            return
+        if path == "/api/travel-agency/companies":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"companies": ta_list_companies(params)})
+            return
+        if path == "/api/travel-agency/accounts":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"accounts": ta_list_accounts(params.get("company_id"))})
+            return
+        if path == "/api/travel-agency/guides":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json({"guides": ta_list_guides(params.get("company_id"))})
+            return
+        if path == "/api/travel-agency/customers":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"customers": ta_list_customers(params.get("company_id"))})
+            return
+        if path == "/api/travel-agency/orders":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"orders": ta_list_orders(params)})
+            return
+        if path == "/api/travel-agency/marketplace":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json({"listings": ta_list_marketplace(params)})
+            return
+        if path == "/api/travel-agency/guide-events":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json({"events": ta_list_guide_events(params.get("order_id"))})
+            return
+        if path == "/api/travel-agency/finance/ledger":
+            if not self.require_role({"admin"}):
+                return
+            self.send_json(ta_finance_ledger(params))
+            return
+        if path == "/api/travel-agency/finance/export":
+            if not self.require_role({"admin"}):
+                return
+            self.send_csv(ta_finance_export_csv(params), "travel_agency_finance.csv")
+            return
+        if path == "/api/travel-agency/audit":
+            if not self.require_role({"admin"}):
+                return
+            self.send_json({"logs": ta_list_audit(params.get("company_id"))})
+            return
         if path == "/api/finance/summary":
             if not self.require_role({"admin"}):
                 return
@@ -478,6 +605,23 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher"}):
                 return
             self.send_json({"listings": list_auction_listings(params.get("status", "listed"))})
+            return
+        if path == "/api/auction/change-requests":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.send_json({"requests": list_carrier_change_requests(params)})
+            return
+        auction_detail_id = self._match_action_path(path, "/api/auction/listings/", "/detail")
+        if auction_detail_id:
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            try:
+                detail = get_auction_listing_detail(auction_detail_id, user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_json({"listing": detail} if detail else {"error": "listing_not_found"}, HTTPStatus.OK if detail else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/calendar/dispatch":
             self.send_json(get_dispatch_calendar(params))
@@ -603,8 +747,47 @@ class ApiHandler(BaseHTTPRequestHandler):
             result = agency_portal_login(payload)
             self.send_json(result if result else {"error": "invalid_agency_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
             return
+        if path == "/api/agency-portal/password":
+            self.safe_agency(lambda: change_agency_portal_password(self.agency_token(), payload))
+            return
+        if path == "/api/agency-portal/profile":
+            self.safe_agency(lambda: {"profile": update_agency_profile(self.agency_token(), payload)})
+            return
+        if path == "/api/agency-portal/profile/registry-pdf":
+            self.safe_agency(lambda: upload_agency_profile_registry_pdf(self.agency_token(), payload), HTTPStatus.CREATED)
+            return
         if path == "/api/agency-portal/orders":
             self.safe_agency(lambda: {"order": create_agency_order(self.agency_token(), payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/agency-portal/orders/parse":
+            self.safe_agency(lambda: parse_agency_order_text(self.agency_token(), payload))
+            return
+        if path == "/api/agency-portal/flight-info/query":
+            self.safe_agency(lambda: query_agency_flight_info(self.agency_token(), payload))
+            return
+        agency_flight_id = self._match_action_path(path, "/api/agency-portal/orders/", "/flight-info")
+        if agency_flight_id:
+            self.safe_agency(lambda: update_agency_order_flight_info(self.agency_token(), agency_flight_id, payload))
+            return
+        agency_withdraw_id = self._match_action_path(path, "/api/agency-portal/orders/", "/withdraw")
+        if agency_withdraw_id:
+            self.safe_agency(lambda: {"result": withdraw_agency_order_from_hall(self.agency_token(), agency_withdraw_id)})
+            return
+        agency_change_id = self._match_action_path(path, "/api/agency-portal/orders/", "/change-requests")
+        if agency_change_id:
+            self.safe_agency(lambda: {"request": submit_agency_order_change_request(self.agency_token(), agency_change_id, payload)}, HTTPStatus.CREATED)
+            return
+        agency_publish_id = self._match_action_path(path, "/api/agency-portal/orders/", "/publish-auction")
+        if agency_publish_id:
+            self.safe_agency(lambda: publish_agency_order_to_hall(self.agency_token(), agency_publish_id, payload), HTTPStatus.CREATED)
+            return
+        agency_pdf_id = self._match_action_path(path, "/api/agency-portal/orders/", "/itinerary-pdf")
+        if agency_pdf_id:
+            self.safe_agency(lambda: upload_agency_order_itinerary_pdf(self.agency_token(), agency_pdf_id, payload), HTTPStatus.CREATED)
+            return
+        agency_payment_receipt_id = self._match_action_path(path, "/api/agency-portal/orders/", "/payment-receipt")
+        if agency_payment_receipt_id:
+            self.safe_agency(lambda: upload_agency_payment_receipt(self.agency_token(), agency_payment_receipt_id, payload), HTTPStatus.CREATED)
             return
         if path == "/api/dispatch-mobile/login":
             if payload.get("wx_code") and not payload.get("wx_openid"):
@@ -640,6 +823,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json(result if result else {"error": "wechat_not_bound"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
         public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/register"}
+        public_dispatch_mobile_paths = {"/api/dispatch-mobile/login", "/api/dispatch-mobile/wechat-login"}
+        if path.startswith("/api/dispatch-mobile/") and path not in public_dispatch_mobile_paths:
+            if not self.require_api_user():
+                return
         if path.startswith("/api/") and path not in public_auth_paths and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
             user = self.require_api_user()
             if not user:
@@ -790,6 +977,70 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/agencies":
             self.safe_create(lambda: {"agency": create_agency(payload)}, HTTPStatus.CREATED)
             return
+        if path == "/api/company-registrations":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"registration": create_company_registration(payload)}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/companies":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"company": ta_create_company(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/accounts":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"account": ta_create_account(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/guides":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"guide": ta_create_guide(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/customers":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"customer": ta_create_customer(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/orders/parse":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"draft": ta_parse_order_text(payload)})
+            return
+        if path == "/api/travel-agency/orders":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"order": ta_create_order(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/marketplace":
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_create(lambda: {"listing": ta_create_marketplace_draft(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        if path == "/api/travel-agency/guide-events":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.safe_create(lambda: {"event": ta_record_guide_event(payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        ta_order_action = self._match_travel_agency_order_action(path)
+        if ta_order_action:
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            order_id, action = ta_order_action
+            self.safe_update(lambda: ta_transition_order(order_id, action, payload, self.actor_label()), "order", "order_not_found")
+            return
+        ta_marketplace_quote_id = self._match_action_path(path, "/api/travel-agency/marketplace/", "/quotes")
+        if ta_marketplace_quote_id:
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.safe_create(lambda: {"quote": ta_submit_quote(ta_marketplace_quote_id, payload, self.actor_label())}, HTTPStatus.CREATED)
+            return
+        ta_marketplace_award_id = self._match_action_path(path, "/api/travel-agency/marketplace/", "/award")
+        if ta_marketplace_award_id:
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_update(lambda: ta_award_listing(ta_marketplace_award_id, payload, self.actor_label()), "listing", "listing_not_found")
+            return
         if path == "/api/notifications":
             self.safe_create(lambda: {"notification": create_notification(payload)}, HTTPStatus.CREATED)
             return
@@ -873,6 +1124,61 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not user:
                 return
             self.auction_publish_with_audit(payload, path, user)
+            return
+        auction_claim_id = self._match_action_path(path, "/api/auction/listings/", "/claim")
+        if auction_claim_id:
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            self.safe_update(lambda: claim_auction_listing(auction_claim_id, payload, user), "listing", "listing_not_found")
+            return
+        auction_bid_id = self._match_action_path(path, "/api/auction/listings/", "/bid")
+        if auction_bid_id:
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            self.safe_update(lambda: bid_auction_listing(auction_bid_id, payload, user), "listing", "listing_not_found")
+            return
+        change_review_id = self._match_action_path(path, "/api/auction/change-requests/", "/review")
+        if change_review_id:
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            self.safe_update(lambda: review_agency_change_request(change_review_id, payload, user), "request", "change_request_not_found")
+            return
+        payment_request_id = self._match_action_path(path, "/api/auction/orders/", "/payment-request")
+        if payment_request_id:
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            self.safe_update(lambda: request_carrier_payment(payment_request_id, payload, user), "order", "order_not_found")
+            return
+        payment_confirm_id = self._match_action_path(path, "/api/auction/orders/", "/confirm-payment")
+        if payment_confirm_id:
+            user = self.require_role({"admin", "dispatcher"})
+            if not user:
+                return
+            self.safe_update(lambda: confirm_carrier_payment(payment_confirm_id, payload, user), "order", "order_not_found")
+            return
+        if path == "/api/flight-info/query":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            self.safe_create(lambda: query_flight_info(payload))
+            return
+        order_flight_id = self._match_action_path(path, "/api/orders/", "/flight-info")
+        if order_flight_id:
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+
+            def update_internal_order_flight() -> dict | None:
+                before = get_order(order_flight_id)
+                if not before:
+                    return None
+                return update_order(order_flight_id, build_flight_update(payload, before))
+
+            self.safe_update(update_internal_order_flight, "order", "order_not_found")
             return
         if path == "/api/driver/profile":
             self.send_json(update_driver_profile(payload.get("driver_id"), payload))
@@ -1006,8 +1312,14 @@ class ApiHandler(BaseHTTPRequestHandler):
         payload = self.read_json()
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
+            if not self.require_api_user():
+                return
             draft = update_dispatcher_draft(mobile_draft_id, payload)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
+            return
+        agency_order_id = self._match_prefixed_id(path, "/api/agency-portal/orders/")
+        if agency_order_id:
+            self.safe_agency(lambda: {"order": update_agency_order(self.agency_token(), agency_order_id, payload)})
             return
         user = self.require_api_user()
         if not user:
@@ -1044,6 +1356,18 @@ class ApiHandler(BaseHTTPRequestHandler):
         agency_id = self.match_agency_path(path)
         if agency_id:
             self.safe_update(lambda: update_agency(agency_id, payload), "agency", "agency_not_found")
+            return
+        company_registration_upload = self._match_action_path(path, "/api/company-registrations/", "/upload")
+        if company_registration_upload:
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_update(lambda: upload_company_registration_file(company_registration_upload, payload), "file", "company_registration_not_found")
+            return
+        company_registration_id = self._match_prefixed_id(path, "/api/company-registrations/")
+        if company_registration_id:
+            if not self.require_role({"admin", "dispatcher"}):
+                return
+            self.safe_update(lambda: update_company_registration(company_registration_id, payload), "registration", "company_registration_not_found")
             return
         if path == "/api/settings/reminders":
             self.send_json({"settings": update_reminder_settings(payload)})
@@ -1548,6 +1872,19 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def match_agency_path(self, path: str) -> str:
         return self._match_prefixed_id(path, "/api/agencies/")
+
+    def _match_travel_agency_order_action(self, path: str) -> tuple[str, str] | None:
+        prefix = "/api/travel-agency/orders/"
+        if not path.startswith(prefix):
+            return None
+        value = path.removeprefix(prefix).strip("/")
+        parts = value.split("/")
+        if len(parts) != 2:
+            return None
+        order_id, action = parts
+        if action not in {"confirm", "assign-guide", "vehicle-request", "settle"}:
+            return None
+        return order_id, action
 
     def match_org_member_path(self, path: str) -> str:
         return self._match_prefixed_id(path, "/api/org/members/")

@@ -1,0 +1,1192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>多旅行社多车公司数据边界测试计划</title>
+  <style>
+    :root { --bg:#f5f7fa; --panel:#fff; --text:#20242a; --muted:#667085; --line:#d9dee8; --head:#eef3f8; --ok:#157347; --bad:#b42318; --accent:#1f5f74; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Microsoft YaHei", Arial, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:28px 32px 18px; background:#fff; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 8px; font-size:26px; letter-spacing:0; }
+    h2 { font-size:18px; margin:26px 0 12px; }
+    h3 { font-size:15px; margin:18px 0 8px; }
+    .meta { color:var(--muted); font-size:13px; display:flex; gap:14px; flex-wrap:wrap; }
+    .wrap { padding:22px 32px 42px; }
+    .summary { display:grid; grid-template-columns:repeat(4,minmax(160px,1fr)); gap:12px; }
+    .metric, .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+    .metric { padding:14px; }
+    .metric b { display:block; margin-top:5px; font-size:22px; color:var(--accent); }
+    .panel { padding:16px; margin-top:18px; overflow:auto; }
+    table { width:100%; border-collapse:collapse; min-width:940px; }
+    th, td { border:1px solid var(--line); padding:9px 10px; vertical-align:top; font-size:13px; line-height:1.45; }
+    th { background:var(--head); text-align:left; white-space:nowrap; }
+    pre { margin:0; max-height:230px; overflow:auto; white-space:pre-wrap; font-size:12px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .bad { color:var(--bad); font-weight:700; }
+    .note { color:var(--muted); line-height:1.65; font-size:13px; }
+    li { margin:6px 0; }
+    @media (max-width: 900px) { header,.wrap { padding-left:16px; padding-right:16px; } .summary { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>多旅行社 × 多车公司数据边界测试计划</h1>
+    <div class="meta">
+      <span>生成时间：2026-05-31T20:05:15</span>
+      <span>临时测试库：C:\PycharmProjects\pythonProject01\Tour Dispatch Operating System\runtime\test_dbs\agency_multi_tenant_boundary.sqlite3</span>
+      <span>测试主题：交叉登录、交叉发布、交叉接单、详情脱敏、买方归属展示</span>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="summary">
+      <div class="metric">实跑边界用例<b>9/9</b></div>
+      <div class="metric">旅行社<b>2</b></div>
+      <div class="metric">车公司<b>2</b></div>
+      <div class="metric">订单/大厅记录<b>4 / 4</b></div>
+    </section>
+
+    <section class="panel">
+      <h2>一、测试计划</h2>
+      <p class="note">本页把“我的订单私有列表”和“订单大厅公开基础信息”分开测试。大厅可以被多旅行社、多车公司围观，但未接单前不开放完整联系方式。</p>
+      <table>
+        <thead><tr><th>编号</th><th>测试范围</th><th>操作</th><th>预期边界</th><th>测试类型</th></tr></thead>
+        <tbody><tr><td>BT-01</td><td>旅行社登录隔离</td><td>A/B 两家旅行社分别登录</td><td>只能拿到本 agency token 和本租户上下文</td><td>单元 + 接口</td></tr>
+<tr><td>BT-02</td><td>我的订单隔离</td><td>A/B 各建两单后互查订单列表</td><td>A 看不到 B 的订单，B 看不到 A 的订单</td><td>数据边界</td></tr>
+<tr><td>BT-03</td><td>越权操作拦截</td><td>A 用 B 的 order_id 发布/修改/撤回</td><td>返回 order_not_found 或 forbidden</td><td>负向测试</td></tr>
+<tr><td>BT-04</td><td>大厅公开信息</td><td>A/B 进入订单大厅</td><td>都可看到 listed 基础信息，但无游客/导游/担当联系方式</td><td>脱敏测试</td></tr>
+<tr><td>BT-05</td><td>车公司未接单详情</td><td>车公司点未接单详情</td><td>不能获取完整详情</td><td>权限测试</td></tr>
+<tr><td>BT-06</td><td>交叉接单</td><td>两个车公司分别接 A/B 的订单</td><td>buyer_tenant_id 正确落库，seller_tenant_id 保留发布方</td><td>集成测试</td></tr>
+<tr><td>BT-07</td><td>接单后详情</td><td>买方车公司查看已接订单详情</td><td>可见完整联系人、行程、PDF、结算入口</td><td>联动测试</td></tr>
+<tr><td>BT-08</td><td>非买方拦截</td><td>另一个车公司查看别人已接订单</td><td>返回 forbidden</td><td>负向测试</td></tr>
+<tr><td>BT-09</td><td>车公司已接订单展示</td><td>车公司后台查看已接订单</td><td>按 buyer_tenant_id 汇总，来源旅行社作为列/筛选项</td><td>页面测试</td></tr>
+<tr><td>BT-10</td><td>平台审计</td><td>平台查看跨旅行社/跨车公司订单</td><td>可见全量 seller/buyer/agency 关系并记录审计</td><td>平台测试</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>二、实际数据验证结果</h2>
+      <table>
+        <thead><tr><th>#</th><th>测试点</th><th>结果</th><th>预期</th><th>实际</th><th>证据</th></tr></thead>
+        <tbody><tr><td>1</td><td>两个旅行社分别登录</td><td><span class='ok'>通过</span></td><td>A/B 两家旅行社使用各自 portal_code 登录。</td><td>两个 token 均生成成功。</td><td><pre>null</pre></td></tr>
+<tr><td>2</td><td>四条订单分属两个旅行社</td><td><span class='ok'>通过</span></td><td>orders 记录应带有各自 agency_id 和 tenant_id。</td><td>A 旅行社 2 单，B 旅行社 2 单。</td><td><pre>{
+  &quot;A&quot;: [
+    &quot;A260620-0001-TMP&quot;,
+    &quot;A260621-0001-TMP&quot;
+  ],
+  &quot;B&quot;: [
+    &quot;A260620-0002-TMP&quot;,
+    &quot;A260622-0001-TMP&quot;
+  ]
+}</pre></td></tr>
+<tr><td>3</td><td>旅行社我的订单隔离</td><td><span class='ok'>通过</span></td><td>旅行社只能在“我的订单/订单列表/日历”看到自己 agency_id 下的订单。</td><td>A 列表 2 条，B 列表 2 条，未交叉泄漏。</td><td><pre>{
+  &quot;A_order_ids&quot;: [
+    2,
+    1
+  ],
+  &quot;B_order_ids&quot;: [
+    4,
+    3
+  ]
+}</pre></td></tr>
+<tr><td>4</td><td>旅行社不能操作其他旅行社订单</td><td><span class='ok'>通过</span></td><td>A 旅行社拿 B 旅行社订单 ID 发布，应被 tenant_id + agency_id 拦截。</td><td>接口返回：order_not_found</td><td><pre>null</pre></td></tr>
+<tr><td>5</td><td>订单大厅公开基础信息</td><td><span class='ok'>通过</span></td><td>大厅允许多旅行社、多车公司看到基础信息，但不能暴露游客/导游/担当联系方式。</td><td>A/B 登录大厅均看到 4 条 listed；敏感字段泄漏键：无。</td><td><pre>{
+  &quot;hall_a_count&quot;: 4,
+  &quot;hall_b_count&quot;: 4,
+  &quot;sample&quot;: {
+    &quot;id&quot;: 4,
+    &quot;order_id&quot;: 4,
+    &quot;owner_tenant_id&quot;: 102,
+    &quot;seller_tenant_id&quot;: 102,
+    &quot;buyer_tenant_id&quot;: null,
+    &quot;status&quot;: &quot;listed&quot;,
+    &quot;start_price_jpy&quot;: 190000.0,
+    &quot;buyout_price_jpy&quot;: 240000.0,
+    &quot;current_bid_jpy&quot;: 190000.0,
+    &quot;bid_count&quot;: 0,
+    &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+    &quot;publish_round&quot;: 1,
+    &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+    &quot;auction_duration_hours&quot;: 2,
+    &quot;sold_at&quot;: null,
+    &quot;cancelled_at&quot;: null,
+    &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+    &quot;order_date&quot;: &quot;2026-06-22&quot;,
+    &quot;end_date&quot;: &quot;2026-06-22&quot;,
+    &quot;start_time&quot;: &quot;08:30&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+    &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+    &quot;order_type&quot;: &quot;charter&quot;,
+    &quot;vehicle_type&quot;: &quot;10座&quot;,
+    &quot;passenger_count&quot;: 8,
+    &quot;luggage_count&quot;: 0,
+    &quot;flight_number&quot;: null,
+    &quot;flight_date&quot;: null,
+    &quot;flight_airline&quot;: null,
+    &quot;flight_origin&quot;: null,
+    &quot;flight_destination&quot;: null,
+    &quot;flight_terminal&quot;: null,
+    &quot;flight_gate&quot;: null,
+    &quot;flight_status&quot;: null,
+    &quot;flight_scheduled_departure&quot;: null,
+    &quot;flight_scheduled_arrival&quot;: null,
+    &quot;flight_estimated_departure&quot;: null,
+    &quot;flight_estimated_arrival&quot;: null,
+    &quot;flight_actual_departure&quot;: null,
+    &quot;flight_actual_arrival&quot;: null,
+    &quot;flight_provider&quot;: null,
+    &quot;flight_last_checked_at&quot;: null,
+    &quot;flight_manual_note&quot;: null,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 210000.0,
+    &quot;execution_status&quot;: &quot;auction_listed&quot;,
+    &quot;settlement_status&quot;: &quot;pending&quot;,
+    &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+    &quot;payment_amount_jpy&quot;: null,
+    &quot;carrier_payment_requested_at&quot;: null,
+    &quot;carrier_payment_request_note&quot;: null,
+    &quot;agency_payment_receipt_url&quot;: null,
+    &quot;agency_payment_receipt_name&quot;: null,
+    &quot;agency_payment_uploaded_at&quot;: null,
+    &quot;carrier_payment_confirmed_at&quot;: null,
+    &quot;carrier_payment_confirmed_by&quot;: null,
+    &quot;has_itinerary_pdf&quot;: false
+  }
+}</pre></td></tr>
+<tr><td>6</td><td>车公司未接单前不能看完整详情</td><td><span class='ok'>通过</span></td><td>车公司未成为 buyer_tenant_id 前，不能查看旅行社联系方式、游客联系方式、导游联系方式。</td><td>接口返回：listing_detail_forbidden</td><td><pre>null</pre></td></tr>
+<tr><td>7</td><td>两个车公司交叉接单</td><td><span class='ok'>通过</span></td><td>SAKURA 和 KEX 各接 A/B 两家旅行社的订单，买方租户写入 buyer_tenant_id。</td><td>四条订单均 claimed。</td><td><pre>[
+  {
+    &quot;id&quot;: 1,
+    &quot;order_id&quot;: 1,
+    &quot;owner_tenant_id&quot;: 101,
+    &quot;seller_tenant_id&quot;: 101,
+    &quot;buyer_tenant_id&quot;: 201,
+    &quot;status&quot;: &quot;claimed&quot;,
+    &quot;start_price_jpy&quot;: 52000.0,
+    &quot;buyout_price_jpy&quot;: 70000.0,
+    &quot;current_bid_jpy&quot;: 2.0,
+    &quot;bid_count&quot;: 1,
+    &quot;listing_code&quot;: &quot;A260620-0001-TMP-H260531-001&quot;,
+    &quot;publish_round&quot;: 1,
+    &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+    &quot;auction_duration_hours&quot;: 2,
+    &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;cancelled_at&quot;: null,
+    &quot;oid&quot;: &quot;A260620-0001-TMP&quot;,
+    &quot;order_date&quot;: &quot;2026-06-20&quot;,
+    &quot;end_date&quot;: &quot;2026-06-20&quot;,
+    &quot;start_time&quot;: &quot;09:00&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;KIX T1&quot;,
+    &quot;dropoff_location&quot;: &quot;Osaka Station&quot;,
+    &quot;order_type&quot;: &quot;airport_transfer&quot;,
+    &quot;vehicle_type&quot;: &quot;Hiace&quot;,
+    &quot;passenger_count&quot;: 4,
+    &quot;luggage_count&quot;: 4,
+    &quot;flight_number&quot;: null,
+    &quot;flight_date&quot;: null,
+    &quot;flight_airline&quot;: null,
+    &quot;flight_origin&quot;: null,
+    &quot;flight_destination&quot;: null,
+    &quot;flight_terminal&quot;: null,
+    &quot;flight_gate&quot;: null,
+    &quot;flight_status&quot;: null,
+    &quot;flight_scheduled_departure&quot;: null,
+    &quot;flight_scheduled_arrival&quot;: null,
+    &quot;flight_estimated_departure&quot;: null,
+    &quot;flight_estimated_arrival&quot;: null,
+    &quot;flight_actual_departure&quot;: null,
+    &quot;flight_actual_arrival&quot;: null,
+    &quot;flight_provider&quot;: null,
+    &quot;flight_last_checked_at&quot;: null,
+    &quot;flight_manual_note&quot;: null,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 58000.0,
+    &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+    &quot;settlement_status&quot;: &quot;pending&quot;,
+    &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+    &quot;payment_amount_jpy&quot;: null,
+    &quot;carrier_payment_requested_at&quot;: null,
+    &quot;carrier_payment_request_note&quot;: null,
+    &quot;agency_payment_receipt_url&quot;: null,
+    &quot;agency_payment_receipt_name&quot;: null,
+    &quot;agency_payment_uploaded_at&quot;: null,
+    &quot;carrier_payment_confirmed_at&quot;: null,
+    &quot;carrier_payment_confirmed_by&quot;: null,
+    &quot;has_itinerary_pdf&quot;: false
+  },
+  {
+    &quot;id&quot;: 3,
+    &quot;order_id&quot;: 3,
+    &quot;owner_tenant_id&quot;: 102,
+    &quot;seller_tenant_id&quot;: 102,
+    &quot;buyer_tenant_id&quot;: 201,
+    &quot;status&quot;: &quot;claimed&quot;,
+    &quot;start_price_jpy&quot;: 56000.0,
+    &quot;buyout_price_jpy&quot;: 76000.0,
+    &quot;current_bid_jpy&quot;: 2.0,
+    &quot;bid_count&quot;: 1,
+    &quot;listing_code&quot;: &quot;A260620-0002-TMP-H260531-001&quot;,
+    &quot;publish_round&quot;: 1,
+    &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+    &quot;auction_duration_hours&quot;: 2,
+    &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;cancelled_at&quot;: null,
+    &quot;oid&quot;: &quot;A260620-0002-TMP&quot;,
+    &quot;order_date&quot;: &quot;2026-06-20&quot;,
+    &quot;end_date&quot;: &quot;2026-06-20&quot;,
+    &quot;start_time&quot;: &quot;12:00&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;Haneda T3&quot;,
+    &quot;dropoff_location&quot;: &quot;Tokyo Hotel&quot;,
+    &quot;order_type&quot;: &quot;airport_transfer&quot;,
+    &quot;vehicle_type&quot;: &quot;Hiace&quot;,
+    &quot;passenger_count&quot;: 4,
+    &quot;luggage_count&quot;: 4,
+    &quot;flight_number&quot;: null,
+    &quot;flight_date&quot;: null,
+    &quot;flight_airline&quot;: null,
+    &quot;flight_origin&quot;: null,
+    &quot;flight_destination&quot;: null,
+    &quot;flight_terminal&quot;: null,
+    &quot;flight_gate&quot;: null,
+    &quot;flight_status&quot;: null,
+    &quot;flight_scheduled_departure&quot;: null,
+    &quot;flight_scheduled_arrival&quot;: null,
+    &quot;flight_estimated_departure&quot;: null,
+    &quot;flight_estimated_arrival&quot;: null,
+    &quot;flight_actual_departure&quot;: null,
+    &quot;flight_actual_arrival&quot;: null,
+    &quot;flight_provider&quot;: null,
+    &quot;flight_last_checked_at&quot;: null,
+    &quot;flight_manual_note&quot;: null,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 62000.0,
+    &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+    &quot;settlement_status&quot;: &quot;pending&quot;,
+    &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+    &quot;payment_amount_jpy&quot;: null,
+    &quot;carrier_payment_requested_at&quot;: null,
+    &quot;carrier_payment_request_note&quot;: null,
+    &quot;agency_payment_receipt_url&quot;: null,
+    &quot;agency_payment_receipt_name&quot;: null,
+    &quot;agency_payment_uploaded_at&quot;: null,
+    &quot;carrier_payment_confirmed_at&quot;: null,
+    &quot;carrier_payment_confirmed_by&quot;: null,
+    &quot;has_itinerary_pdf&quot;: false
+  },
+  {
+    &quot;id&quot;: 2,
+    &quot;order_id&quot;: 2,
+    &quot;owner_tenant_id&quot;: 101,
+    &quot;seller_tenant_id&quot;: 101,
+    &quot;buyer_tenant_id&quot;: 202,
+    &quot;status&quot;: &quot;claimed&quot;,
+    &quot;start_price_jpy&quot;: 160000.0,
+    &quot;buyout_price_jpy&quot;: 210000.0,
+    &quot;current_bid_jpy&quot;: 2.0,
+    &quot;bid_count&quot;: 1,
+    &quot;listing_code&quot;: &quot;A260621-0001-TMP-H260531-002&quot;,
+    &quot;publish_round&quot;: 1,
+    &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+    &quot;auction_duration_hours&quot;: 2,
+    &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;cancelled_at&quot;: null,
+    &quot;oid&quot;: &quot;A260621-0001-TMP&quot;,
+    &quot;order_date&quot;: &quot;2026-06-21&quot;,
+    &quot;end_date&quot;: &quot;2026-06-21&quot;,
+    &quot;start_time&quot;: &quot;10:00&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;Kyoto&quot;,
+    &quot;dropoff_location&quot;: &quot;Amanohashidate&quot;,
+    &quot;order_type&quot;: &quot;charter&quot;,
+    &quot;vehicle_type&quot;: &quot;10座&quot;,
+    &quot;passenger_count&quot;: 8,
+    &quot;luggage_count&quot;: 0,
+    &quot;flight_number&quot;: null,
+    &quot;flight_date&quot;: null,
+    &quot;flight_airline&quot;: null,
+    &quot;flight_origin&quot;: null,
+    &quot;flight_destination&quot;: null,
+    &quot;flight_terminal&quot;: null,
+    &quot;flight_gate&quot;: null,
+    &quot;flight_status&quot;: null,
+    &quot;flight_scheduled_departure&quot;: null,
+    &quot;flight_scheduled_arrival&quot;: null,
+    &quot;flight_estimated_departure&quot;: null,
+    &quot;flight_estimated_arrival&quot;: null,
+    &quot;flight_actual_departure&quot;: null,
+    &quot;flight_actual_arrival&quot;: null,
+    &quot;flight_provider&quot;: null,
+    &quot;flight_last_checked_at&quot;: null,
+    &quot;flight_manual_note&quot;: null,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 180000.0,
+    &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+    &quot;settlement_status&quot;: &quot;pending&quot;,
+    &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+    &quot;payment_amount_jpy&quot;: null,
+    &quot;carrier_payment_requested_at&quot;: null,
+    &quot;carrier_payment_request_note&quot;: null,
+    &quot;agency_payment_receipt_url&quot;: null,
+    &quot;agency_payment_receipt_name&quot;: null,
+    &quot;agency_payment_uploaded_at&quot;: null,
+    &quot;carrier_payment_confirmed_at&quot;: null,
+    &quot;carrier_payment_confirmed_by&quot;: null,
+    &quot;has_itinerary_pdf&quot;: false
+  },
+  {
+    &quot;id&quot;: 4,
+    &quot;order_id&quot;: 4,
+    &quot;owner_tenant_id&quot;: 102,
+    &quot;seller_tenant_id&quot;: 102,
+    &quot;buyer_tenant_id&quot;: 202,
+    &quot;status&quot;: &quot;claimed&quot;,
+    &quot;start_price_jpy&quot;: 190000.0,
+    &quot;buyout_price_jpy&quot;: 240000.0,
+    &quot;current_bid_jpy&quot;: 2.0,
+    &quot;bid_count&quot;: 1,
+    &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+    &quot;publish_round&quot;: 1,
+    &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+    &quot;auction_duration_hours&quot;: 2,
+    &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+    &quot;cancelled_at&quot;: null,
+    &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+    &quot;order_date&quot;: &quot;2026-06-22&quot;,
+    &quot;end_date&quot;: &quot;2026-06-22&quot;,
+    &quot;start_time&quot;: &quot;08:30&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+    &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+    &quot;order_type&quot;: &quot;charter&quot;,
+    &quot;vehicle_type&quot;: &quot;10座&quot;,
+    &quot;passenger_count&quot;: 8,
+    &quot;luggage_count&quot;: 0,
+    &quot;flight_number&quot;: null,
+    &quot;flight_date&quot;: null,
+    &quot;flight_airline&quot;: null,
+    &quot;flight_origin&quot;: null,
+    &quot;flight_destination&quot;: null,
+    &quot;flight_terminal&quot;: null,
+    &quot;flight_gate&quot;: null,
+    &quot;flight_status&quot;: null,
+    &quot;flight_scheduled_departure&quot;: null,
+    &quot;flight_scheduled_arrival&quot;: null,
+    &quot;flight_estimated_departure&quot;: null,
+    &quot;flight_estimated_arrival&quot;: null,
+    &quot;flight_actual_departure&quot;: null,
+    &quot;flight_actual_arrival&quot;: null,
+    &quot;flight_provider&quot;: null,
+    &quot;flight_last_checked_at&quot;: null,
+    &quot;flight_manual_note&quot;: null,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 210000.0,
+    &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+    &quot;settlement_status&quot;: &quot;pending&quot;,
+    &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+    &quot;payment_amount_jpy&quot;: null,
+    &quot;carrier_payment_requested_at&quot;: null,
+    &quot;carrier_payment_request_note&quot;: null,
+    &quot;agency_payment_receipt_url&quot;: null,
+    &quot;agency_payment_receipt_name&quot;: null,
+    &quot;agency_payment_uploaded_at&quot;: null,
+    &quot;carrier_payment_confirmed_at&quot;: null,
+    &quot;carrier_payment_confirmed_by&quot;: null,
+    &quot;has_itinerary_pdf&quot;: false
+  }
+]</pre></td></tr>
+<tr><td>8</td><td>接单车公司可看详情，其他车公司不可看</td><td><span class='ok'>通过</span></td><td>buyer_tenant_id 对应车公司可查看完整详情；非买方车公司仍被拦截。</td><td>SAKURA 可见 guest_contact=080-test-58000；KEX 查看同单返回 listing_detail_forbidden。</td><td><pre>null</pre></td></tr>
+<tr><td>9</td><td>车公司接多个旅行社订单的展示方式</td><td><span class='ok'>通过</span></td><td>车公司后台应按 buyer_tenant_id 汇总已接订单，并保留来源旅行社列。</td><td>SAKURA 2 单，KEX 2 单，均来自多个旅行社。</td><td><pre>{
+  &quot;SAKURA&quot;: [
+    {
+      &quot;id&quot;: 3,
+      &quot;listing_code&quot;: &quot;A260620-0002-TMP-H260531-001&quot;,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;buyer_tenant_id&quot;: 201,
+      &quot;oid&quot;: &quot;A260620-0002-TMP&quot;,
+      &quot;order_date&quot;: &quot;2026-06-20&quot;,
+      &quot;start_time&quot;: &quot;12:00&quot;,
+      &quot;pickup_location&quot;: &quot;Haneda T3&quot;,
+      &quot;dropoff_location&quot;: &quot;Tokyo Hotel&quot;,
+      &quot;guest_name&quot;: &quot;B机场客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-62000&quot;,
+      &quot;guide_name&quot;: &quot;B机场客人 Guide&quot;,
+      &quot;guide_phone&quot;: &quot;090-guide-62000&quot;,
+      &quot;seller_company_name&quot;: &quot;富士之旅旅行社&quot;,
+      &quot;buyer_company_name&quot;: &quot;SAKURA车队&quot;
+    },
+    {
+      &quot;id&quot;: 1,
+      &quot;listing_code&quot;: &quot;A260620-0001-TMP-H260531-001&quot;,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;buyer_tenant_id&quot;: 201,
+      &quot;oid&quot;: &quot;A260620-0001-TMP&quot;,
+      &quot;order_date&quot;: &quot;2026-06-20&quot;,
+      &quot;start_time&quot;: &quot;09:00&quot;,
+      &quot;pickup_location&quot;: &quot;KIX T1&quot;,
+      &quot;dropoff_location&quot;: &quot;Osaka Station&quot;,
+      &quot;guest_name&quot;: &quot;A机场客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-58000&quot;,
+      &quot;guide_name&quot;: &quot;A机场客人 Guide&quot;,
+      &quot;guide_phone&quot;: &quot;090-guide-58000&quot;,
+      &quot;seller_company_name&quot;: &quot;东瀛假期旅行社&quot;,
+      &quot;buyer_company_name&quot;: &quot;SAKURA车队&quot;
+    }
+  ],
+  &quot;KEX&quot;: [
+    {
+      &quot;id&quot;: 4,
+      &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;buyer_tenant_id&quot;: 202,
+      &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+      &quot;order_date&quot;: &quot;2026-06-22&quot;,
+      &quot;start_time&quot;: &quot;08:30&quot;,
+      &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+      &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+      &quot;guest_name&quot;: &quot;B包车客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-210000&quot;,
+      &quot;guide_name&quot;: &quot;B包车客人 Guide&quot;,
+      &quot;guide_phone&quot;: &quot;090-guide-210000&quot;,
+      &quot;seller_company_name&quot;: &quot;富士之旅旅行社&quot;,
+      &quot;buyer_company_name&quot;: &quot;Kansai Express车队&quot;
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;listing_code&quot;: &quot;A260621-0001-TMP-H260531-002&quot;,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;buyer_tenant_id&quot;: 202,
+      &quot;oid&quot;: &quot;A260621-0001-TMP&quot;,
+      &quot;order_date&quot;: &quot;2026-06-21&quot;,
+      &quot;start_time&quot;: &quot;10:00&quot;,
+      &quot;pickup_location&quot;: &quot;Kyoto&quot;,
+      &quot;dropoff_location&quot;: &quot;Amanohashidate&quot;,
+      &quot;guest_name&quot;: &quot;A包车客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-180000&quot;,
+      &quot;guide_name&quot;: &quot;A包车客人 Guide&quot;,
+      &quot;guide_phone&quot;: &quot;090-guide-180000&quot;,
+      &quot;seller_company_name&quot;: &quot;东瀛假期旅行社&quot;,
+      &quot;buyer_company_name&quot;: &quot;Kansai Express车队&quot;
+    }
+  ]
+}</pre></td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>三、订单与租户归属</h2>
+      <table>
+        <thead><tr><th>订单号</th><th>tenant_id</th><th>agency_id</th><th>类型</th><th>客人</th><th>状态</th></tr></thead>
+        <tbody><tr><td>A260620-0001-TMP</td><td>101</td><td>1</td><td>airport_transfer</td><td>A机场客人</td><td>auction_claimed</td></tr>
+<tr><td>A260621-0001-TMP</td><td>101</td><td>1</td><td>charter</td><td>A包车客人</td><td>auction_claimed</td></tr>
+<tr><td>A260620-0002-TMP</td><td>102</td><td>2</td><td>airport_transfer</td><td>B机场客人</td><td>auction_claimed</td></tr>
+<tr><td>A260622-0001-TMP</td><td>102</td><td>2</td><td>charter</td><td>B包车客人</td><td>auction_claimed</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>四、大厅发布与接单归属</h2>
+      <table>
+        <thead><tr><th>大厅编号</th><th>seller_tenant_id</th><th>buyer_tenant_id</th><th>状态</th><th>订单ID</th><th>起拍价</th><th>一口价</th></tr></thead>
+        <tbody><tr><td>A260620-0001-TMP-H260531-001</td><td>101</td><td>201</td><td>claimed</td><td>1</td><td>52000.0</td><td>70000.0</td></tr>
+<tr><td>A260621-0001-TMP-H260531-002</td><td>101</td><td>202</td><td>claimed</td><td>2</td><td>160000.0</td><td>210000.0</td></tr>
+<tr><td>A260620-0002-TMP-H260531-001</td><td>102</td><td>201</td><td>claimed</td><td>3</td><td>56000.0</td><td>76000.0</td></tr>
+<tr><td>A260622-0001-TMP-H260531-002</td><td>102</td><td>202</td><td>claimed</td><td>4</td><td>190000.0</td><td>240000.0</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>五、车公司接到多个旅行社订单后的展示建议</h2>
+      <p class="note">车公司后台不应该按旅行社租户切换，而应按自己的 buyer_tenant_id 汇总“我接到的订单”，并在列表中显示来源旅行社。</p>
+      <h3>SAKURA 已接订单</h3><table><thead><tr><th>大厅编号</th><th>订单号</th><th>来源旅行社</th><th>客人</th><th>联系人</th><th>日期</th><th>路线</th></tr></thead><tbody><tr><td>A260620-0002-TMP-H260531-001</td><td>A260620-0002-TMP</td><td>富士之旅旅行社</td><td>B机场客人</td><td>080-test-62000</td><td>2026-06-20 12:00</td><td>Haneda T3 -> Tokyo Hotel</td></tr><tr><td>A260620-0001-TMP-H260531-001</td><td>A260620-0001-TMP</td><td>东瀛假期旅行社</td><td>A机场客人</td><td>080-test-58000</td><td>2026-06-20 09:00</td><td>KIX T1 -> Osaka Station</td></tr></tbody></table><h3>KEX 已接订单</h3><table><thead><tr><th>大厅编号</th><th>订单号</th><th>来源旅行社</th><th>客人</th><th>联系人</th><th>日期</th><th>路线</th></tr></thead><tbody><tr><td>A260622-0001-TMP-H260531-002</td><td>A260622-0001-TMP</td><td>富士之旅旅行社</td><td>B包车客人</td><td>080-test-210000</td><td>2026-06-22 08:30</td><td>Tokyo -> Fuji</td></tr><tr><td>A260621-0001-TMP-H260531-002</td><td>A260621-0001-TMP</td><td>东瀛假期旅行社</td><td>A包车客人</td><td>080-test-180000</td><td>2026-06-21 10:00</td><td>Kyoto -> Amanohashidate</td></tr></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>六、结论与补强建议</h2>
+      <ul><li>旅行社“我的订单/日历/订单跟踪”继续使用 tenant_id + agency_id 双条件，不允许用单独 order_id 直接越权访问。</li><li>订单大厅保留公开基础信息：日期、时间、起止地、车型、人数/行李、价格区间、PDF 是否存在；游客/导游/旅行社担当联系方式只在接单后向买方车公司开放。</li><li>车公司已接订单列表应服务端按 buyer_tenant_id 过滤，页面可按来源旅行社、日期、车型、结算状态筛选。</li><li>平台端可跨租户查看，但必须记录审计日志，并在页面上明确 seller_tenant_id、buyer_tenant_id、agency_id。</li><li>当前 claim_auction_listing 服务用 seller_tenant_id 作为上下文校验，再从 payload 写入 buyer_tenant_id；正式车公司端接口建议增加专用 claim endpoint，用登录车公司 tenant_id 自动作为 buyer_tenant_id，避免前端传错。</li></ul>
+    </section>
+
+    <section class="panel">
+      <h2>七、原始 JSON 证据</h2>
+      <pre>{
+  &quot;generated_at&quot;: &quot;2026-05-31T20:05:15&quot;,
+  &quot;test_db&quot;: &quot;C:\\PycharmProjects\\pythonProject01\\Tour Dispatch Operating System\\runtime\\test_dbs\\agency_multi_tenant_boundary.sqlite3&quot;,
+  &quot;steps&quot;: [
+    {
+      &quot;name&quot;: &quot;两个旅行社分别登录&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;A/B 两家旅行社使用各自 portal_code 登录。&quot;,
+      &quot;actual&quot;: &quot;两个 token 均生成成功。&quot;,
+      &quot;evidence&quot;: null
+    },
+    {
+      &quot;name&quot;: &quot;四条订单分属两个旅行社&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;orders 记录应带有各自 agency_id 和 tenant_id。&quot;,
+      &quot;actual&quot;: &quot;A 旅行社 2 单，B 旅行社 2 单。&quot;,
+      &quot;evidence&quot;: {
+        &quot;A&quot;: [
+          &quot;A260620-0001-TMP&quot;,
+          &quot;A260621-0001-TMP&quot;
+        ],
+        &quot;B&quot;: [
+          &quot;A260620-0002-TMP&quot;,
+          &quot;A260622-0001-TMP&quot;
+        ]
+      }
+    },
+    {
+      &quot;name&quot;: &quot;旅行社我的订单隔离&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;旅行社只能在“我的订单/订单列表/日历”看到自己 agency_id 下的订单。&quot;,
+      &quot;actual&quot;: &quot;A 列表 2 条，B 列表 2 条，未交叉泄漏。&quot;,
+      &quot;evidence&quot;: {
+        &quot;A_order_ids&quot;: [
+          2,
+          1
+        ],
+        &quot;B_order_ids&quot;: [
+          4,
+          3
+        ]
+      }
+    },
+    {
+      &quot;name&quot;: &quot;旅行社不能操作其他旅行社订单&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;A 旅行社拿 B 旅行社订单 ID 发布，应被 tenant_id + agency_id 拦截。&quot;,
+      &quot;actual&quot;: &quot;接口返回：order_not_found&quot;,
+      &quot;evidence&quot;: null
+    },
+    {
+      &quot;name&quot;: &quot;订单大厅公开基础信息&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;大厅允许多旅行社、多车公司看到基础信息，但不能暴露游客/导游/担当联系方式。&quot;,
+      &quot;actual&quot;: &quot;A/B 登录大厅均看到 4 条 listed；敏感字段泄漏键：无。&quot;,
+      &quot;evidence&quot;: {
+        &quot;hall_a_count&quot;: 4,
+        &quot;hall_b_count&quot;: 4,
+        &quot;sample&quot;: {
+          &quot;id&quot;: 4,
+          &quot;order_id&quot;: 4,
+          &quot;owner_tenant_id&quot;: 102,
+          &quot;seller_tenant_id&quot;: 102,
+          &quot;buyer_tenant_id&quot;: null,
+          &quot;status&quot;: &quot;listed&quot;,
+          &quot;start_price_jpy&quot;: 190000.0,
+          &quot;buyout_price_jpy&quot;: 240000.0,
+          &quot;current_bid_jpy&quot;: 190000.0,
+          &quot;bid_count&quot;: 0,
+          &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+          &quot;publish_round&quot;: 1,
+          &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+          &quot;auction_duration_hours&quot;: 2,
+          &quot;sold_at&quot;: null,
+          &quot;cancelled_at&quot;: null,
+          &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+          &quot;order_date&quot;: &quot;2026-06-22&quot;,
+          &quot;end_date&quot;: &quot;2026-06-22&quot;,
+          &quot;start_time&quot;: &quot;08:30&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+          &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+          &quot;order_type&quot;: &quot;charter&quot;,
+          &quot;vehicle_type&quot;: &quot;10座&quot;,
+          &quot;passenger_count&quot;: 8,
+          &quot;luggage_count&quot;: 0,
+          &quot;flight_number&quot;: null,
+          &quot;flight_date&quot;: null,
+          &quot;flight_airline&quot;: null,
+          &quot;flight_origin&quot;: null,
+          &quot;flight_destination&quot;: null,
+          &quot;flight_terminal&quot;: null,
+          &quot;flight_gate&quot;: null,
+          &quot;flight_status&quot;: null,
+          &quot;flight_scheduled_departure&quot;: null,
+          &quot;flight_scheduled_arrival&quot;: null,
+          &quot;flight_estimated_departure&quot;: null,
+          &quot;flight_estimated_arrival&quot;: null,
+          &quot;flight_actual_departure&quot;: null,
+          &quot;flight_actual_arrival&quot;: null,
+          &quot;flight_provider&quot;: null,
+          &quot;flight_last_checked_at&quot;: null,
+          &quot;flight_manual_note&quot;: null,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 210000.0,
+          &quot;execution_status&quot;: &quot;auction_listed&quot;,
+          &quot;settlement_status&quot;: &quot;pending&quot;,
+          &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+          &quot;payment_amount_jpy&quot;: null,
+          &quot;carrier_payment_requested_at&quot;: null,
+          &quot;carrier_payment_request_note&quot;: null,
+          &quot;agency_payment_receipt_url&quot;: null,
+          &quot;agency_payment_receipt_name&quot;: null,
+          &quot;agency_payment_uploaded_at&quot;: null,
+          &quot;carrier_payment_confirmed_at&quot;: null,
+          &quot;carrier_payment_confirmed_by&quot;: null,
+          &quot;has_itinerary_pdf&quot;: false
+        }
+      }
+    },
+    {
+      &quot;name&quot;: &quot;车公司未接单前不能看完整详情&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;车公司未成为 buyer_tenant_id 前，不能查看旅行社联系方式、游客联系方式、导游联系方式。&quot;,
+      &quot;actual&quot;: &quot;接口返回：listing_detail_forbidden&quot;,
+      &quot;evidence&quot;: null
+    },
+    {
+      &quot;name&quot;: &quot;两个车公司交叉接单&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;SAKURA 和 KEX 各接 A/B 两家旅行社的订单，买方租户写入 buyer_tenant_id。&quot;,
+      &quot;actual&quot;: &quot;四条订单均 claimed。&quot;,
+      &quot;evidence&quot;: [
+        {
+          &quot;id&quot;: 1,
+          &quot;order_id&quot;: 1,
+          &quot;owner_tenant_id&quot;: 101,
+          &quot;seller_tenant_id&quot;: 101,
+          &quot;buyer_tenant_id&quot;: 201,
+          &quot;status&quot;: &quot;claimed&quot;,
+          &quot;start_price_jpy&quot;: 52000.0,
+          &quot;buyout_price_jpy&quot;: 70000.0,
+          &quot;current_bid_jpy&quot;: 2.0,
+          &quot;bid_count&quot;: 1,
+          &quot;listing_code&quot;: &quot;A260620-0001-TMP-H260531-001&quot;,
+          &quot;publish_round&quot;: 1,
+          &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+          &quot;auction_duration_hours&quot;: 2,
+          &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;cancelled_at&quot;: null,
+          &quot;oid&quot;: &quot;A260620-0001-TMP&quot;,
+          &quot;order_date&quot;: &quot;2026-06-20&quot;,
+          &quot;end_date&quot;: &quot;2026-06-20&quot;,
+          &quot;start_time&quot;: &quot;09:00&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;KIX T1&quot;,
+          &quot;dropoff_location&quot;: &quot;Osaka Station&quot;,
+          &quot;order_type&quot;: &quot;airport_transfer&quot;,
+          &quot;vehicle_type&quot;: &quot;Hiace&quot;,
+          &quot;passenger_count&quot;: 4,
+          &quot;luggage_count&quot;: 4,
+          &quot;flight_number&quot;: null,
+          &quot;flight_date&quot;: null,
+          &quot;flight_airline&quot;: null,
+          &quot;flight_origin&quot;: null,
+          &quot;flight_destination&quot;: null,
+          &quot;flight_terminal&quot;: null,
+          &quot;flight_gate&quot;: null,
+          &quot;flight_status&quot;: null,
+          &quot;flight_scheduled_departure&quot;: null,
+          &quot;flight_scheduled_arrival&quot;: null,
+          &quot;flight_estimated_departure&quot;: null,
+          &quot;flight_estimated_arrival&quot;: null,
+          &quot;flight_actual_departure&quot;: null,
+          &quot;flight_actual_arrival&quot;: null,
+          &quot;flight_provider&quot;: null,
+          &quot;flight_last_checked_at&quot;: null,
+          &quot;flight_manual_note&quot;: null,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 58000.0,
+          &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+          &quot;settlement_status&quot;: &quot;pending&quot;,
+          &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+          &quot;payment_amount_jpy&quot;: null,
+          &quot;carrier_payment_requested_at&quot;: null,
+          &quot;carrier_payment_request_note&quot;: null,
+          &quot;agency_payment_receipt_url&quot;: null,
+          &quot;agency_payment_receipt_name&quot;: null,
+          &quot;agency_payment_uploaded_at&quot;: null,
+          &quot;carrier_payment_confirmed_at&quot;: null,
+          &quot;carrier_payment_confirmed_by&quot;: null,
+          &quot;has_itinerary_pdf&quot;: false
+        },
+        {
+          &quot;id&quot;: 3,
+          &quot;order_id&quot;: 3,
+          &quot;owner_tenant_id&quot;: 102,
+          &quot;seller_tenant_id&quot;: 102,
+          &quot;buyer_tenant_id&quot;: 201,
+          &quot;status&quot;: &quot;claimed&quot;,
+          &quot;start_price_jpy&quot;: 56000.0,
+          &quot;buyout_price_jpy&quot;: 76000.0,
+          &quot;current_bid_jpy&quot;: 2.0,
+          &quot;bid_count&quot;: 1,
+          &quot;listing_code&quot;: &quot;A260620-0002-TMP-H260531-001&quot;,
+          &quot;publish_round&quot;: 1,
+          &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+          &quot;auction_duration_hours&quot;: 2,
+          &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;cancelled_at&quot;: null,
+          &quot;oid&quot;: &quot;A260620-0002-TMP&quot;,
+          &quot;order_date&quot;: &quot;2026-06-20&quot;,
+          &quot;end_date&quot;: &quot;2026-06-20&quot;,
+          &quot;start_time&quot;: &quot;12:00&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;Haneda T3&quot;,
+          &quot;dropoff_location&quot;: &quot;Tokyo Hotel&quot;,
+          &quot;order_type&quot;: &quot;airport_transfer&quot;,
+          &quot;vehicle_type&quot;: &quot;Hiace&quot;,
+          &quot;passenger_count&quot;: 4,
+          &quot;luggage_count&quot;: 4,
+          &quot;flight_number&quot;: null,
+          &quot;flight_date&quot;: null,
+          &quot;flight_airline&quot;: null,
+          &quot;flight_origin&quot;: null,
+          &quot;flight_destination&quot;: null,
+          &quot;flight_terminal&quot;: null,
+          &quot;flight_gate&quot;: null,
+          &quot;flight_status&quot;: null,
+          &quot;flight_scheduled_departure&quot;: null,
+          &quot;flight_scheduled_arrival&quot;: null,
+          &quot;flight_estimated_departure&quot;: null,
+          &quot;flight_estimated_arrival&quot;: null,
+          &quot;flight_actual_departure&quot;: null,
+          &quot;flight_actual_arrival&quot;: null,
+          &quot;flight_provider&quot;: null,
+          &quot;flight_last_checked_at&quot;: null,
+          &quot;flight_manual_note&quot;: null,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 62000.0,
+          &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+          &quot;settlement_status&quot;: &quot;pending&quot;,
+          &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+          &quot;payment_amount_jpy&quot;: null,
+          &quot;carrier_payment_requested_at&quot;: null,
+          &quot;carrier_payment_request_note&quot;: null,
+          &quot;agency_payment_receipt_url&quot;: null,
+          &quot;agency_payment_receipt_name&quot;: null,
+          &quot;agency_payment_uploaded_at&quot;: null,
+          &quot;carrier_payment_confirmed_at&quot;: null,
+          &quot;carrier_payment_confirmed_by&quot;: null,
+          &quot;has_itinerary_pdf&quot;: false
+        },
+        {
+          &quot;id&quot;: 2,
+          &quot;order_id&quot;: 2,
+          &quot;owner_tenant_id&quot;: 101,
+          &quot;seller_tenant_id&quot;: 101,
+          &quot;buyer_tenant_id&quot;: 202,
+          &quot;status&quot;: &quot;claimed&quot;,
+          &quot;start_price_jpy&quot;: 160000.0,
+          &quot;buyout_price_jpy&quot;: 210000.0,
+          &quot;current_bid_jpy&quot;: 2.0,
+          &quot;bid_count&quot;: 1,
+          &quot;listing_code&quot;: &quot;A260621-0001-TMP-H260531-002&quot;,
+          &quot;publish_round&quot;: 1,
+          &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+          &quot;auction_duration_hours&quot;: 2,
+          &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;cancelled_at&quot;: null,
+          &quot;oid&quot;: &quot;A260621-0001-TMP&quot;,
+          &quot;order_date&quot;: &quot;2026-06-21&quot;,
+          &quot;end_date&quot;: &quot;2026-06-21&quot;,
+          &quot;start_time&quot;: &quot;10:00&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;Kyoto&quot;,
+          &quot;dropoff_location&quot;: &quot;Amanohashidate&quot;,
+          &quot;order_type&quot;: &quot;charter&quot;,
+          &quot;vehicle_type&quot;: &quot;10座&quot;,
+          &quot;passenger_count&quot;: 8,
+          &quot;luggage_count&quot;: 0,
+          &quot;flight_number&quot;: null,
+          &quot;flight_date&quot;: null,
+          &quot;flight_airline&quot;: null,
+          &quot;flight_origin&quot;: null,
+          &quot;flight_destination&quot;: null,
+          &quot;flight_terminal&quot;: null,
+          &quot;flight_gate&quot;: null,
+          &quot;flight_status&quot;: null,
+          &quot;flight_scheduled_departure&quot;: null,
+          &quot;flight_scheduled_arrival&quot;: null,
+          &quot;flight_estimated_departure&quot;: null,
+          &quot;flight_estimated_arrival&quot;: null,
+          &quot;flight_actual_departure&quot;: null,
+          &quot;flight_actual_arrival&quot;: null,
+          &quot;flight_provider&quot;: null,
+          &quot;flight_last_checked_at&quot;: null,
+          &quot;flight_manual_note&quot;: null,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 180000.0,
+          &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+          &quot;settlement_status&quot;: &quot;pending&quot;,
+          &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+          &quot;payment_amount_jpy&quot;: null,
+          &quot;carrier_payment_requested_at&quot;: null,
+          &quot;carrier_payment_request_note&quot;: null,
+          &quot;agency_payment_receipt_url&quot;: null,
+          &quot;agency_payment_receipt_name&quot;: null,
+          &quot;agency_payment_uploaded_at&quot;: null,
+          &quot;carrier_payment_confirmed_at&quot;: null,
+          &quot;carrier_payment_confirmed_by&quot;: null,
+          &quot;has_itinerary_pdf&quot;: false
+        },
+        {
+          &quot;id&quot;: 4,
+          &quot;order_id&quot;: 4,
+          &quot;owner_tenant_id&quot;: 102,
+          &quot;seller_tenant_id&quot;: 102,
+          &quot;buyer_tenant_id&quot;: 202,
+          &quot;status&quot;: &quot;claimed&quot;,
+          &quot;start_price_jpy&quot;: 190000.0,
+          &quot;buyout_price_jpy&quot;: 240000.0,
+          &quot;current_bid_jpy&quot;: 2.0,
+          &quot;bid_count&quot;: 1,
+          &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+          &quot;publish_round&quot;: 1,
+          &quot;published_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;expires_at&quot;: &quot;2026-05-31 13:05:15&quot;,
+          &quot;auction_duration_hours&quot;: 2,
+          &quot;sold_at&quot;: &quot;2026-05-31 11:05:15&quot;,
+          &quot;cancelled_at&quot;: null,
+          &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+          &quot;order_date&quot;: &quot;2026-06-22&quot;,
+          &quot;end_date&quot;: &quot;2026-06-22&quot;,
+          &quot;start_time&quot;: &quot;08:30&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+          &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+          &quot;order_type&quot;: &quot;charter&quot;,
+          &quot;vehicle_type&quot;: &quot;10座&quot;,
+          &quot;passenger_count&quot;: 8,
+          &quot;luggage_count&quot;: 0,
+          &quot;flight_number&quot;: null,
+          &quot;flight_date&quot;: null,
+          &quot;flight_airline&quot;: null,
+          &quot;flight_origin&quot;: null,
+          &quot;flight_destination&quot;: null,
+          &quot;flight_terminal&quot;: null,
+          &quot;flight_gate&quot;: null,
+          &quot;flight_status&quot;: null,
+          &quot;flight_scheduled_departure&quot;: null,
+          &quot;flight_scheduled_arrival&quot;: null,
+          &quot;flight_estimated_departure&quot;: null,
+          &quot;flight_estimated_arrival&quot;: null,
+          &quot;flight_actual_departure&quot;: null,
+          &quot;flight_actual_arrival&quot;: null,
+          &quot;flight_provider&quot;: null,
+          &quot;flight_last_checked_at&quot;: null,
+          &quot;flight_manual_note&quot;: null,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 210000.0,
+          &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+          &quot;settlement_status&quot;: &quot;pending&quot;,
+          &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+          &quot;payment_amount_jpy&quot;: null,
+          &quot;carrier_payment_requested_at&quot;: null,
+          &quot;carrier_payment_request_note&quot;: null,
+          &quot;agency_payment_receipt_url&quot;: null,
+          &quot;agency_payment_receipt_name&quot;: null,
+          &quot;agency_payment_uploaded_at&quot;: null,
+          &quot;carrier_payment_confirmed_at&quot;: null,
+          &quot;carrier_payment_confirmed_by&quot;: null,
+          &quot;has_itinerary_pdf&quot;: false
+        }
+      ]
+    },
+    {
+      &quot;name&quot;: &quot;接单车公司可看详情，其他车公司不可看&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;buyer_tenant_id 对应车公司可查看完整详情；非买方车公司仍被拦截。&quot;,
+      &quot;actual&quot;: &quot;SAKURA 可见 guest_contact=080-test-58000；KEX 查看同单返回 listing_detail_forbidden。&quot;,
+      &quot;evidence&quot;: null
+    },
+    {
+      &quot;name&quot;: &quot;车公司接多个旅行社订单的展示方式&quot;,
+      &quot;ok&quot;: true,
+      &quot;expected&quot;: &quot;车公司后台应按 buyer_tenant_id 汇总已接订单，并保留来源旅行社列。&quot;,
+      &quot;actual&quot;: &quot;SAKURA 2 单，KEX 2 单，均来自多个旅行社。&quot;,
+      &quot;evidence&quot;: {
+        &quot;SAKURA&quot;: [
+          {
+            &quot;id&quot;: 3,
+            &quot;listing_code&quot;: &quot;A260620-0002-TMP-H260531-001&quot;,
+            &quot;status&quot;: &quot;claimed&quot;,
+            &quot;buyer_tenant_id&quot;: 201,
+            &quot;oid&quot;: &quot;A260620-0002-TMP&quot;,
+            &quot;order_date&quot;: &quot;2026-06-20&quot;,
+            &quot;start_time&quot;: &quot;12:00&quot;,
+            &quot;pickup_location&quot;: &quot;Haneda T3&quot;,
+            &quot;dropoff_location&quot;: &quot;Tokyo Hotel&quot;,
+            &quot;guest_name&quot;: &quot;B机场客人&quot;,
+            &quot;guest_contact&quot;: &quot;080-test-62000&quot;,
+            &quot;guide_name&quot;: &quot;B机场客人 Guide&quot;,
+            &quot;guide_phone&quot;: &quot;090-guide-62000&quot;,
+            &quot;seller_company_name&quot;: &quot;富士之旅旅行社&quot;,
+            &quot;buyer_company_name&quot;: &quot;SAKURA车队&quot;
+          },
+          {
+            &quot;id&quot;: 1,
+            &quot;listing_code&quot;: &quot;A260620-0001-TMP-H260531-001&quot;,
+            &quot;status&quot;: &quot;claimed&quot;,
+            &quot;buyer_tenant_id&quot;: 201,
+            &quot;oid&quot;: &quot;A260620-0001-TMP&quot;,
+            &quot;order_date&quot;: &quot;2026-06-20&quot;,
+            &quot;start_time&quot;: &quot;09:00&quot;,
+            &quot;pickup_location&quot;: &quot;KIX T1&quot;,
+            &quot;dropoff_location&quot;: &quot;Osaka Station&quot;,
+            &quot;guest_name&quot;: &quot;A机场客人&quot;,
+            &quot;guest_contact&quot;: &quot;080-test-58000&quot;,
+            &quot;guide_name&quot;: &quot;A机场客人 Guide&quot;,
+            &quot;guide_phone&quot;: &quot;090-guide-58000&quot;,
+            &quot;seller_company_name&quot;: &quot;东瀛假期旅行社&quot;,
+            &quot;buyer_company_name&quot;: &quot;SAKURA车队&quot;
+          }
+        ],
+        &quot;KEX&quot;: [
+          {
+            &quot;id&quot;: 4,
+            &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+            &quot;status&quot;: &quot;claimed&quot;,
+            &quot;buyer_tenant_id&quot;: 202,
+            &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+            &quot;order_date&quot;: &quot;2026-06-22&quot;,
+            &quot;start_time&quot;: &quot;08:30&quot;,
+            &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+            &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+            &quot;guest_name&quot;: &quot;B包车客人&quot;,
+            &quot;guest_contact&quot;: &quot;080-test-210000&quot;,
+            &quot;guide_name&quot;: &quot;B包车客人 Guide&quot;,
+            &quot;guide_phone&quot;: &quot;090-guide-210000&quot;,
+            &quot;seller_company_name&quot;: &quot;富士之旅旅行社&quot;,
+            &quot;buyer_company_name&quot;: &quot;Kansai Express车队&quot;
+          },
+          {
+            &quot;id&quot;: 2,
+            &quot;listing_code&quot;: &quot;A260621-0001-TMP-H260531-002&quot;,
+            &quot;status&quot;: &quot;claimed&quot;,
+            &quot;buyer_tenant_id&quot;: 202,
+            &quot;oid&quot;: &quot;A260621-0001-TMP&quot;,
+            &quot;order_date&quot;: &quot;2026-06-21&quot;,
+            &quot;start_time&quot;: &quot;10:00&quot;,
+            &quot;pickup_location&quot;: &quot;Kyoto&quot;,
+            &quot;dropoff_location&quot;: &quot;Amanohashidate&quot;,
+            &quot;guest_name&quot;: &quot;A包车客人&quot;,
+            &quot;guest_contact&quot;: &quot;080-test-180000&quot;,
+            &quot;guide_name&quot;: &quot;A包车客人 Guide&quot;,
+            &quot;guide_phone&quot;: &quot;090-guide-180000&quot;,
+            &quot;seller_company_name&quot;: &quot;东瀛假期旅行社&quot;,
+            &quot;buyer_company_name&quot;: &quot;Kansai Express车队&quot;
+          }
+        ]
+      }
+    }
+  ],
+  &quot;agencies&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;tenant_id&quot;: 101,
+      &quot;agency_code&quot;: &quot;AGA&quot;,
+      &quot;name&quot;: &quot;东瀛假期旅行社&quot;
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;tenant_id&quot;: 102,
+      &quot;agency_code&quot;: &quot;AGB&quot;,
+      &quot;name&quot;: &quot;富士之旅旅行社&quot;
+    }
+  ],
+  &quot;tenants&quot;: [
+    {
+      &quot;id&quot;: 101,
+      &quot;name&quot;: &quot;东瀛假期旅行社&quot;,
+      &quot;slug&quot;: &quot;AG-A&quot;
+    },
+    {
+      &quot;id&quot;: 102,
+      &quot;name&quot;: &quot;富士之旅旅行社&quot;,
+      &quot;slug&quot;: &quot;AG-B&quot;
+    },
+    {
+      &quot;id&quot;: 201,
+      &quot;name&quot;: &quot;SAKURA车队&quot;,
+      &quot;slug&quot;: &quot;SKR&quot;
+    },
+    {
+      &quot;id&quot;: 202,
+      &quot;name&quot;: &quot;Kansai Express车队&quot;,
+      &quot;slug&quot;: &quot;KEX&quot;
+    }
+  ],
+  &quot;orders&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;tenant_id&quot;: 101,
+      &quot;agency_id&quot;: 1,
+      &quot;oid&quot;: &quot;A260620-0001-TMP&quot;,
+      &quot;order_type&quot;: &quot;airport_transfer&quot;,
+      &quot;guest_name&quot;: &quot;A机场客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-58000&quot;,
+      &quot;dispatch_status&quot;: &quot;auction_claimed&quot;
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;tenant_id&quot;: 101,
+      &quot;agency_id&quot;: 1,
+      &quot;oid&quot;: &quot;A260621-0001-TMP&quot;,
+      &quot;order_type&quot;: &quot;charter&quot;,
+      &quot;guest_name&quot;: &quot;A包车客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-180000&quot;,
+      &quot;dispatch_status&quot;: &quot;auction_claimed&quot;
+    },
+    {
+      &quot;id&quot;: 3,
+      &quot;tenant_id&quot;: 102,
+      &quot;agency_id&quot;: 2,
+      &quot;oid&quot;: &quot;A260620-0002-TMP&quot;,
+      &quot;order_type&quot;: &quot;airport_transfer&quot;,
+      &quot;guest_name&quot;: &quot;B机场客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-62000&quot;,
+      &quot;dispatch_status&quot;: &quot;auction_claimed&quot;
+    },
+    {
+      &quot;id&quot;: 4,
+      &quot;tenant_id&quot;: 102,
+      &quot;agency_id&quot;: 2,
+      &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+      &quot;order_type&quot;: &quot;charter&quot;,
+      &quot;guest_name&quot;: &quot;B包车客人&quot;,
+      &quot;guest_contact&quot;: &quot;080-test-210000&quot;,
+      &quot;dispatch_status&quot;: &quot;auction_claimed&quot;
+    }
+  ],
+  &quot;listings&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;order_id&quot;: 1,
+      &quot;seller_tenant_id&quot;: 101,
+      &quot;buyer_tenant_id&quot;: 201,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;listing_code&quot;: &quot;A260620-0001-TMP-H260531-001&quot;,
+      &quot;start_price_jpy&quot;: 52000.0,
+      &quot;buyout_price_jpy&quot;: 70000.0
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;order_id&quot;: 2,
+      &quot;seller_tenant_id&quot;: 101,
+      &quot;buyer_tenant_id&quot;: 202,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;listing_code&quot;: &quot;A260621-0001-TMP-H260531-002&quot;,
+      &quot;start_price_jpy&quot;: 160000.0,
+      &quot;buyout_price_jpy&quot;: 210000.0
+    },
+    {
+      &quot;id&quot;: 3,
+      &quot;order_id&quot;: 3,
+      &quot;seller_tenant_id&quot;: 102,
+      &quot;buyer_tenant_id&quot;: 201,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;listing_code&quot;: &quot;A260620-0002-TMP-H260531-001&quot;,
+      &quot;start_price_jpy&quot;: 56000.0,
+      &quot;buyout_price_jpy&quot;: 76000.0
+    },
+    {
+      &quot;id&quot;: 4,
+      &quot;order_id&quot;: 4,
+      &quot;seller_tenant_id&quot;: 102,
+      &quot;buyer_tenant_id&quot;: 202,
+      &quot;status&quot;: &quot;claimed&quot;,
+      &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+      &quot;start_price_jpy&quot;: 190000.0,
+      &quot;buyout_price_jpy&quot;: 240000.0
+    }
+  ],
+  &quot;carrier_views&quot;: {
+    &quot;SAKURA&quot;: [
+      {
+        &quot;id&quot;: 3,
+        &quot;listing_code&quot;: &quot;A260620-0002-TMP-H260531-001&quot;,
+        &quot;status&quot;: &quot;claimed&quot;,
+        &quot;buyer_tenant_id&quot;: 201,
+        &quot;oid&quot;: &quot;A260620-0002-TMP&quot;,
+        &quot;order_date&quot;: &quot;2026-06-20&quot;,
+        &quot;start_time&quot;: &quot;12:00&quot;,
+        &quot;pickup_location&quot;: &quot;Haneda T3&quot;,
+        &quot;dropoff_location&quot;: &quot;Tokyo Hotel&quot;,
+        &quot;guest_name&quot;: &quot;B机场客人&quot;,
+        &quot;guest_contact&quot;: &quot;080-test-62000&quot;,
+        &quot;guide_name&quot;: &quot;B机场客人 Guide&quot;,
+        &quot;guide_phone&quot;: &quot;090-guide-62000&quot;,
+        &quot;seller_company_name&quot;: &quot;富士之旅旅行社&quot;,
+        &quot;buyer_company_name&quot;: &quot;SAKURA车队&quot;
+      },
+      {
+        &quot;id&quot;: 1,
+        &quot;listing_code&quot;: &quot;A260620-0001-TMP-H260531-001&quot;,
+        &quot;status&quot;: &quot;claimed&quot;,
+        &quot;buyer_tenant_id&quot;: 201,
+        &quot;oid&quot;: &quot;A260620-0001-TMP&quot;,
+        &quot;order_date&quot;: &quot;2026-06-20&quot;,
+        &quot;start_time&quot;: &quot;09:00&quot;,
+        &quot;pickup_location&quot;: &quot;KIX T1&quot;,
+        &quot;dropoff_location&quot;: &quot;Osaka Station&quot;,
+        &quot;guest_name&quot;: &quot;A机场客人&quot;,
+        &quot;guest_contact&quot;: &quot;080-test-58000&quot;,
+        &quot;guide_name&quot;: &quot;A机场客人 Guide&quot;,
+        &quot;guide_phone&quot;: &quot;090-guide-58000&quot;,
+        &quot;seller_company_name&quot;: &quot;东瀛假期旅行社&quot;,
+        &quot;buyer_company_name&quot;: &quot;SAKURA车队&quot;
+      }
+    ],
+    &quot;KEX&quot;: [
+      {
+        &quot;id&quot;: 4,
+        &quot;listing_code&quot;: &quot;A260622-0001-TMP-H260531-002&quot;,
+        &quot;status&quot;: &quot;claimed&quot;,
+        &quot;buyer_tenant_id&quot;: 202,
+        &quot;oid&quot;: &quot;A260622-0001-TMP&quot;,
+        &quot;order_date&quot;: &quot;2026-06-22&quot;,
+        &quot;start_time&quot;: &quot;08:30&quot;,
+        &quot;pickup_location&quot;: &quot;Tokyo&quot;,
+        &quot;dropoff_location&quot;: &quot;Fuji&quot;,
+        &quot;guest_name&quot;: &quot;B包车客人&quot;,
+        &quot;guest_contact&quot;: &quot;080-test-210000&quot;,
+        &quot;guide_name&quot;: &quot;B包车客人 Guide&quot;,
+        &quot;guide_phone&quot;: &quot;090-guide-210000&quot;,
+        &quot;seller_company_name&quot;: &quot;富士之旅旅行社&quot;,
+        &quot;buyer_company_name&quot;: &quot;Kansai Express车队&quot;
+      },
+      {
+        &quot;id&quot;: 2,
+        &quot;listing_code&quot;: &quot;A260621-0001-TMP-H260531-002&quot;,
+        &quot;status&quot;: &quot;claimed&quot;,
+        &quot;buyer_tenant_id&quot;: 202,
+        &quot;oid&quot;: &quot;A260621-0001-TMP&quot;,
+        &quot;order_date&quot;: &quot;2026-06-21&quot;,
+        &quot;start_time&quot;: &quot;10:00&quot;,
+        &quot;pickup_location&quot;: &quot;Kyoto&quot;,
+        &quot;dropoff_location&quot;: &quot;Amanohashidate&quot;,
+        &quot;guest_name&quot;: &quot;A包车客人&quot;,
+        &quot;guest_contact&quot;: &quot;080-test-180000&quot;,
+        &quot;guide_name&quot;: &quot;A包车客人 Guide&quot;,
+        &quot;guide_phone&quot;: &quot;090-guide-180000&quot;,
+        &quot;seller_company_name&quot;: &quot;东瀛假期旅行社&quot;,
+        &quot;buyer_company_name&quot;: &quot;Kansai Express车队&quot;
+      }
+    ]
+  },
+  &quot;recommendations&quot;: [
+    &quot;旅行社“我的订单/日历/订单跟踪”继续使用 tenant_id + agency_id 双条件，不允许用单独 order_id 直接越权访问。&quot;,
+    &quot;订单大厅保留公开基础信息：日期、时间、起止地、车型、人数/行李、价格区间、PDF 是否存在；游客/导游/旅行社担当联系方式只在接单后向买方车公司开放。&quot;,
+    &quot;车公司已接订单列表应服务端按 buyer_tenant_id 过滤，页面可按来源旅行社、日期、车型、结算状态筛选。&quot;,
+    &quot;平台端可跨租户查看，但必须记录审计日志，并在页面上明确 seller_tenant_id、buyer_tenant_id、agency_id。&quot;,
+    &quot;当前 claim_auction_listing 服务用 seller_tenant_id 作为上下文校验，再从 payload 写入 buyer_tenant_id；正式车公司端接口建议增加专用 claim endpoint，用登录车公司 tenant_id 自动作为 buyer_tenant_id，避免前端传错。&quot;
+  ]
+}</pre>
+    </section>
+  </main>
+</body>
+</html>

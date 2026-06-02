@@ -1,0 +1,77 @@
+<view class="page">
+  <view class="hero {{isGuide ? 'guide-hero' : ''}}">
+    <view class="hero-eyebrow">CALENDAR</view>
+    <view class="hero-title">{{isGuide ? '我的日历' : '订单日历'}}</view>
+    <view class="hero-meta">{{isGuide ? '只显示分配给你的订单，点日期查看当天行程。' : '点击日期查看当天订单；日期格内用状态点显示未发布、发布中、已接单、进行中和完成情况。'}}</view>
+  </view>
+
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+
+  <view class="panel calendar-card">
+    <view class="month-header">
+      <button class="month-button" bindtap="previousMonth">‹</button>
+      <view class="month-title">{{monthTitle}}</view>
+      <button class="month-button" bindtap="nextMonth">›</button>
+      <button class="today-button" bindtap="backToToday">今天</button>
+      <button class="mini-button refresh-button" loading="{{loading}}" bindtap="loadCalendar">刷新</button>
+    </view>
+
+    <view class="weekday-row">
+      <view wx:for="{{weekdays}}" wx:key="*this" class="weekday">{{item}}</view>
+    </view>
+
+    <view class="month-grid">
+      <view
+        wx:for="{{calendarDays}}"
+        wx:key="date"
+        class="day-cell {{item.inMonth ? '' : 'day-muted'}} {{item.isToday ? 'day-today' : ''}} {{selectedDate === item.date ? 'day-selected' : ''}}"
+        data-date="{{item.date}}"
+        bindtap="selectDate"
+      >
+        <view class="day-number">{{item.day}}</view>
+        <view wx:if="{{item.count}}" class="day-count">{{item.count}}</view>
+        <view class="dot-row">
+          <view wx:for="{{item.dots}}" wx:key="key" class="status-dot {{item.key}}">
+            <text wx:if="{{item.count > 1}}">{{item.count}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="legend-row">
+      <view wx:for="{{legend}}" wx:key="key" class="legend-item">
+        <text class="legend-dot {{item.key}}"></text>
+        <text>{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-header">
+      <view>
+        <view class="panel-title">{{selectedDateLabel}}</view>
+        <view class="muted">共 {{selectedOrders.length}} 单</view>
+      </view>
+    </view>
+
+    <view wx:if="{{selectedOrders.length}}" class="order-list">
+      <view wx:for="{{selectedOrders}}" wx:key="id" class="order-card">
+        <view class="order-head">
+          <view>
+            <view class="order-no">{{item.oid || item.id}}</view>
+            <view class="order-time">{{item.timeText}}</view>
+          </view>
+          <view class="status-pill {{item.statusClass}}">{{item.statusText}}</view>
+        </view>
+        <view class="order-route">{{item.routeText}}</view>
+        <view class="tag-row">
+          <text class="tag tag-primary">{{item.typeText}}</text>
+          <text class="tag">{{item.vehicle_type || '-'}}</text>
+          <text class="tag">{{item.passenger_count || 0}}人</text>
+          <text class="tag">¥{{item.price_jpy || item.price || '-'}}</text>
+        </view>
+      </view>
+    </view>
+    <view wx:else class="empty">当天没有订单</view>
+  </view>
+</view>

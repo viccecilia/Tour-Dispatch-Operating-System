@@ -10,6 +10,7 @@ import { CopilotPage } from "@/pages/CopilotPage";
 import { CalendarPage } from "@/pages/CalendarPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { AttendancePage } from "@/pages/AttendancePage";
+import { CompanyRegistrationPage } from "@/pages/CompanyRegistrationPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DispatchPage } from "@/pages/DispatchPage";
 import { DriverAppPreviewPage } from "@/pages/DriverAppPreviewPage";
@@ -66,6 +67,12 @@ export function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [setActivePage]);
 
+  useEffect(() => {
+    if (user && !canAccessPage(user, activePage) && activePage !== "dashboard") {
+      setActivePage("dashboard");
+    }
+  }, [activePage, setActivePage, user]);
+
   if (isAgencyPortal) {
     return <AgencyPortalPage />;
   }
@@ -82,6 +89,8 @@ export function App() {
     return <LoginPage onLogin={setUser} />;
   }
 
+  const activeAllowed = canAccessPage(user, activePage);
+
   const page = {
     dashboard: <DashboardPage />,
     notifications: <NotificationsPage />,
@@ -94,6 +103,7 @@ export function App() {
     attendance: <AttendancePage />,
     map: <MapPage />,
     vehicles: <VehiclesPage />,
+    "company-registration": <CompanyRegistrationPage />,
     agencies: <AgenciesPage />,
     incidents: <IncidentsPage />,
     finance: <FinancePage />,
@@ -103,7 +113,7 @@ export function App() {
     audit: <AuditPage />,
     system: <SystemMaintenancePage />,
     settings: <SettingsPage currentUser={user} />,
-  }[canAccessPage(user.role, activePage) ? activePage : "dashboard"];
+  }[activeAllowed ? activePage : "dashboard"];
 
   return (
     <SaasShell user={user} onLogout={() => {
@@ -115,11 +125,14 @@ export function App() {
   );
 }
 
-function canAccessPage(role: string, page: string) {
-  if (page === "system") return role === "admin";
+function canAccessPage(user: AuthUser, page: string) {
+  const role = user.role;
+  const platformAdmin = user.username === "admin" || Number(user.tenant_id) === 1;
+  if (page === "system" || page === "audit") return false;
+  if (page === "agencies" || page === "company-registration") return platformAdmin;
   if (page === "finance") return role === "admin";
   if (page === "analytics") return role === "admin";
-  if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system"].includes(page);
-  if (role === "dispatcher") return !["finance", "analytics", "system"].includes(page);
+  if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system", "audit"].includes(page);
+  if (role === "dispatcher") return !["finance", "analytics", "system", "audit"].includes(page);
   return true;
 }

@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "信息",
+  "navigationBarTitleText": "司机车辆",
   "usingComponents": {
     "custom-tab-bar": "/custom-tab-bar/index"
   }

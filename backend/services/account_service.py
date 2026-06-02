@@ -84,8 +84,11 @@ def list_accounts() -> list[dict[str, Any]]:
                 p.title AS operator_title,
                 p.phone AS operator_phone,
                 p.invite_status,
-                p.disabled_at
+                p.disabled_at,
+                t.slug AS tenant_slug,
+                t.name AS tenant_name
             FROM users u
+            LEFT JOIN tenants t ON t.id = u.tenant_id
             LEFT JOIN drivers d ON d.tenant_id = u.tenant_id AND u.profile_type = 'driver' AND d.id = u.profile_id
             LEFT JOIN operator_profiles p ON p.tenant_id = u.tenant_id AND u.profile_type = 'operator' AND p.id = u.profile_id
             WHERE u.tenant_id = ?
@@ -110,6 +113,7 @@ def ensure_driver_accounts(actor: str = "system") -> int:
     tenant_id = get_current_tenant_id()
     created = 0
     with get_connection() as conn:
+        tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
         drivers = conn.execute(
             """
             SELECT id, name, phone, driver_code, user_id
@@ -136,7 +140,7 @@ def ensure_driver_accounts(actor: str = "system") -> int:
                         (existing["id"], tenant_id, driver["id"]),
                     )
                 continue
-            username = _unique_username(conn, tenant_id, company_login_name(normalized))
+            username = _unique_username(conn, tenant_id, company_login_name(normalized, tenant_slug, tenant_name))
             password = phone_password_tail(driver["phone"])
             if not password:
                 continue
@@ -189,6 +193,7 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
         display_name = phone
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
+        tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
         existing = _find_user_by_phone(conn, tenant_id, normalized)
         if existing:
             raise ValueError("account_phone_exists")
@@ -206,7 +211,7 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
         else:
             profile_type = "operator"
             profile_id = None
-        username = _unique_username(conn, tenant_id, company_login_name(normalized or phone))
+        username = _unique_username(conn, tenant_id, company_login_name(normalized or phone, tenant_slug, tenant_name))
         conn.execute(
             """
             INSERT INTO users (
@@ -233,6 +238,7 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
 def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "system") -> dict[str, Any] | None:
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
+        tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
             return None
@@ -260,7 +266,7 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
                 existing = _find_user_by_phone(conn, tenant_id, normalized)
                 if existing and str(existing["id"]) != str(user_id):
                     raise ValueError("account_phone_exists")
-                username = _unique_username(conn, tenant_id, company_login_name(normalized), user_id)
+                username = _unique_username(conn, tenant_id, company_login_name(normalized, tenant_slug, tenant_name), user_id)
             else:
                 username = _unique_username(conn, tenant_id, f"account-{user_id}", user_id)
             updates.append("phone = ?")
@@ -453,6 +459,13 @@ def _unique_username(conn: sqlite3.Connection, tenant_id: int, base: str, exclud
         username = f"{base}-{suffix}"
 
 
+def _tenant_identity(conn: sqlite3.Connection, tenant_id: int) -> tuple[str | None, str | None]:
+    row = conn.execute("SELECT slug, name FROM tenants WHERE id = ? LIMIT 1", (tenant_id,)).fetchone()
+    if not row:
+        return None, None
+    return row["slug"], row["name"]
+
+
 def _actor_user_id(conn: sqlite3.Connection, tenant_id: int, actor: str) -> int | None:
     text = str(actor or "")
     if ":" not in text:
@@ -489,12 +502,15 @@ def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | st
             d.phone AS driver_phone,
             d.driver_code,
             d.status AS driver_record_status,
-            p.operator_code,
-            p.title AS operator_title,
-            p.phone AS operator_phone,
-            p.invite_status,
-            p.disabled_at
+                p.operator_code,
+                p.title AS operator_title,
+                p.phone AS operator_phone,
+                p.invite_status,
+                p.disabled_at,
+                t.slug AS tenant_slug,
+                t.name AS tenant_name
         FROM users u
+        LEFT JOIN tenants t ON t.id = u.tenant_id
         LEFT JOIN drivers d ON d.tenant_id = u.tenant_id AND u.profile_type = 'driver' AND d.id = u.profile_id
         LEFT JOIN operator_profiles p ON p.tenant_id = u.tenant_id AND u.profile_type = 'operator' AND p.id = u.profile_id
         WHERE u.tenant_id = ? AND u.id = ?
@@ -505,11 +521,13 @@ def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | st
 
 def _public_account(row: dict[str, Any]) -> dict[str, Any]:
     phone = row.get("phone") or ""
+    tenant_slug = row.get("tenant_slug")
+    tenant_name = row.get("tenant_name")
     return {
         "id": row.get("id"),
         "tenant_id": row.get("tenant_id"),
         "username": row.get("username"),
-        "account_login": company_login_name(phone or row.get("username")),
+        "account_login": company_login_name(phone or row.get("username"), tenant_slug, tenant_name),
         "display_name": row.get("display_name") or row.get("driver_name") or row.get("username"),
         "phone": phone,
         "role": row.get("role"),

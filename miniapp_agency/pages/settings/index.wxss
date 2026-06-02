@@ -1,0 +1,36 @@
+@import "../../app.wxss";
+
+.page .input {
+  height: 78rpx;
+  min-height: 78rpx;
+  padding: 0 22rpx;
+  line-height: 78rpx;
+  font-size: 27rpx;
+}
+
+.compact-textarea {
+  height: 148rpx;
+  min-height: 148rpx;
+  padding: 20rpx 22rpx;
+  font-size: 27rpx;
+  line-height: 1.5;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.file-name {
+  margin-bottom: 8rpx;
+  font-size: 27rpx;
+  font-weight: 900;
+  color: var(--c-text);
+  word-break: break-all;
+}
+
+.bottom-action {
+  margin: 22rpx 0 8rpx;
+}

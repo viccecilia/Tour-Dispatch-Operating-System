@@ -12,6 +12,7 @@ export type PageKey =
   | "attendance"
   | "map"
   | "vehicles"
+  | "company-registration"
   | "agencies"
   | "incidents"
   | "finance"
@@ -41,6 +42,7 @@ function pageFromHash(): PageKey {
     "attendance",
     "map",
     "vehicles",
+    "company-registration",
     "agencies",
     "incidents",
     "finance",

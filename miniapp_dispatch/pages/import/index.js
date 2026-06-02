@@ -101,17 +101,17 @@ Page({
   confirmOkDrafts() {
     const okDrafts = this.data.drafts.filter((item) => item.riskLevel === 'ok');
     if (!okDrafts.length) {
-      wx.showToast({ title: '没有可直接入库草稿', icon: 'none' });
+      wx.showToast({ title: '没有可直接确认草稿', icon: 'none' });
       return;
     }
     this.setData({ loading: true });
     okDrafts.reduce((chain, draft) => chain.then(() => api.confirmDraft(draft.id)), Promise.resolve())
       .then(() => {
-        wx.showToast({ title: `已入库 ${okDrafts.length} 单` });
+        wx.showToast({ title: `已确认 ${okDrafts.length} 单` });
         this.setData({ loading: false });
         this.loadDrafts();
       })
-      .catch(() => this.setData({ loading: false, message: '批量入库失败，请检查草稿。' }));
+      .catch(() => this.setData({ loading: false, message: '批量确认失败，请检查草稿。' }));
   },
 
   toggleExpand(e) {
@@ -166,9 +166,9 @@ Page({
     const id = e.currentTarget.dataset.id;
     api.confirmDraft(id)
       .then(() => {
-        wx.showToast({ title: '已入库' });
+        wx.showToast({ title: '已确认' });
         this.loadDrafts();
       })
-      .catch(() => wx.showToast({ title: '入库失败', icon: 'none' }));
+      .catch(() => wx.showToast({ title: '确认失败', icon: 'none' }));
   }
 });

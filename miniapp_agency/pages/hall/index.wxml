@@ -1,0 +1,107 @@
+<view class="page">
+  <view class="hero">
+    <view class="hero-eyebrow">ORDER HALL</view>
+    <view class="hero-title">订单大厅</view>
+    <view class="hero-meta">大厅只展示基础行程信息；接单后双方才能看到完整联系方式、司机和车辆信息。</view>
+  </view>
+
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+
+  <view class="hall-tabs">
+    <view class="hall-tab {{hallTab === 'market' ? 'hall-tab-active' : ''}}" data-tab="market" bindtap="switchHallTab">订单大厅</view>
+    <view class="hall-tab {{hallTab === 'mine' ? 'hall-tab-active' : ''}}" data-tab="mine" bindtap="switchHallTab">我的订单</view>
+  </view>
+
+  <view wx:if="{{hallTab === 'market'}}" class="panel compact-panel">
+    <view class="market-head">
+      <view>
+        <view class="panel-title">订单大厅</view>
+        <view class="muted">公开市场不展示订单号、旅行社身份和联系人。</view>
+      </view>
+      <button class="mini-button refresh-button" loading="{{loading}}" bindtap="loadAll">刷新</button>
+    </view>
+    <view class="hall-filter-grid">
+      <picker range="{{listingTypeNames}}" value="{{listingTypeIndex}}" bindchange="onListingTypeChange">
+        <view class="picker-box compact-filter">{{listingTypeNames[listingTypeIndex]}}</view>
+      </picker>
+      <picker mode="date" value="{{listingDate}}" bindchange="onListingDateChange">
+        <view class="picker-box compact-filter">{{listingDate || '全部日期'}}</view>
+      </picker>
+      <input class="input compact-filter keyword-filter" value="{{listingKeyword}}" bindinput="onListingKeywordInput" placeholder="起点/终点/时间" />
+    </view>
+    <view class="list">
+      <view wx:for="{{filteredListings}}" wx:key="id" class="row-card hall-listing-card">
+        <view class="row-title">{{item.publicTitle}}</view>
+        <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+        <view class="tag-row">
+          <view class="tag tag-primary">{{item.typeText}}</view>
+          <view class="tag">{{item.vehicle_type || '-'}}</view>
+          <view class="tag">{{item.passenger_count || 0}}人 / {{item.luggage_count || 0}}件</view>
+          <view class="tag tag-warning">{{item.priceText}}</view>
+          <view class="tag">{{item.durationText}}</view>
+        </view>
+      </view>
+      <view wx:if="{{!filteredListings.length}}" class="empty">当前没有符合条件的大厅订单</view>
+    </view>
+  </view>
+
+  <view wx:if="{{hallTab === 'mine'}}" class="panel compact-panel">
+    <view class="market-head">
+      <view>
+        <view class="panel-title">我的订单</view>
+        <view class="muted">点击订单展开操作；已接单改时间需要车公司确认，临近订单不能改日期。</view>
+      </view>
+      <picker range="{{filterNames}}" value="{{filterIndex}}" bindchange="onFilterChange">
+        <view class="mini-button">{{filterNames[filterIndex]}}</view>
+      </picker>
+    </view>
+
+    <view class="list">
+      <view wx:for="{{filteredOrders}}" wx:key="id" class="row-card my-order-card">
+        <view class="order-tap-area" data-id="{{item.id}}" bindtap="selectOrderCard">
+          <view class="row-title">{{item.oid || item.id}}</view>
+          <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+          <view class="tag-row">
+            <view class="tag tag-primary">{{item.statusText}}</view>
+            <view class="tag tag-warning">{{item.settlementText}}</view>
+            <view class="tag">{{item.vehicle_type || '-'}}</view>
+            <view class="tag">{{item.amountText}}</view>
+          </view>
+        </view>
+
+        <view wx:if="{{selectedOrderId == item.id}}" class="inline-actions">
+          <view wx:if="{{item.driver_name || item.plate_number}}" class="driver-box">
+            <view>司机：{{item.driver_name || item.assigned_driver_code || '-'}}</view>
+            <view>车辆：{{item.plate_number || item.plate_no || item.assigned_vehicle_type || '-'}}</view>
+          </view>
+
+          <textarea class="reason-input" value="{{reason}}" bindinput="onReasonInput" placeholder="{{item.canRequestChange ? '说明：如改时间或撤销，请写一句原因' : '说明：未接单订单可以随时撤销，可写一句原因'}}" />
+
+          <view wx:if="{{item.canRequestChange}}" class="time-change-grid">
+            <input class="input time-change-input" data-key="order_date" value="{{timeChangeForm.order_date}}" bindinput="onTimeChangeInput" placeholder="新日期 yyyy-mm-dd" />
+            <input class="input time-change-input" data-key="start_time" value="{{timeChangeForm.start_time}}" bindinput="onTimeChangeInput" placeholder="新时间 11:00" />
+          </view>
+          <view wx:if="{{item.canRequestChange}}" class="action-note">
+            距离原开始时间不足 24 小时，只能改当天时间；超过 24 小时才允许改日期。所有变更都需要车公司确认。
+          </view>
+          <view wx:if="{{item.canRequestChange}}" class="force-row">
+            <text>强行撤销</text>
+            <switch checked="{{forceCancel}}" bindchange="onForceChange" />
+          </view>
+
+          <view class="card-action-row">
+            <button wx:if="{{item.canDirectWithdraw}}" class="small-button danger" loading="{{actionLoading}}" data-id="{{item.id}}" bindtap="withdrawOrder">撤销</button>
+            <button wx:if="{{item.canRequestChange}}" class="small-button" loading="{{actionLoading}}" data-id="{{item.id}}" bindtap="submitTimeChange">改时间申请</button>
+            <button wx:if="{{item.canRequestChange}}" class="small-button danger" loading="{{actionLoading}}" data-id="{{item.id}}" bindtap="submitCancelRequest">撤销申请</button>
+            <button wx:if="{{item.canUploadReceipt}}" class="small-button primary" loading="{{actionLoading}}" data-id="{{item.id}}" bindtap="uploadReceipt">上传回执</button>
+          </view>
+
+          <view wx:if="{{!item.canDirectWithdraw && !item.canRequestChange && !item.canUploadReceipt}}" class="action-hint">
+            当前状态没有可操作项。
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{!filteredOrders.length}}" class="empty">当前没有订单</view>
+    </view>
+  </view>
+</view>

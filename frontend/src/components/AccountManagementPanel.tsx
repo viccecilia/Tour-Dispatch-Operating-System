@@ -114,6 +114,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
 
   const isDriver = form.role === "driver";
   const canCreate = Boolean(form.display_name.trim() && form.phone.trim() && (isDriver || form.operator_code.trim()));
+  const companyCode = currentUser.company_code || currentUser.tenant?.slug || "公司代码";
 
   return (
     <Card>
@@ -122,7 +123,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
           <div>
             <p className="text-xs font-bold uppercase tracking-normal text-blue-600">ACCOUNT CONTROL</p>
             <h2 className="mt-1 text-lg font-black text-slate-950">账号管理</h2>
-            <p className="mt-1 text-sm text-slate-500">统一使用公司账号登录：DAITORA-手机号。主账户可以在这里维护下属账号，暂不限制数量。</p>
+            <p className="mt-1 text-sm text-slate-500">统一使用本公司账号登录：{companyCode}-手机号数字。主账户可以在这里维护下属账号，暂不限制数量。</p>
           </div>
           <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">仅管理员可见</div>
         </div>
@@ -147,7 +148,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
               新增
             </Button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">司机账号必须匹配司机台账手机号。新增后初始密码固定为手机号后 6 位，Web 首次登录必须修改；小程序首次登录会绑定微信，之后可自动登录。</p>
+          <p className="mt-2 text-xs text-slate-500">司机账号必须匹配司机台账手机号。新增后登录名使用 {companyCode}-手机号数字，初始密码固定为手机号后 6 位，Web 首次登录必须修改；小程序首次登录会绑定微信，之后可自动登录。</p>
         </div>
 
         {message ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</div> : null}

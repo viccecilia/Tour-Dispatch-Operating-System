@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Travel Agency Runtime Demo</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; background: #f4f7fb; color: #172033; }
+    body { margin: 0; }
+    header { padding: 22px 28px; background: #ffffff; border-bottom: 1px solid #dce3ee; }
+    h1 { margin: 0; font-size: 24px; }
+    main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+    section { background: #fff; border: 1px solid #dce3ee; border-radius: 8px; padding: 18px; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .tile { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #fbfdff; min-height: 88px; }
+    .tile b { display: block; margin-bottom: 8px; }
+    .flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+    .step { padding: 10px; border-radius: 6px; background: #eef6ff; border: 1px solid #bfdbfe; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    th { background: #f8fafc; }
+    code { background: #eef2f7; padding: 2px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Travel Agency Runtime Demo</h1>
+    <p>This local page summarizes the new travel-agency module without replacing the existing carrier-company console.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Role Surfaces</h2>
+      <div class="grid">
+        <div class="tile"><b>Agency Owner</b>Company, accounts, orders, marketplace, finance, audit.</div>
+        <div class="tile"><b>Customer Service</b>Customers, parse preview, order confirmation, marketplace draft.</div>
+        <div class="tile"><b>Guide</b>Task calendar, task details, execution nodes, evidence.</div>
+        <div class="tile"><b>Agency Finance</b>Receivable, carrier payable, guide payable, profit, export.</div>
+      </div>
+    </section>
+    <section>
+      <h2>Order Flow</h2>
+      <div class="flow">
+        <div class="step">Create / parse</div>
+        <div class="step">Confirm</div>
+        <div class="step">Assign guide</div>
+        <div class="step">Request vehicle</div>
+        <div class="step">Publish marketplace</div>
+        <div class="step">Award and settle</div>
+      </div>
+    </section>
+    <section>
+      <h2>Local API</h2>
+      <table>
+        <thead><tr><th>Area</th><th>Endpoint</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td>Company</td><td><code>/api/travel-agency/companies</code></td><td>Company tenant and master account seed.</td></tr>
+          <tr><td>Orders</td><td><code>/api/travel-agency/orders</code></td><td>Agency-owned order workflow.</td></tr>
+          <tr><td>Marketplace</td><td><code>/api/travel-agency/marketplace</code></td><td>Drafts, quotes, awards.</td></tr>
+          <tr><td>Guide Runtime</td><td><code>/api/travel-agency/guide-events</code></td><td>Execution nodes and evidence URLs.</td></tr>
+          <tr><td>Finance</td><td><code>/api/travel-agency/finance/ledger</code></td><td>Receivable, payable, gross profit.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

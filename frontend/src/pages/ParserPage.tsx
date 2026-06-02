@@ -219,7 +219,11 @@ export function ParserPage() {
 
   function startEdit(draft: Draft) {
     setEditingId(draft.id);
-    setExpandedIds((previous) => new Set(previous).add(draft.id));
+    setExpandedIds((previous) => {
+      const next = new Set(previous);
+      next.delete(draft.id);
+      return next;
+    });
     setEditDraft(toDraftEdit(draft));
   }
 
@@ -332,7 +336,7 @@ export function ParserPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold text-slate-950">待确认订单表</h2>
-              <p className="mt-1 text-sm text-slate-500">默认是普通文本表格，展开或编辑后再修改字段。</p>
+              <p className="mt-1 text-sm text-slate-500">默认只显示确认表；点击编辑在本行修改字段，解析过程收进详情。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <input className="h-9 rounded-md border border-border px-3 text-sm" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
@@ -438,7 +442,7 @@ export function ParserPage() {
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1">
                                 <button className="text-sm font-semibold text-blue-700 hover:text-blue-900" onClick={() => toggleExpanded(draft.id)}>
-                                  {isExpanded ? "收起" : "展开"}
+                                  {isExpanded ? "收起" : "详情"}
                                 </button>
                                 <button className="text-sm font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => confirmOne(draft.id)}>
                                   确认
@@ -449,7 +453,7 @@ export function ParserPage() {
                               </div>
                             </td>
                           </tr>
-                          {isExpanded && (
+                          {(isEditing || isExpanded) && (
                             <tr key={`${draft.id}-detail`} className="border-t border-border bg-slate-50/70">
                               <td colSpan={11} className="px-4 py-4">
                                 {isEditing ? (

@@ -26,8 +26,32 @@ ORDER_FIELDS = [
     "snow_tire",
     "passenger_count",
     "luggage_count",
+    "flight_number",
+    "flight_date",
+    "flight_airline",
+    "flight_origin",
+    "flight_destination",
+    "flight_terminal",
+    "flight_gate",
+    "flight_status",
+    "flight_scheduled_departure",
+    "flight_scheduled_arrival",
+    "flight_estimated_departure",
+    "flight_estimated_arrival",
+    "flight_actual_departure",
+    "flight_actual_arrival",
+    "flight_provider",
+    "flight_last_checked_at",
+    "flight_manual_note",
     "guest_name",
     "guest_contact",
+    "guide_name",
+    "guide_phone",
+    "guide_wechat",
+    "guide_line",
+    "guide_whatsapp",
+    "itinerary_pdf_url",
+    "itinerary_pdf_name",
     "agency_id",
     "agency_name",
     "price",
@@ -110,9 +134,13 @@ def get_order(order_id: str) -> Optional[dict[str, Any]]:
 def create_order(payload: dict[str, Any]) -> dict[str, Any]:
     data = _normalize_payload(payload, partial=False)
     data["tenant_id"] = get_current_tenant_id()
-    fields = list(data.keys())
-    placeholders = ", ".join(["?"] * len(fields))
     with get_connection() as conn:
+        if data.get("oid"):
+            exists = conn.execute("SELECT 1 FROM orders WHERE oid = ? LIMIT 1", (data["oid"],)).fetchone()
+            if exists:
+                data["oid"] = None
+        fields = list(data.keys())
+        placeholders = ", ".join(["?"] * len(fields))
         cursor = conn.execute(
             f"INSERT INTO orders ({', '.join(fields)}) VALUES ({placeholders})",
             [data[field] for field in fields],

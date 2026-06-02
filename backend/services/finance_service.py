@@ -8,9 +8,9 @@ from backend.services.tenant_context import get_current_tenant_id
 
 
 SETTLED_STATUSES = {"settled", "paid"}
-PENDING_STATUSES = {"pending", "unsettled", ""}
+PENDING_STATUSES = {"pending", "unsettled", "payment_requested", "receipt_uploaded", ""}
 DRIVER_SETTLEMENT_STATUSES = {"pending", "settled", "paid", "unsettled"}
-AGENCY_SETTLEMENT_STATUSES = {"pending", "settled", "paid", "unsettled"}
+AGENCY_SETTLEMENT_STATUSES = {"pending", "settled", "paid", "unsettled", "payment_requested", "receipt_uploaded"}
 DRIVER_EXPENSE_PENDING_STATUSES = {"submitted", "in_hand"}
 DRIVER_EXPENSE_STATUSES = {"unsubmitted", "submitted", "in_hand", "confirmed", "rejected"}
 

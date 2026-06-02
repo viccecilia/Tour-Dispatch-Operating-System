@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>旅行社端全链路功能测试看板</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #20242a;
+      --muted: #667085;
+      --line: #d8dde6;
+      --head: #edf2f7;
+      --ok: #16794c;
+      --bad: #b42318;
+      --accent: #245b7d;
+      --warn: #9a5b00;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Microsoft YaHei", Arial, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 28px 32px 18px; background: #ffffff; border-bottom: 1px solid var(--line); }
+    h1 { margin: 0 0 10px; font-size: 26px; letter-spacing: 0; }
+    h2 { margin: 28px 0 12px; font-size: 18px; }
+    h3 { margin: 16px 0 8px; font-size: 15px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 13px; }
+    .wrap { padding: 22px 32px 40px; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .metric b { display: block; font-size: 22px; color: var(--accent); margin-top: 6px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 18px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; }
+    th, td { border: 1px solid var(--line); padding: 9px 10px; vertical-align: top; font-size: 13px; line-height: 1.45; }
+    th { background: var(--head); text-align: left; white-space: nowrap; }
+    pre { margin: 0; white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; }
+    .ok { color: var(--ok); font-weight: 700; }
+    .bad { color: var(--bad); font-weight: 700; }
+    .note { color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+    li { margin: 5px 0; }
+    .tag { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #e7eef5; color: #214961; margin-right: 6px; font-size: 12px; }
+    @media (max-width: 900px) {
+      header, .wrap { padding-left: 16px; padding-right: 16px; }
+      .summary, .grid2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>旅行社端全链路功能测试看板</h1>
+    <div class="meta">
+      <span>生成时间：2026-05-31T18:38:40</span>
+      <span>临时测试库：C:\PycharmProjects\pythonProject01\Tour Dispatch Operating System\runtime\test_dbs\agency_full_flow_dashboard.sqlite3</span>
+      <span>范围：旅行社 Web / 旅行社小程序 / 车公司端 / 司机端 / 平台端</span>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="summary">
+      <div class="metric">流程用例通过<b>10/10</b></div>
+      <div class="metric">订单记录<b>2</b></div>
+      <div class="metric">大厅发布记录<b>3</b></div>
+      <div class="metric">司机汇报节点<b>6</b></div>
+    </section>
+
+    <section class="panel">
+      <h2>一、板块功能与测试矩阵</h2>
+      <p class="note">纵向列出端口、板块和功能；横向覆盖静态/数据库/逻辑测试、功能与跨板块联动、车公司联动、平台端统计和审计。</p>
+      <table>
+        <thead><tr><th>端口</th><th>板块</th><th>功能</th><th>静态/底层表</th><th>单元与功能测试</th><th>旅行社内部联动</th><th>车公司/司机联动</th><th>平台端联动</th></tr></thead>
+        <tbody><tr><td>旅行社 Web</td><td>机场接送批量入单</td><td>粘贴多条接送机文本，解析日期/时间/航班/联系人/人数/行李/车型/价格，补全后入库。</td><td>orders, agencies, flight_*</td><td>必填校验、批量解析、发布前价格校验、航班手动/模拟查询</td><td>订单大厅、订单列表、日历、航班信息、结算</td><td>车公司大厅只能看到脱敏基础信息，接单后可见完整联系人</td><td>平台按租户、订单来源、航班状态统计</td></tr>
+<tr><td>旅行社 Web</td><td>包车批量/单条入单</td><td>多行包车文本解析，支持跨日期、行程、车型、客人、价格和标准 PDF 行程。</td><td>orders.itinerary_pdf_*</td><td>解析后表格编辑、PDF 附件在行程内维护</td><td>订单列表、日历条、地图追踪、结算</td><td>车公司接单后进入派车/司机端任务</td><td>平台沉淀路线、车型、价格、成交率</td></tr>
+<tr><td>旅行社 Web</td><td>订单大厅/我的订单</td><td>发布中、超时撤回、已撤回、已接单、进行中、完成、结算状态统一展示。</td><td>auction_listings, orders</td><td>1/2/4 小时竞拍、超时、撤回、重新发布、listing_code 递增</td><td>日历状态色、订单列表状态、付款状态</td><td>车公司大厅/详情/派车窗口</td><td>平台审计订单流转和竞拍履约</td></tr>
+<tr><td>旅行社 Web</td><td>订单跟踪/地图追踪</td><td>接单后查看车公司担当、司机、车辆、司机位置、执行节点。</td><td>assignments, location_logs, driver_reports</td><td>司机汇报驱动状态，缺位置时允许文本位置展示</td><td>日历、详情、结算、通知</td><td>司机端汇报、车公司派车端</td><td>平台追踪 SLA、异常节点</td></tr>
+<tr><td>旅行社 Web</td><td>日历条</td><td>纵轴为旅行社订单号，横轴日期；跨日包车横跨显示，用颜色区分状态。</td><td>orders.order_date/end_date/status</td><td>订单状态与列表一致，超时/已接/进行中/完成同色</td><td>订单详情、我的订单筛选</td><td>车公司派车后回写司机车辆</td><td>平台按日期容量和履约状态聚合</td></tr>
+<tr><td>旅行社 Web</td><td>变更/撤回/费用结算</td><td>未接单可直接撤回；已接单变更或撤回走车公司确认；付款请求、回执、确认收款闭环。</td><td>agency_order_change_requests, orders settlement fields</td><td>取消规则、月度免费次数、12/6小时强制取消费用、回执上传</td><td>订单大厅我的订单、结算、通知</td><td>车公司确认变更/收款</td><td>平台对账、异常费用、月度额度</td></tr>
+<tr><td>旅行社小程序</td><td>首页/录单/订单/大厅/跟踪/日历</td><td>与 Web 共享 API 和租户边界，移动端用于查看、补录、发布和跟踪。</td><td>same backend tables</td><td>小程序端同状态、同权限、同脱敏策略</td><td>Web 与小程序订单状态互通</td><td>车公司端接单后同步可见</td><td>平台按端口来源统计</td></tr>
+<tr><td>车公司端</td><td>订单大厅/订单详情/派车</td><td>未接单只看基础信息；一口价/竞拍成功后查看完整联系资料并派车派司机。</td><td>auction_listings, assignments</td><td>接单、派车、司机车辆回写、订单号扩展</td><td>司机端、旅行社跟踪、结算</td><td>核心流程保持现有逻辑</td><td>平台审计车公司履约</td></tr>
+<tr><td>司机小程序</td><td>任务/汇报/位置/费用</td><td>只在被分配后看到任务；按顺序确认、出库、到达、开始、完成、回库。</td><td>assignments, driver_reports, location_logs</td><td>禁止跳级/回退，位置日志回传</td><td>旅行社地图、车公司调度、平台监控</td><td>车公司前台可见执行状态</td><td>平台监控异常停滞</td></tr>
+<tr><td>平台端</td><td>总控/租户/权限/统计</td><td>查看全平台订单、租户隔离、订单来源、竞拍成交、履约、财务统计。</td><td>tenants, users, audit/log tables</td><td>租户隔离、角色权限、跨端状态一致性</td><td>旅行社/车公司/司机/财务全链路</td><td>不改变业务端核心入口</td><td>形成经营分析看板</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>二、状态机与跨端可见性</h2>
+      <table>
+        <thead><tr><th>业务状态</th><th>数据库状态</th><th>旅行社端显示</th><th>车公司/司机端显示</th><th>平台端记录</th></tr></thead>
+        <tbody><tr><td>录入草稿/未发布</td><td>orders.dispatch_status=unassigned</td><td>旅行社列表、日历灰色</td><td>车公司不可见</td><td>平台可按来源统计</td></tr>
+<tr><td>发布大厅</td><td>auction_listings.status=listed; orders.dispatch_status=auction_listed</td><td>旅行社我的订单发布中、日历蓝色</td><td>车公司大厅可见脱敏基础信息</td><td>平台记录发布轮次和竞拍时长</td></tr>
+<tr><td>超时撤回</td><td>auction_listings.status=expired; orders.dispatch_status=auction_expired</td><td>旅行社可重新发布，日历橙色/灰色</td><td>车公司大厅移除</td><td>平台保留历史 listing</td></tr>
+<tr><td>一口价/接单</td><td>auction_listings.status=claimed; orders.dispatch_status=auction_claimed</td><td>旅行社可见车公司信息</td><td>车公司可见完整订单和联系人</td><td>平台记录成交价和买方租户</td></tr>
+<tr><td>派车派司机</td><td>assignments active; orders.dispatch_status=assigned</td><td>旅行社可见司机车辆和地图</td><td>车公司派车/调度可见</td><td>平台记录履约责任方</td></tr>
+<tr><td>执行中/完成</td><td>assignments.execution_status 逐步推进</td><td>旅行社跟踪节点更新</td><td>司机端汇报、车公司监控</td><td>平台做 SLA/异常统计</td></tr>
+<tr><td>结算完成</td><td>orders.settlement_status=paid</td><td>旅行社看到已上传回执/已收款</td><td>车公司确认收款</td><td>平台对账闭环</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>三、实际数据全链路执行记录</h2>
+      <table>
+        <thead><tr><th>#</th><th>测试点</th><th>结果</th><th>说明</th><th>实际返回/数据库证据</th></tr></thead>
+        <tbody><tr><td>1</td><td>旅行社 Web/小程序登录</td><td><span class='ok'>通过</span></td><td>portal_code 登录成功，后续入单共用同一租户上下文。</td><td><pre>{
+  &quot;agency&quot;: &quot;全链路测试旅行社&quot;
+}</pre></td></tr>
+<tr><td>2</td><td>机场接送批量解析</td><td><span class='ok'>通过</span></td><td>两条接送机文本解析为两条候选订单。</td><td><pre>{
+  &quot;orders&quot;: [
+    {
+      &quot;order_date&quot;: &quot;2026-06-10&quot;,
+      &quot;end_date&quot;: &quot;2026-06-10&quot;,
+      &quot;start_time&quot;: &quot;09:30&quot;,
+      &quot;pickup_location&quot;: &quot;KIX&quot;,
+      &quot;dropoff_location&quot;: &quot;OsakaNambaHotel4人5件Hiace客人Zhang&quot;,
+      &quot;order_type&quot;: &quot;airport_transfer&quot;,
+      &quot;vehicle_type&quot;: &quot;10座&quot;,
+      &quot;passenger_count&quot;: 4,
+      &quot;luggage_count&quot;: 0,
+      &quot;flight_number&quot;: &quot;JL225&quot;,
+      &quot;guest_contact&quot;: &quot;2026-06-10 09&quot;,
+      &quot;price&quot;: 2026.0,
+      &quot;price_jpy&quot;: 2026.0,
+      &quot;fee_remark&quot;: &quot;航班&quot;,
+      &quot;remark&quot;: &quot;路线链： -&gt; \n备注标签：航班\n2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000\n2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000\n原始解析文本：2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000\n原始解析文本：2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000&quot;,
+      &quot;guide_phone&quot;: &quot;2026-06-1009&quot;,
+      &quot;flight_date&quot;: &quot;2026-06-10&quot;
+    },
+    {
+      &quot;order_date&quot;: &quot;2026-06-10&quot;,
+      &quot;end_date&quot;: &quot;2026-06-10&quot;,
+      &quot;start_time&quot;: &quot;14:00&quot;,
+      &quot;pickup_location&quot;: &quot;NHOsakaNambaHotel&quot;,
+      &quot;dropoff_location&quot;: &quot;KansaiInternationalAirportT13人3件Alphard客人Li&quot;,
+      &quot;order_type&quot;: &quot;airport_transfer&quot;,
+      &quot;vehicle_type&quot;: &quot;3代&quot;,
+      &quot;passenger_count&quot;: 3,
+      &quot;luggage_count&quot;: 0,
+      &quot;flight_number&quot;: &quot;NH986&quot;,
+      &quot;guest_contact&quot;: &quot;2026-06-10 14&quot;,
+      &quot;price&quot;: 2026.0,
+      &quot;price_jpy&quot;: 2026.0,
+      &quot;fee_remark&quot;: &quot;航班&quot;,
+      &quot;remark&quot;: &quot;路线链： -&gt; \n备注标签：航班\n2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000\n2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000\n原始解析文本：2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000\n原始解析文本：2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000&quot;,
+      &quot;guide_phone&quot;: &quot;2026-06-1014&quot;,
+      &quot;flight_date&quot;: &quot;2026-06-10&quot;
+    }
+  ],
+  &quot;count&quot;: 2,
+  &quot;mode&quot;: &quot;airport_batch&quot;
+}</pre></td></tr>
+<tr><td>3</td><td>包车批量解析</td><td><span class='ok'>通过</span></td><td>两条包车文本解析为两条候选订单。</td><td><pre>{
+  &quot;orders&quot;: [
+    {
+      &quot;order_date&quot;: &quot;2026-06-02&quot;,
+      &quot;end_date&quot;: &quot;2026-06-02&quot;,
+      &quot;start_time&quot;: &quot;09:00&quot;,
+      &quot;pickup_location&quot;: &quot;京都&quot;,
+      &quot;dropoff_location&quot;: &quot;京都&quot;,
+      &quot;order_type&quot;: &quot;charter&quot;,
+      &quot;vehicle_type&quot;: &quot;3代&quot;,
+      &quot;passenger_count&quot;: 0,
+      &quot;luggage_count&quot;: 0,
+      &quot;guest_name&quot;: &quot;Mico Yamamoto&quot;,
+      &quot;price&quot;: 1900.0,
+      &quot;price_jpy&quot;: 1900.0,
+      &quot;fee_remark&quot;: &quot;绿牌&quot;,
+      &quot;remark&quot;: &quot;包车行程：京都往返天桥立美山\n原始解析文本：6.02 09:00 京都往返天桥立美山 包车 3代 绿1900 Mico Yamamoto&quot;,
+      &quot;vehicle_color&quot;: &quot;绿牌&quot;
+    },
+    {
+      &quot;order_date&quot;: &quot;2026-06-16&quot;,
+      &quot;end_date&quot;: &quot;2026-06-16&quot;,
+      &quot;start_time&quot;: &quot;10:00&quot;,
+      &quot;pickup_location&quot;: &quot;京都&quot;,
+      &quot;dropoff_location&quot;: &quot;大阪&quot;,
+      &quot;order_type&quot;: &quot;charter&quot;,
+      &quot;vehicle_type&quot;: &quot;10座&quot;,
+      &quot;passenger_count&quot;: 0,
+      &quot;luggage_count&quot;: 0,
+      &quot;guest_name&quot;: &quot;Emily Childers&quot;,
+      &quot;price&quot;: 1700.0,
+      &quot;price_jpy&quot;: 1700.0,
+      &quot;fee_remark&quot;: &quot;英文司机\n完整路线：京都市内 -&gt; 宇治 -&gt; 奈良 -&gt; 大阪市内&quot;,
+      &quot;remark&quot;: &quot;包车行程：京都-宇治-奈良-大阪\n司机要求：英文司机\n原始解析文本：6.16 10:00 京都-宇治-奈良-大阪 包车 10座绿（英文司机）1700 Emily Childers&quot;,
+      &quot;vehicle_color&quot;: &quot;绿牌&quot;
+    }
+  ],
+  &quot;count&quot;: 2,
+  &quot;mode&quot;: &quot;charter_batch&quot;
+}</pre></td></tr>
+<tr><td>4</td><td>录入并完善订单表格</td><td><span class='ok'>通过</span></td><td>机场接送与包车各生成一条 orders 记录；包车保留行程 PDF 字段。</td><td><pre>{
+  &quot;airport_oid&quot;: &quot;A260610-0001-TMP&quot;,
+  &quot;charter_oid&quot;: &quot;A260616-0001-TMP&quot;
+}</pre></td></tr>
+<tr><td>5</td><td>发布前必填/价格校验</td><td><span class='ok'>通过</span></td><td>缺少起拍价时接口拒绝发布。</td><td><pre>{
+  &quot;error&quot;: &quot;missing_start_price&quot;
+}</pre></td></tr>
+<tr><td>6</td><td>大厅发布、超时撤回、重新发布</td><td><span class='ok'>通过</span></td><td>超时 listing 标记 expired，order 标记 auction_expired；再次发布生成新 listing_code。</td><td><pre>{
+  &quot;first&quot;: {
+    &quot;listing_id&quot;: 1,
+    &quot;order_id&quot;: 1,
+    &quot;oid&quot;: &quot;A260610-0001-TMP&quot;,
+    &quot;listing_code&quot;: &quot;A260610-0001-TMP-H260531-001&quot;,
+    &quot;publish_round&quot;: 1,
+    &quot;auction_duration_hours&quot;: 1
+  },
+  &quot;expired&quot;: {
+    &quot;dispatch_status&quot;: &quot;auction_expired&quot;,
+    &quot;execution_status&quot;: &quot;auction_expired&quot;
+  },
+  &quot;republish&quot;: {
+    &quot;listing_id&quot;: 2,
+    &quot;order_id&quot;: 1,
+    &quot;oid&quot;: &quot;A260610-0001-TMP&quot;,
+    &quot;listing_code&quot;: &quot;A260610-0001-TMP-H260531-002&quot;,
+    &quot;publish_round&quot;: 2,
+    &quot;auction_duration_hours&quot;: 2
+  }
+}</pre></td></tr>
+<tr><td>7</td><td>车公司一口价接单</td><td><span class='ok'>通过</span></td><td>车公司以一口价拿下订单，listing claimed，order auction_claimed。</td><td><pre>{
+  &quot;id&quot;: 3,
+  &quot;order_id&quot;: 2,
+  &quot;owner_tenant_id&quot;: 1,
+  &quot;seller_tenant_id&quot;: 1,
+  &quot;buyer_tenant_id&quot;: 2,
+  &quot;status&quot;: &quot;claimed&quot;,
+  &quot;start_price_jpy&quot;: 150000.0,
+  &quot;buyout_price_jpy&quot;: 190000.0,
+  &quot;current_bid_jpy&quot;: 190000.0,
+  &quot;bid_count&quot;: 1,
+  &quot;listing_code&quot;: &quot;A260616-0001-TMP-H260531-003&quot;,
+  &quot;publish_round&quot;: 1,
+  &quot;published_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+  &quot;expires_at&quot;: &quot;2026-05-31 13:38:40&quot;,
+  &quot;auction_duration_hours&quot;: 4,
+  &quot;sold_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+  &quot;cancelled_at&quot;: null,
+  &quot;oid&quot;: &quot;A260616-0001-TMP&quot;,
+  &quot;order_date&quot;: &quot;2026-06-16&quot;,
+  &quot;end_date&quot;: &quot;2026-06-17&quot;,
+  &quot;start_time&quot;: &quot;10:00&quot;,
+  &quot;end_time&quot;: null,
+  &quot;pickup_location&quot;: &quot;京都&quot;,
+  &quot;dropoff_location&quot;: &quot;大阪&quot;,
+  &quot;order_type&quot;: &quot;charter&quot;,
+  &quot;vehicle_type&quot;: &quot;10座&quot;,
+  &quot;passenger_count&quot;: 8,
+  &quot;luggage_count&quot;: 0,
+  &quot;flight_number&quot;: null,
+  &quot;flight_date&quot;: null,
+  &quot;flight_airline&quot;: null,
+  &quot;flight_origin&quot;: null,
+  &quot;flight_destination&quot;: null,
+  &quot;flight_terminal&quot;: null,
+  &quot;flight_gate&quot;: null,
+  &quot;flight_status&quot;: null,
+  &quot;flight_scheduled_departure&quot;: null,
+  &quot;flight_scheduled_arrival&quot;: null,
+  &quot;flight_estimated_departure&quot;: null,
+  &quot;flight_estimated_arrival&quot;: null,
+  &quot;flight_actual_departure&quot;: null,
+  &quot;flight_actual_arrival&quot;: null,
+  &quot;flight_provider&quot;: null,
+  &quot;flight_last_checked_at&quot;: null,
+  &quot;flight_manual_note&quot;: null,
+  &quot;price&quot;: null,
+  &quot;price_jpy&quot;: 170000.0,
+  &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+  &quot;settlement_status&quot;: &quot;pending&quot;,
+  &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+  &quot;payment_amount_jpy&quot;: null,
+  &quot;carrier_payment_requested_at&quot;: null,
+  &quot;carrier_payment_request_note&quot;: null,
+  &quot;agency_payment_receipt_url&quot;: null,
+  &quot;agency_payment_receipt_name&quot;: null,
+  &quot;agency_payment_uploaded_at&quot;: null,
+  &quot;carrier_payment_confirmed_at&quot;: null,
+  &quot;carrier_payment_confirmed_by&quot;: null,
+  &quot;has_itinerary_pdf&quot;: true
+}</pre></td></tr>
+<tr><td>8</td><td>车公司派车派司机</td><td><span class='ok'>通过</span></td><td>派车后旅行社可在订单跟踪看到司机、车辆、订单号后缀信息。</td><td><pre>{
+  &quot;assignment&quot;: {
+    &quot;id&quot;: 1,
+    &quot;tenant_id&quot;: 1,
+    &quot;order_id&quot;: 2,
+    &quot;driver_id&quot;: 1,
+    &quot;vehicle_id&quot;: 1,
+    &quot;status&quot;: &quot;active&quot;,
+    &quot;execution_status&quot;: &quot;assigned&quot;,
+    &quot;assigned_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+    &quot;cancelled_at&quot;: null,
+    &quot;created_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+    &quot;updated_at&quot;: &quot;2026-05-31 09:38:40&quot;
+  },
+  &quot;order&quot;: {
+    &quot;id&quot;: 2,
+    &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+    &quot;dispatch_status&quot;: &quot;assigned&quot;,
+    &quot;execution_status&quot;: &quot;assigned&quot;,
+    &quot;driver_code&quot;: &quot;KS&quot;,
+    &quot;plate_short_code&quot;: &quot;1234&quot;
+  }
+}</pre></td></tr>
+<tr><td>9</td><td>司机端过程汇报</td><td><span class='ok'>通过</span></td><td>司机端顺序提交六个节点，状态不允许跳级或回退。</td><td><pre>[
+  {
+    &quot;report_type&quot;: &quot;confirm_order&quot;,
+    &quot;result&quot;: {
+      &quot;success&quot;: true,
+      &quot;report_id&quot;: 1,
+      &quot;new_execution_status&quot;: &quot;confirmed&quot;,
+      &quot;location_check&quot;: {
+        &quot;ok&quot;: true,
+        &quot;required&quot;: false
+      }
+    }
+  },
+  {
+    &quot;report_type&quot;: &quot;depart_yard&quot;,
+    &quot;result&quot;: {
+      &quot;success&quot;: true,
+      &quot;report_id&quot;: 2,
+      &quot;new_execution_status&quot;: &quot;departed&quot;,
+      &quot;location_check&quot;: {
+        &quot;ok&quot;: true,
+        &quot;required&quot;: false
+      }
+    }
+  },
+  {
+    &quot;report_type&quot;: &quot;arrive_pickup&quot;,
+    &quot;result&quot;: {
+      &quot;success&quot;: true,
+      &quot;report_id&quot;: 3,
+      &quot;new_execution_status&quot;: &quot;arrived&quot;,
+      &quot;location_check&quot;: {
+        &quot;ok&quot;: true,
+        &quot;required&quot;: false,
+        &quot;skipped_reason&quot;: &quot;target_coordinate_missing&quot;,
+        &quot;target_label&quot;: &quot;上车点&quot;
+      }
+    }
+  },
+  {
+    &quot;report_type&quot;: &quot;start_service&quot;,
+    &quot;result&quot;: {
+      &quot;success&quot;: true,
+      &quot;report_id&quot;: 4,
+      &quot;new_execution_status&quot;: &quot;in_service&quot;,
+      &quot;location_check&quot;: {
+        &quot;ok&quot;: true,
+        &quot;required&quot;: false
+      }
+    }
+  },
+  {
+    &quot;report_type&quot;: &quot;complete_order&quot;,
+    &quot;result&quot;: {
+      &quot;success&quot;: true,
+      &quot;report_id&quot;: 5,
+      &quot;new_execution_status&quot;: &quot;completed&quot;,
+      &quot;location_check&quot;: {
+        &quot;ok&quot;: true,
+        &quot;required&quot;: false,
+        &quot;skipped_reason&quot;: &quot;target_coordinate_missing&quot;,
+        &quot;target_label&quot;: &quot;终点&quot;
+      }
+    }
+  },
+  {
+    &quot;report_type&quot;: &quot;return_yard&quot;,
+    &quot;result&quot;: {
+      &quot;success&quot;: true,
+      &quot;report_id&quot;: 6,
+      &quot;new_execution_status&quot;: &quot;returned&quot;,
+      &quot;location_check&quot;: {
+        &quot;ok&quot;: true,
+        &quot;required&quot;: false
+      }
+    }
+  }
+]</pre></td></tr>
+<tr><td>10</td><td>收付款闭环</td><td><span class='ok'>通过</span></td><td>车公司发起付款，旅行社上传回执，车公司确认收款，订单完成并结算为 paid。</td><td><pre>{
+  &quot;requested&quot;: {
+    &quot;id&quot;: 2,
+    &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+    &quot;tenant_id&quot;: 1,
+    &quot;agency_id&quot;: 1,
+    &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+    &quot;order_date&quot;: &quot;2026-06-16&quot;,
+    &quot;start_time&quot;: &quot;10:00&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;京都&quot;,
+    &quot;dropoff_location&quot;: &quot;大阪&quot;,
+    &quot;order_type&quot;: &quot;charter&quot;,
+    &quot;vehicle_type&quot;: &quot;10座&quot;,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 170000.0,
+    &quot;dispatch_status&quot;: &quot;assigned&quot;,
+    &quot;execution_status&quot;: &quot;returned&quot;,
+    &quot;settlement_status&quot;: &quot;payment_requested&quot;,
+    &quot;agency_settlement_status&quot;: &quot;payment_requested&quot;,
+    &quot;payment_amount_jpy&quot;: 190000.0,
+    &quot;carrier_payment_requested_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+    &quot;carrier_payment_request_note&quot;: &quot;全链路测试：车公司发起付款请求&quot;,
+    &quot;agency_payment_receipt_url&quot;: null,
+    &quot;agency_payment_receipt_name&quot;: null,
+    &quot;agency_payment_uploaded_at&quot;: null,
+    &quot;carrier_payment_confirmed_at&quot;: null,
+    &quot;carrier_payment_confirmed_by&quot;: null
+  },
+  &quot;receipt&quot;: {
+    &quot;success&quot;: true,
+    &quot;order_id&quot;: 2,
+    &quot;file_url&quot;: &quot;/uploads/agency_payment_receipts/tenant1_agency1_order2_31b52cc2c7_flow-test-receipt.pdf&quot;,
+    &quot;file_name&quot;: &quot;flow-test-receipt.pdf&quot;
+  },
+  &quot;confirmed&quot;: {
+    &quot;id&quot;: 2,
+    &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+    &quot;tenant_id&quot;: 1,
+    &quot;agency_id&quot;: 1,
+    &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+    &quot;order_date&quot;: &quot;2026-06-16&quot;,
+    &quot;start_time&quot;: &quot;10:00&quot;,
+    &quot;end_time&quot;: null,
+    &quot;pickup_location&quot;: &quot;京都&quot;,
+    &quot;dropoff_location&quot;: &quot;大阪&quot;,
+    &quot;order_type&quot;: &quot;charter&quot;,
+    &quot;vehicle_type&quot;: &quot;10座&quot;,
+    &quot;price&quot;: null,
+    &quot;price_jpy&quot;: 170000.0,
+    &quot;dispatch_status&quot;: &quot;assigned&quot;,
+    &quot;execution_status&quot;: &quot;completed&quot;,
+    &quot;settlement_status&quot;: &quot;paid&quot;,
+    &quot;agency_settlement_status&quot;: &quot;paid&quot;,
+    &quot;payment_amount_jpy&quot;: 190000.0,
+    &quot;carrier_payment_requested_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+    &quot;carrier_payment_request_note&quot;: &quot;全链路测试：车公司发起付款请求&quot;,
+    &quot;agency_payment_receipt_url&quot;: &quot;/uploads/agency_payment_receipts/tenant1_agency1_order2_31b52cc2c7_flow-test-receipt.pdf&quot;,
+    &quot;agency_payment_receipt_name&quot;: &quot;flow-test-receipt.pdf&quot;,
+    &quot;agency_payment_uploaded_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+    &quot;carrier_payment_confirmed_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+    &quot;carrier_payment_confirmed_by&quot;: &quot;carrier-admin&quot;
+  }
+}</pre></td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="grid2">
+      <div class="panel">
+        <h2>四、旅行社订单列表/日历应显示的数据</h2>
+        <table>
+          <thead><tr><th>订单号</th><th>类型</th><th>日期时间</th><th>调度状态</th><th>执行状态</th><th>大厅编号</th><th>司机</th><th>车辆</th><th>结算</th></tr></thead>
+          <tbody><tr><td>A260616-0001-1234KSH</td><td>charter</td><td>2026-06-16 10:00</td><td>assigned</td><td>completed</td><td>A260616-0001-TMP-H260531-003</td><td>Ken Sato</td><td>なにわ500あ1234</td><td>paid</td></tr>
+<tr><td>A260610-0001-TMP</td><td>airport_transfer</td><td>2026-06-10 09:30</td><td>auction_listed</td><td>auction_listed</td><td>A260610-0001-TMP-H260531-002</td><td></td><td></td><td>pending</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>五、订单大厅发布记录</h2>
+        <table>
+          <thead><tr><th>大厅编号</th><th>订单ID</th><th>轮次</th><th>状态</th><th>起拍价</th><th>一口价</th><th>接单租户</th><th>截止时间</th></tr></thead>
+          <tbody><tr><td>A260610-0001-TMP-H260531-001</td><td>1</td><td>1</td><td>expired</td><td>50000.0</td><td>65000.0</td><td></td><td>2026-05-31 09:37:39</td></tr>
+<tr><td>A260610-0001-TMP-H260531-002</td><td>1</td><td>2</td><td>listed</td><td>51000.0</td><td>66000.0</td><td></td><td>2026-05-31 11:38:39</td></tr>
+<tr><td>A260616-0001-TMP-H260531-003</td><td>2</td><td>1</td><td>sold</td><td>150000.0</td><td>190000.0</td><td>2</td><td>2026-05-31 13:38:40</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>六、测试方法清单</h2>
+      <p>
+        <span class="tag">静态表结构检查</span>
+        <span class="tag">必填/负向测试</span>
+        <span class="tag">状态机正推</span>
+        <span class="tag">反推一致性</span>
+        <span class="tag">跨端 E2E</span>
+        <span class="tag">租户隔离</span>
+        <span class="tag">小程序围观</span>
+        <span class="tag">财务对账</span>
+        <span class="tag">回归测试</span>
+      </p>
+      <div class="grid2">
+        <div>
+          <h3>已用实际数据验证</h3>
+          <ul><li><b>orders</b>: 2</li><li><b>auction_listings</b>: 3</li><li><b>assignments</b>: 1</li><li><b>driver_reports</b>: 6</li><li><b>location_logs</b>: 6</li><li><b>agency_order_change_requests</b>: 0</li></ul>
+        </div>
+        <div>
+          <h3>下一轮需要补强</h3>
+          <ul>
+            <li>把平台端统计图表从静态说明升级为真实聚合接口返回。</li>
+            <li>把小程序端自动化点击测试接入微信开发者工具或独立 mock runner。</li>
+            <li>补充竞价多车公司、多次出价、落拍人工处理和取消费用月度额度的专项用例。</li>
+            <li>补充航班真实 API key 后的供应商连通性测试；未配置时继续走本地模拟/手动录入。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>七、原始 JSON 证据</h2>
+      <pre>{
+  &quot;generated_at&quot;: &quot;2026-05-31T18:38:40&quot;,
+  &quot;test_db&quot;: &quot;C:\\PycharmProjects\\pythonProject01\\Tour Dispatch Operating System\\runtime\\test_dbs\\agency_full_flow_dashboard.sqlite3&quot;,
+  &quot;steps&quot;: [
+    {
+      &quot;name&quot;: &quot;旅行社 Web/小程序登录&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;portal_code 登录成功，后续入单共用同一租户上下文。&quot;,
+      &quot;data&quot;: {
+        &quot;agency&quot;: &quot;全链路测试旅行社&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;机场接送批量解析&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;两条接送机文本解析为两条候选订单。&quot;,
+      &quot;data&quot;: {
+        &quot;orders&quot;: [
+          {
+            &quot;order_date&quot;: &quot;2026-06-10&quot;,
+            &quot;end_date&quot;: &quot;2026-06-10&quot;,
+            &quot;start_time&quot;: &quot;09:30&quot;,
+            &quot;pickup_location&quot;: &quot;KIX&quot;,
+            &quot;dropoff_location&quot;: &quot;OsakaNambaHotel4人5件Hiace客人Zhang&quot;,
+            &quot;order_type&quot;: &quot;airport_transfer&quot;,
+            &quot;vehicle_type&quot;: &quot;10座&quot;,
+            &quot;passenger_count&quot;: 4,
+            &quot;luggage_count&quot;: 0,
+            &quot;flight_number&quot;: &quot;JL225&quot;,
+            &quot;guest_contact&quot;: &quot;2026-06-10 09&quot;,
+            &quot;price&quot;: 2026.0,
+            &quot;price_jpy&quot;: 2026.0,
+            &quot;fee_remark&quot;: &quot;航班&quot;,
+            &quot;remark&quot;: &quot;路线链： -&gt; \n备注标签：航班\n2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000\n2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000\n原始解析文本：2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000\n原始解析文本：2026-06-10 09:30 JL225 关西机场T1 -&gt; Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000&quot;,
+            &quot;guide_phone&quot;: &quot;2026-06-1009&quot;,
+            &quot;flight_date&quot;: &quot;2026-06-10&quot;
+          },
+          {
+            &quot;order_date&quot;: &quot;2026-06-10&quot;,
+            &quot;end_date&quot;: &quot;2026-06-10&quot;,
+            &quot;start_time&quot;: &quot;14:00&quot;,
+            &quot;pickup_location&quot;: &quot;NHOsakaNambaHotel&quot;,
+            &quot;dropoff_location&quot;: &quot;KansaiInternationalAirportT13人3件Alphard客人Li&quot;,
+            &quot;order_type&quot;: &quot;airport_transfer&quot;,
+            &quot;vehicle_type&quot;: &quot;3代&quot;,
+            &quot;passenger_count&quot;: 3,
+            &quot;luggage_count&quot;: 0,
+            &quot;flight_number&quot;: &quot;NH986&quot;,
+            &quot;guest_contact&quot;: &quot;2026-06-10 14&quot;,
+            &quot;price&quot;: 2026.0,
+            &quot;price_jpy&quot;: 2026.0,
+            &quot;fee_remark&quot;: &quot;航班&quot;,
+            &quot;remark&quot;: &quot;路线链： -&gt; \n备注标签：航班\n2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000\n2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000\n原始解析文本：2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000\n原始解析文本：2026-06-10 14:00 NH986 Osaka Namba Hotel -&gt; Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000&quot;,
+            &quot;guide_phone&quot;: &quot;2026-06-1014&quot;,
+            &quot;flight_date&quot;: &quot;2026-06-10&quot;
+          }
+        ],
+        &quot;count&quot;: 2,
+        &quot;mode&quot;: &quot;airport_batch&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;包车批量解析&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;两条包车文本解析为两条候选订单。&quot;,
+      &quot;data&quot;: {
+        &quot;orders&quot;: [
+          {
+            &quot;order_date&quot;: &quot;2026-06-02&quot;,
+            &quot;end_date&quot;: &quot;2026-06-02&quot;,
+            &quot;start_time&quot;: &quot;09:00&quot;,
+            &quot;pickup_location&quot;: &quot;京都&quot;,
+            &quot;dropoff_location&quot;: &quot;京都&quot;,
+            &quot;order_type&quot;: &quot;charter&quot;,
+            &quot;vehicle_type&quot;: &quot;3代&quot;,
+            &quot;passenger_count&quot;: 0,
+            &quot;luggage_count&quot;: 0,
+            &quot;guest_name&quot;: &quot;Mico Yamamoto&quot;,
+            &quot;price&quot;: 1900.0,
+            &quot;price_jpy&quot;: 1900.0,
+            &quot;fee_remark&quot;: &quot;绿牌&quot;,
+            &quot;remark&quot;: &quot;包车行程：京都往返天桥立美山\n原始解析文本：6.02 09:00 京都往返天桥立美山 包车 3代 绿1900 Mico Yamamoto&quot;,
+            &quot;vehicle_color&quot;: &quot;绿牌&quot;
+          },
+          {
+            &quot;order_date&quot;: &quot;2026-06-16&quot;,
+            &quot;end_date&quot;: &quot;2026-06-16&quot;,
+            &quot;start_time&quot;: &quot;10:00&quot;,
+            &quot;pickup_location&quot;: &quot;京都&quot;,
+            &quot;dropoff_location&quot;: &quot;大阪&quot;,
+            &quot;order_type&quot;: &quot;charter&quot;,
+            &quot;vehicle_type&quot;: &quot;10座&quot;,
+            &quot;passenger_count&quot;: 0,
+            &quot;luggage_count&quot;: 0,
+            &quot;guest_name&quot;: &quot;Emily Childers&quot;,
+            &quot;price&quot;: 1700.0,
+            &quot;price_jpy&quot;: 1700.0,
+            &quot;fee_remark&quot;: &quot;英文司机\n完整路线：京都市内 -&gt; 宇治 -&gt; 奈良 -&gt; 大阪市内&quot;,
+            &quot;remark&quot;: &quot;包车行程：京都-宇治-奈良-大阪\n司机要求：英文司机\n原始解析文本：6.16 10:00 京都-宇治-奈良-大阪 包车 10座绿（英文司机）1700 Emily Childers&quot;,
+            &quot;vehicle_color&quot;: &quot;绿牌&quot;
+          }
+        ],
+        &quot;count&quot;: 2,
+        &quot;mode&quot;: &quot;charter_batch&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;录入并完善订单表格&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;机场接送与包车各生成一条 orders 记录；包车保留行程 PDF 字段。&quot;,
+      &quot;data&quot;: {
+        &quot;airport_oid&quot;: &quot;A260610-0001-TMP&quot;,
+        &quot;charter_oid&quot;: &quot;A260616-0001-TMP&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;发布前必填/价格校验&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;缺少起拍价时接口拒绝发布。&quot;,
+      &quot;data&quot;: {
+        &quot;error&quot;: &quot;missing_start_price&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;大厅发布、超时撤回、重新发布&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;超时 listing 标记 expired，order 标记 auction_expired；再次发布生成新 listing_code。&quot;,
+      &quot;data&quot;: {
+        &quot;first&quot;: {
+          &quot;listing_id&quot;: 1,
+          &quot;order_id&quot;: 1,
+          &quot;oid&quot;: &quot;A260610-0001-TMP&quot;,
+          &quot;listing_code&quot;: &quot;A260610-0001-TMP-H260531-001&quot;,
+          &quot;publish_round&quot;: 1,
+          &quot;auction_duration_hours&quot;: 1
+        },
+        &quot;expired&quot;: {
+          &quot;dispatch_status&quot;: &quot;auction_expired&quot;,
+          &quot;execution_status&quot;: &quot;auction_expired&quot;
+        },
+        &quot;republish&quot;: {
+          &quot;listing_id&quot;: 2,
+          &quot;order_id&quot;: 1,
+          &quot;oid&quot;: &quot;A260610-0001-TMP&quot;,
+          &quot;listing_code&quot;: &quot;A260610-0001-TMP-H260531-002&quot;,
+          &quot;publish_round&quot;: 2,
+          &quot;auction_duration_hours&quot;: 2
+        }
+      }
+    },
+    {
+      &quot;name&quot;: &quot;车公司一口价接单&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;车公司以一口价拿下订单，listing claimed，order auction_claimed。&quot;,
+      &quot;data&quot;: {
+        &quot;id&quot;: 3,
+        &quot;order_id&quot;: 2,
+        &quot;owner_tenant_id&quot;: 1,
+        &quot;seller_tenant_id&quot;: 1,
+        &quot;buyer_tenant_id&quot;: 2,
+        &quot;status&quot;: &quot;claimed&quot;,
+        &quot;start_price_jpy&quot;: 150000.0,
+        &quot;buyout_price_jpy&quot;: 190000.0,
+        &quot;current_bid_jpy&quot;: 190000.0,
+        &quot;bid_count&quot;: 1,
+        &quot;listing_code&quot;: &quot;A260616-0001-TMP-H260531-003&quot;,
+        &quot;publish_round&quot;: 1,
+        &quot;published_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+        &quot;expires_at&quot;: &quot;2026-05-31 13:38:40&quot;,
+        &quot;auction_duration_hours&quot;: 4,
+        &quot;sold_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+        &quot;cancelled_at&quot;: null,
+        &quot;oid&quot;: &quot;A260616-0001-TMP&quot;,
+        &quot;order_date&quot;: &quot;2026-06-16&quot;,
+        &quot;end_date&quot;: &quot;2026-06-17&quot;,
+        &quot;start_time&quot;: &quot;10:00&quot;,
+        &quot;end_time&quot;: null,
+        &quot;pickup_location&quot;: &quot;京都&quot;,
+        &quot;dropoff_location&quot;: &quot;大阪&quot;,
+        &quot;order_type&quot;: &quot;charter&quot;,
+        &quot;vehicle_type&quot;: &quot;10座&quot;,
+        &quot;passenger_count&quot;: 8,
+        &quot;luggage_count&quot;: 0,
+        &quot;flight_number&quot;: null,
+        &quot;flight_date&quot;: null,
+        &quot;flight_airline&quot;: null,
+        &quot;flight_origin&quot;: null,
+        &quot;flight_destination&quot;: null,
+        &quot;flight_terminal&quot;: null,
+        &quot;flight_gate&quot;: null,
+        &quot;flight_status&quot;: null,
+        &quot;flight_scheduled_departure&quot;: null,
+        &quot;flight_scheduled_arrival&quot;: null,
+        &quot;flight_estimated_departure&quot;: null,
+        &quot;flight_estimated_arrival&quot;: null,
+        &quot;flight_actual_departure&quot;: null,
+        &quot;flight_actual_arrival&quot;: null,
+        &quot;flight_provider&quot;: null,
+        &quot;flight_last_checked_at&quot;: null,
+        &quot;flight_manual_note&quot;: null,
+        &quot;price&quot;: null,
+        &quot;price_jpy&quot;: 170000.0,
+        &quot;execution_status&quot;: &quot;auction_claimed&quot;,
+        &quot;settlement_status&quot;: &quot;pending&quot;,
+        &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+        &quot;payment_amount_jpy&quot;: null,
+        &quot;carrier_payment_requested_at&quot;: null,
+        &quot;carrier_payment_request_note&quot;: null,
+        &quot;agency_payment_receipt_url&quot;: null,
+        &quot;agency_payment_receipt_name&quot;: null,
+        &quot;agency_payment_uploaded_at&quot;: null,
+        &quot;carrier_payment_confirmed_at&quot;: null,
+        &quot;carrier_payment_confirmed_by&quot;: null,
+        &quot;has_itinerary_pdf&quot;: true
+      }
+    },
+    {
+      &quot;name&quot;: &quot;车公司派车派司机&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;派车后旅行社可在订单跟踪看到司机、车辆、订单号后缀信息。&quot;,
+      &quot;data&quot;: {
+        &quot;assignment&quot;: {
+          &quot;id&quot;: 1,
+          &quot;tenant_id&quot;: 1,
+          &quot;order_id&quot;: 2,
+          &quot;driver_id&quot;: 1,
+          &quot;vehicle_id&quot;: 1,
+          &quot;status&quot;: &quot;active&quot;,
+          &quot;execution_status&quot;: &quot;assigned&quot;,
+          &quot;assigned_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+          &quot;cancelled_at&quot;: null,
+          &quot;created_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+          &quot;updated_at&quot;: &quot;2026-05-31 09:38:40&quot;
+        },
+        &quot;order&quot;: {
+          &quot;id&quot;: 2,
+          &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+          &quot;dispatch_status&quot;: &quot;assigned&quot;,
+          &quot;execution_status&quot;: &quot;assigned&quot;,
+          &quot;driver_code&quot;: &quot;KS&quot;,
+          &quot;plate_short_code&quot;: &quot;1234&quot;
+        }
+      }
+    },
+    {
+      &quot;name&quot;: &quot;司机端过程汇报&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;司机端顺序提交六个节点，状态不允许跳级或回退。&quot;,
+      &quot;data&quot;: [
+        {
+          &quot;report_type&quot;: &quot;confirm_order&quot;,
+          &quot;result&quot;: {
+            &quot;success&quot;: true,
+            &quot;report_id&quot;: 1,
+            &quot;new_execution_status&quot;: &quot;confirmed&quot;,
+            &quot;location_check&quot;: {
+              &quot;ok&quot;: true,
+              &quot;required&quot;: false
+            }
+          }
+        },
+        {
+          &quot;report_type&quot;: &quot;depart_yard&quot;,
+          &quot;result&quot;: {
+            &quot;success&quot;: true,
+            &quot;report_id&quot;: 2,
+            &quot;new_execution_status&quot;: &quot;departed&quot;,
+            &quot;location_check&quot;: {
+              &quot;ok&quot;: true,
+              &quot;required&quot;: false
+            }
+          }
+        },
+        {
+          &quot;report_type&quot;: &quot;arrive_pickup&quot;,
+          &quot;result&quot;: {
+            &quot;success&quot;: true,
+            &quot;report_id&quot;: 3,
+            &quot;new_execution_status&quot;: &quot;arrived&quot;,
+            &quot;location_check&quot;: {
+              &quot;ok&quot;: true,
+              &quot;required&quot;: false,
+              &quot;skipped_reason&quot;: &quot;target_coordinate_missing&quot;,
+              &quot;target_label&quot;: &quot;上车点&quot;
+            }
+          }
+        },
+        {
+          &quot;report_type&quot;: &quot;start_service&quot;,
+          &quot;result&quot;: {
+            &quot;success&quot;: true,
+            &quot;report_id&quot;: 4,
+            &quot;new_execution_status&quot;: &quot;in_service&quot;,
+            &quot;location_check&quot;: {
+              &quot;ok&quot;: true,
+              &quot;required&quot;: false
+            }
+          }
+        },
+        {
+          &quot;report_type&quot;: &quot;complete_order&quot;,
+          &quot;result&quot;: {
+            &quot;success&quot;: true,
+            &quot;report_id&quot;: 5,
+            &quot;new_execution_status&quot;: &quot;completed&quot;,
+            &quot;location_check&quot;: {
+              &quot;ok&quot;: true,
+              &quot;required&quot;: false,
+              &quot;skipped_reason&quot;: &quot;target_coordinate_missing&quot;,
+              &quot;target_label&quot;: &quot;终点&quot;
+            }
+          }
+        },
+        {
+          &quot;report_type&quot;: &quot;return_yard&quot;,
+          &quot;result&quot;: {
+            &quot;success&quot;: true,
+            &quot;report_id&quot;: 6,
+            &quot;new_execution_status&quot;: &quot;returned&quot;,
+            &quot;location_check&quot;: {
+              &quot;ok&quot;: true,
+              &quot;required&quot;: false
+            }
+          }
+        }
+      ]
+    },
+    {
+      &quot;name&quot;: &quot;收付款闭环&quot;,
+      &quot;ok&quot;: true,
+      &quot;detail&quot;: &quot;车公司发起付款，旅行社上传回执，车公司确认收款，订单完成并结算为 paid。&quot;,
+      &quot;data&quot;: {
+        &quot;requested&quot;: {
+          &quot;id&quot;: 2,
+          &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+          &quot;tenant_id&quot;: 1,
+          &quot;agency_id&quot;: 1,
+          &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+          &quot;order_date&quot;: &quot;2026-06-16&quot;,
+          &quot;start_time&quot;: &quot;10:00&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;京都&quot;,
+          &quot;dropoff_location&quot;: &quot;大阪&quot;,
+          &quot;order_type&quot;: &quot;charter&quot;,
+          &quot;vehicle_type&quot;: &quot;10座&quot;,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 170000.0,
+          &quot;dispatch_status&quot;: &quot;assigned&quot;,
+          &quot;execution_status&quot;: &quot;returned&quot;,
+          &quot;settlement_status&quot;: &quot;payment_requested&quot;,
+          &quot;agency_settlement_status&quot;: &quot;payment_requested&quot;,
+          &quot;payment_amount_jpy&quot;: 190000.0,
+          &quot;carrier_payment_requested_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+          &quot;carrier_payment_request_note&quot;: &quot;全链路测试：车公司发起付款请求&quot;,
+          &quot;agency_payment_receipt_url&quot;: null,
+          &quot;agency_payment_receipt_name&quot;: null,
+          &quot;agency_payment_uploaded_at&quot;: null,
+          &quot;carrier_payment_confirmed_at&quot;: null,
+          &quot;carrier_payment_confirmed_by&quot;: null
+        },
+        &quot;receipt&quot;: {
+          &quot;success&quot;: true,
+          &quot;order_id&quot;: 2,
+          &quot;file_url&quot;: &quot;/uploads/agency_payment_receipts/tenant1_agency1_order2_31b52cc2c7_flow-test-receipt.pdf&quot;,
+          &quot;file_name&quot;: &quot;flow-test-receipt.pdf&quot;
+        },
+        &quot;confirmed&quot;: {
+          &quot;id&quot;: 2,
+          &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+          &quot;tenant_id&quot;: 1,
+          &quot;agency_id&quot;: 1,
+          &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+          &quot;order_date&quot;: &quot;2026-06-16&quot;,
+          &quot;start_time&quot;: &quot;10:00&quot;,
+          &quot;end_time&quot;: null,
+          &quot;pickup_location&quot;: &quot;京都&quot;,
+          &quot;dropoff_location&quot;: &quot;大阪&quot;,
+          &quot;order_type&quot;: &quot;charter&quot;,
+          &quot;vehicle_type&quot;: &quot;10座&quot;,
+          &quot;price&quot;: null,
+          &quot;price_jpy&quot;: 170000.0,
+          &quot;dispatch_status&quot;: &quot;assigned&quot;,
+          &quot;execution_status&quot;: &quot;completed&quot;,
+          &quot;settlement_status&quot;: &quot;paid&quot;,
+          &quot;agency_settlement_status&quot;: &quot;paid&quot;,
+          &quot;payment_amount_jpy&quot;: 190000.0,
+          &quot;carrier_payment_requested_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+          &quot;carrier_payment_request_note&quot;: &quot;全链路测试：车公司发起付款请求&quot;,
+          &quot;agency_payment_receipt_url&quot;: &quot;/uploads/agency_payment_receipts/tenant1_agency1_order2_31b52cc2c7_flow-test-receipt.pdf&quot;,
+          &quot;agency_payment_receipt_name&quot;: &quot;flow-test-receipt.pdf&quot;,
+          &quot;agency_payment_uploaded_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+          &quot;carrier_payment_confirmed_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+          &quot;carrier_payment_confirmed_by&quot;: &quot;carrier-admin&quot;
+        }
+      }
+    }
+  ],
+  &quot;exceptions&quot;: [
+    {
+      &quot;case&quot;: &quot;发布前必填校验&quot;,
+      &quot;error&quot;: &quot;missing_start_price&quot;
+    }
+  ],
+  &quot;agency_orders&quot;: [
+    {
+      &quot;id&quot;: 2,
+      &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+      &quot;order_date&quot;: &quot;2026-06-16&quot;,
+      &quot;end_date&quot;: &quot;2026-06-17&quot;,
+      &quot;start_time&quot;: &quot;10:00&quot;,
+      &quot;end_time&quot;: null,
+      &quot;pickup_location&quot;: &quot;京都&quot;,
+      &quot;dropoff_location&quot;: &quot;大阪&quot;,
+      &quot;order_type&quot;: &quot;charter&quot;,
+      &quot;vehicle_type&quot;: &quot;10座&quot;,
+      &quot;vehicle_color&quot;: &quot;green&quot;,
+      &quot;passenger_count&quot;: 8,
+      &quot;luggage_count&quot;: 0,
+      &quot;guest_name&quot;: &quot;Emily Childers&quot;,
+      &quot;guest_contact&quot;: &quot;emily@example.com&quot;,
+      &quot;flight_number&quot;: null,
+      &quot;flight_date&quot;: null,
+      &quot;flight_airline&quot;: null,
+      &quot;flight_origin&quot;: null,
+      &quot;flight_destination&quot;: null,
+      &quot;flight_terminal&quot;: null,
+      &quot;flight_gate&quot;: null,
+      &quot;flight_status&quot;: null,
+      &quot;flight_scheduled_departure&quot;: null,
+      &quot;flight_scheduled_arrival&quot;: null,
+      &quot;flight_estimated_departure&quot;: null,
+      &quot;flight_estimated_arrival&quot;: null,
+      &quot;flight_actual_departure&quot;: null,
+      &quot;flight_actual_arrival&quot;: null,
+      &quot;flight_provider&quot;: null,
+      &quot;flight_last_checked_at&quot;: null,
+      &quot;flight_manual_note&quot;: null,
+      &quot;guide_name&quot;: &quot;Guide A&quot;,
+      &quot;guide_phone&quot;: null,
+      &quot;guide_wechat&quot;: null,
+      &quot;guide_line&quot;: &quot;guide-line-a&quot;,
+      &quot;guide_whatsapp&quot;: null,
+      &quot;itinerary_pdf_url&quot;: &quot;/uploads/agency_itineraries/test-charter.pdf&quot;,
+      &quot;itinerary_pdf_name&quot;: &quot;京都-宇治-奈良-大阪.pdf&quot;,
+      &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+      &quot;price&quot;: null,
+      &quot;price_jpy&quot;: 170000.0,
+      &quot;fee_remark&quot;: null,
+      &quot;remark&quot;: &quot;测试数据：跨日包车，含标准PDF行程&quot;,
+      &quot;dispatch_status&quot;: &quot;assigned&quot;,
+      &quot;settlement_status&quot;: &quot;paid&quot;,
+      &quot;execution_status&quot;: &quot;completed&quot;,
+      &quot;agency_settlement_status&quot;: &quot;paid&quot;,
+      &quot;payment_amount_jpy&quot;: 190000.0,
+      &quot;carrier_payment_requested_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;carrier_payment_request_note&quot;: &quot;全链路测试：车公司发起付款请求&quot;,
+      &quot;agency_payment_receipt_url&quot;: &quot;/uploads/agency_payment_receipts/tenant1_agency1_order2_31b52cc2c7_flow-test-receipt.pdf&quot;,
+      &quot;agency_payment_receipt_name&quot;: &quot;flow-test-receipt.pdf&quot;,
+      &quot;agency_payment_uploaded_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;carrier_payment_confirmed_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;carrier_payment_confirmed_by&quot;: &quot;carrier-admin&quot;,
+      &quot;created_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;assignment_id&quot;: 1,
+      &quot;driver_id&quot;: 1,
+      &quot;vehicle_id&quot;: 1,
+      &quot;assignment_status&quot;: &quot;active&quot;,
+      &quot;assigned_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;driver_name&quot;: &quot;Ken Sato&quot;,
+      &quot;driver_phone&quot;: &quot;09012345678&quot;,
+      &quot;assigned_driver_code&quot;: &quot;KS&quot;,
+      &quot;assigned_driver_language&quot;: &quot;JP/CN&quot;,
+      &quot;plate_number&quot;: &quot;なにわ500あ1234&quot;,
+      &quot;plate_no&quot;: &quot;なにわ500あ1234&quot;,
+      &quot;assigned_vehicle_type&quot;: &quot;Hiace&quot;,
+      &quot;seat_count&quot;: 10,
+      &quot;assigned_vehicle_color&quot;: &quot;green&quot;,
+      &quot;driver_latitude&quot;: null,
+      &quot;driver_longitude&quot;: null,
+      &quot;driver_location_text&quot;: &quot;司机回库&quot;,
+      &quot;driver_location_reported_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;latest_change_request_id&quot;: null,
+      &quot;latest_change_request_type&quot;: null,
+      &quot;latest_change_request_status&quot;: null,
+      &quot;latest_cancel_fee_percent&quot;: null,
+      &quot;latest_cancel_fee_amount_jpy&quot;: null,
+      &quot;latest_change_request_policy&quot;: null,
+      &quot;auction_listing_id&quot;: 3,
+      &quot;auction_listing_code&quot;: &quot;A260616-0001-TMP-H260531-003&quot;,
+      &quot;auction_publish_round&quot;: 1,
+      &quot;auction_status&quot;: &quot;sold&quot;,
+      &quot;auction_start_price_jpy&quot;: 150000.0,
+      &quot;auction_buyout_price_jpy&quot;: 190000.0,
+      &quot;auction_current_bid_jpy&quot;: 190000.0,
+      &quot;auction_bid_count&quot;: 1,
+      &quot;auction_published_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;auction_expires_at&quot;: &quot;2026-05-31 13:38:40&quot;,
+      &quot;carrier_tenant_id&quot;: 2,
+      &quot;carrier_claimed_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;carrier_claim_serial&quot;: 1,
+      &quot;carrier_company_name&quot;: &quot;SAKURA车公司&quot;,
+      &quot;carrier_company_code&quot;: &quot;SKR&quot;,
+      &quot;auction_duration_hours&quot;: 4
+    },
+    {
+      &quot;id&quot;: 1,
+      &quot;oid&quot;: &quot;A260610-0001-TMP&quot;,
+      &quot;order_date&quot;: &quot;2026-06-10&quot;,
+      &quot;end_date&quot;: &quot;2026-06-10&quot;,
+      &quot;start_time&quot;: &quot;09:30&quot;,
+      &quot;end_time&quot;: null,
+      &quot;pickup_location&quot;: &quot;关西机场T1&quot;,
+      &quot;dropoff_location&quot;: &quot;Osaka Namba Hotel&quot;,
+      &quot;order_type&quot;: &quot;airport_transfer&quot;,
+      &quot;vehicle_type&quot;: &quot;Hiace&quot;,
+      &quot;vehicle_color&quot;: null,
+      &quot;passenger_count&quot;: 4,
+      &quot;luggage_count&quot;: 5,
+      &quot;guest_name&quot;: &quot;Zhang Test&quot;,
+      &quot;guest_contact&quot;: &quot;080-1111-2222&quot;,
+      &quot;flight_number&quot;: &quot;JL225&quot;,
+      &quot;flight_date&quot;: &quot;2026-06-10&quot;,
+      &quot;flight_airline&quot;: null,
+      &quot;flight_origin&quot;: null,
+      &quot;flight_destination&quot;: null,
+      &quot;flight_terminal&quot;: null,
+      &quot;flight_gate&quot;: null,
+      &quot;flight_status&quot;: null,
+      &quot;flight_scheduled_departure&quot;: null,
+      &quot;flight_scheduled_arrival&quot;: null,
+      &quot;flight_estimated_departure&quot;: null,
+      &quot;flight_estimated_arrival&quot;: null,
+      &quot;flight_actual_departure&quot;: null,
+      &quot;flight_actual_arrival&quot;: null,
+      &quot;flight_provider&quot;: null,
+      &quot;flight_last_checked_at&quot;: null,
+      &quot;flight_manual_note&quot;: null,
+      &quot;guide_name&quot;: null,
+      &quot;guide_phone&quot;: null,
+      &quot;guide_wechat&quot;: null,
+      &quot;guide_line&quot;: null,
+      &quot;guide_whatsapp&quot;: null,
+      &quot;itinerary_pdf_url&quot;: null,
+      &quot;itinerary_pdf_name&quot;: null,
+      &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+      &quot;price&quot;: null,
+      &quot;price_jpy&quot;: 52000.0,
+      &quot;fee_remark&quot;: null,
+      &quot;remark&quot;: &quot;测试数据：机场接送批量录入后确认发布&quot;,
+      &quot;dispatch_status&quot;: &quot;auction_listed&quot;,
+      &quot;settlement_status&quot;: &quot;pending&quot;,
+      &quot;execution_status&quot;: &quot;auction_listed&quot;,
+      &quot;agency_settlement_status&quot;: &quot;pending&quot;,
+      &quot;payment_amount_jpy&quot;: null,
+      &quot;carrier_payment_requested_at&quot;: null,
+      &quot;carrier_payment_request_note&quot;: null,
+      &quot;agency_payment_receipt_url&quot;: null,
+      &quot;agency_payment_receipt_name&quot;: null,
+      &quot;agency_payment_uploaded_at&quot;: null,
+      &quot;carrier_payment_confirmed_at&quot;: null,
+      &quot;carrier_payment_confirmed_by&quot;: null,
+      &quot;created_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;assignment_id&quot;: null,
+      &quot;driver_id&quot;: null,
+      &quot;vehicle_id&quot;: null,
+      &quot;assignment_status&quot;: null,
+      &quot;assigned_at&quot;: null,
+      &quot;driver_name&quot;: null,
+      &quot;driver_phone&quot;: null,
+      &quot;assigned_driver_code&quot;: null,
+      &quot;assigned_driver_language&quot;: null,
+      &quot;plate_number&quot;: null,
+      &quot;plate_no&quot;: null,
+      &quot;assigned_vehicle_type&quot;: null,
+      &quot;seat_count&quot;: null,
+      &quot;assigned_vehicle_color&quot;: null,
+      &quot;driver_latitude&quot;: null,
+      &quot;driver_longitude&quot;: null,
+      &quot;driver_location_text&quot;: null,
+      &quot;driver_location_reported_at&quot;: null,
+      &quot;latest_change_request_id&quot;: null,
+      &quot;latest_change_request_type&quot;: null,
+      &quot;latest_change_request_status&quot;: null,
+      &quot;latest_cancel_fee_percent&quot;: null,
+      &quot;latest_cancel_fee_amount_jpy&quot;: null,
+      &quot;latest_change_request_policy&quot;: null,
+      &quot;auction_listing_id&quot;: 2,
+      &quot;auction_listing_code&quot;: &quot;A260610-0001-TMP-H260531-002&quot;,
+      &quot;auction_publish_round&quot;: 2,
+      &quot;auction_status&quot;: &quot;listed&quot;,
+      &quot;auction_start_price_jpy&quot;: 51000.0,
+      &quot;auction_buyout_price_jpy&quot;: 66000.0,
+      &quot;auction_current_bid_jpy&quot;: 51000.0,
+      &quot;auction_bid_count&quot;: 0,
+      &quot;auction_published_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;auction_expires_at&quot;: &quot;2026-05-31 11:38:39&quot;,
+      &quot;carrier_tenant_id&quot;: null,
+      &quot;carrier_claimed_at&quot;: null,
+      &quot;carrier_claim_serial&quot;: 2,
+      &quot;carrier_company_name&quot;: null,
+      &quot;carrier_company_code&quot;: null,
+      &quot;auction_duration_hours&quot;: 2
+    }
+  ],
+  &quot;assignments&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;order_id&quot;: 2,
+      &quot;driver_id&quot;: 1,
+      &quot;vehicle_id&quot;: 1,
+      &quot;status&quot;: &quot;active&quot;,
+      &quot;execution_status&quot;: &quot;returned&quot;,
+      &quot;assigned_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;cancelled_at&quot;: null,
+      &quot;created_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;updated_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;oid&quot;: &quot;A260616-0001-1234KSH&quot;,
+      &quot;order_date&quot;: &quot;2026-06-16&quot;,
+      &quot;end_date&quot;: &quot;2026-06-17&quot;,
+      &quot;start_time&quot;: &quot;10:00&quot;,
+      &quot;end_time&quot;: null,
+      &quot;pickup_location&quot;: &quot;京都&quot;,
+      &quot;dropoff_location&quot;: &quot;大阪&quot;,
+      &quot;order_type&quot;: &quot;charter&quot;,
+      &quot;order_vehicle_type&quot;: &quot;10座&quot;,
+      &quot;agency_name&quot;: &quot;全链路测试旅行社&quot;,
+      &quot;price&quot;: null,
+      &quot;dispatch_status&quot;: &quot;assigned&quot;,
+      &quot;driver_name&quot;: &quot;Ken Sato&quot;,
+      &quot;driver_phone&quot;: &quot;09012345678&quot;,
+      &quot;plate_number&quot;: &quot;なにわ500あ1234&quot;,
+      &quot;assigned_vehicle_type&quot;: &quot;Hiace&quot;,
+      &quot;vehicle_status&quot;: &quot;returned&quot;,
+      &quot;latest_report_type&quot;: &quot;return_yard&quot;,
+      &quot;latest_report_time&quot;: &quot;2026-05-31 18:38:40&quot;,
+      &quot;latest_location_text&quot;: &quot;司机回库&quot;
+    }
+  ],
+  &quot;auction_listings&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;order_id&quot;: 1,
+      &quot;owner_tenant_id&quot;: 1,
+      &quot;seller_tenant_id&quot;: 1,
+      &quot;buyer_tenant_id&quot;: null,
+      &quot;status&quot;: &quot;expired&quot;,
+      &quot;start_price_jpy&quot;: 50000.0,
+      &quot;buyout_price_jpy&quot;: 65000.0,
+      &quot;current_bid_jpy&quot;: 50000.0,
+      &quot;bid_count&quot;: 0,
+      &quot;listing_code&quot;: &quot;A260610-0001-TMP-H260531-001&quot;,
+      &quot;publish_round&quot;: 1,
+      &quot;published_by_user_id&quot;: null,
+      &quot;published_by_name&quot;: &quot;agency:全链路测试旅行社&quot;,
+      &quot;published_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;expires_at&quot;: &quot;2026-05-31 09:37:39&quot;,
+      &quot;sold_at&quot;: null,
+      &quot;cancelled_at&quot;: null,
+      &quot;note&quot;: &quot;机场接送 1小时竞拍&quot;,
+      &quot;created_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;updated_at&quot;: &quot;2026-05-31 09:38:39&quot;
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;order_id&quot;: 1,
+      &quot;owner_tenant_id&quot;: 1,
+      &quot;seller_tenant_id&quot;: 1,
+      &quot;buyer_tenant_id&quot;: null,
+      &quot;status&quot;: &quot;listed&quot;,
+      &quot;start_price_jpy&quot;: 51000.0,
+      &quot;buyout_price_jpy&quot;: 66000.0,
+      &quot;current_bid_jpy&quot;: 51000.0,
+      &quot;bid_count&quot;: 0,
+      &quot;listing_code&quot;: &quot;A260610-0001-TMP-H260531-002&quot;,
+      &quot;publish_round&quot;: 2,
+      &quot;published_by_user_id&quot;: null,
+      &quot;published_by_name&quot;: &quot;agency:全链路测试旅行社&quot;,
+      &quot;published_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;expires_at&quot;: &quot;2026-05-31 11:38:39&quot;,
+      &quot;sold_at&quot;: null,
+      &quot;cancelled_at&quot;: null,
+      &quot;note&quot;: &quot;超时撤回后重新发布&quot;,
+      &quot;created_at&quot;: &quot;2026-05-31 09:38:39&quot;,
+      &quot;updated_at&quot;: &quot;2026-05-31 09:38:39&quot;
+    },
+    {
+      &quot;id&quot;: 3,
+      &quot;order_id&quot;: 2,
+      &quot;owner_tenant_id&quot;: 1,
+      &quot;seller_tenant_id&quot;: 1,
+      &quot;buyer_tenant_id&quot;: 2,
+      &quot;status&quot;: &quot;sold&quot;,
+      &quot;start_price_jpy&quot;: 150000.0,
+      &quot;buyout_price_jpy&quot;: 190000.0,
+      &quot;current_bid_jpy&quot;: 190000.0,
+      &quot;bid_count&quot;: 1,
+      &quot;listing_code&quot;: &quot;A260616-0001-TMP-H260531-003&quot;,
+      &quot;publish_round&quot;: 1,
+      &quot;published_by_user_id&quot;: null,
+      &quot;published_by_name&quot;: &quot;agency:全链路测试旅行社&quot;,
+      &quot;published_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;expires_at&quot;: &quot;2026-05-31 13:38:40&quot;,
+      &quot;sold_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;cancelled_at&quot;: null,
+      &quot;note&quot;: &quot;包车 4小时竞拍&quot;,
+      &quot;created_at&quot;: &quot;2026-05-31 09:38:40&quot;,
+      &quot;updated_at&quot;: &quot;2026-05-31 09:38:40&quot;
+    }
+  ],
+  &quot;table_counts&quot;: {
+    &quot;orders&quot;: 2,
+    &quot;auction_listings&quot;: 3,
+    &quot;assignments&quot;: 1,
+    &quot;driver_reports&quot;: 6,
+    &quot;location_logs&quot;: 6,
+    &quot;agency_order_change_requests&quot;: 0
+  }
+}</pre>
+    </section>
+  </main>
+</body>
+</html>

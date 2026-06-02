@@ -55,7 +55,17 @@
     </view>
 
     <view wx:if="{{isOperationsManager}}" class="ops-grid ops-grid-compact">
-      <view class="ops-card {{operationsSection === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="switchOperationsSection">
+      <view class="ops-card {{operationsSection === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="goInfo">
+        <text>司机资料</text>
+        <strong>{{operationsOverview.driverTotal}}</strong>
+        <view>联系方式、体检、驾照、在留期限</view>
+      </view>
+      <view class="ops-card {{operationsSection === 'vehicles' ? 'active' : ''}}" data-section="vehicles" bindtap="goInfo">
+        <text>车辆资料</text>
+        <strong>{{operationsOverview.vehicleTotal}}</strong>
+        <view>车型、车牌、点检、年检、维修状态</view>
+      </view>
+      <view class="ops-card ops-card-wide {{operationsSection === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="goInfo">
         <text>出勤状态</text>
         <strong>{{operationsOverview.attendanceWarnings}}</strong>
         <view>出勤司机、车辆、睡眠、点呼、出入库和休息时间</view>

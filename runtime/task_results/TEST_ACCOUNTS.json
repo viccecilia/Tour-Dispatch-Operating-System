@@ -1,0 +1,335 @@
+{
+  "platform_admin": {
+    "login": "admin",
+    "password": "admin123"
+  },
+  "default_carrier_password": "Test123456",
+  "carrier_accounts": [
+    {
+      "company_code": "SKR",
+      "company_name": "Sakura Fleet",
+      "tenant_id": 349,
+      "management_account": {
+        "login": "SKR-08070010000",
+        "legacy_login": "SKR-admin",
+        "password": "Test123456",
+        "role": "admin"
+      },
+      "dispatch_account": {
+        "login": "SKR-08070010001",
+        "legacy_login": "SKR-dispatch",
+        "password": "Test123456",
+        "role": "dispatcher"
+      },
+      "operations_account": {
+        "login": "SKR-08070010002",
+        "legacy_login": "SKR-ops",
+        "password": "Test123456",
+        "role": "operations_manager"
+      },
+      "drivers": [
+        {
+          "driver_code": "SKR-D01",
+          "name": "Ken Sato",
+          "phone": "080-7001-0101",
+          "login": "SKR-08070010101",
+          "password": "Test123456"
+        },
+        {
+          "driver_code": "SKR-D02",
+          "name": "Aki Tanaka",
+          "phone": "080-7001-0102",
+          "login": "SKR-08070010102",
+          "password": "Test123456"
+        },
+        {
+          "driver_code": "SKR-D03",
+          "name": "Ryo Suzuki",
+          "phone": "080-7001-0103",
+          "login": "SKR-08070010103",
+          "password": "Test123456"
+        }
+      ],
+      "user_ids": [
+        409,
+        426,
+        427
+      ]
+    },
+    {
+      "company_code": "KEX",
+      "company_name": "Kansai Express",
+      "tenant_id": 350,
+      "management_account": {
+        "login": "KEX-08070020000",
+        "legacy_login": "KEX-admin",
+        "password": "Test123456",
+        "role": "admin"
+      },
+      "dispatch_account": {
+        "login": "KEX-08070020001",
+        "legacy_login": "KEX-dispatch",
+        "password": "Test123456",
+        "role": "dispatcher"
+      },
+      "operations_account": {
+        "login": "KEX-08070020002",
+        "legacy_login": "KEX-ops",
+        "password": "Test123456",
+        "role": "operations_manager"
+      },
+      "drivers": [
+        {
+          "driver_code": "KEX-D01",
+          "name": "Yuki Mori",
+          "phone": "080-7002-0101",
+          "login": "KEX-08070020101",
+          "password": "Test123456"
+        },
+        {
+          "driver_code": "KEX-D02",
+          "name": "Hiro Ito",
+          "phone": "080-7002-0102",
+          "login": "KEX-08070020102",
+          "password": "Test123456"
+        },
+        {
+          "driver_code": "KEX-D03",
+          "name": "Nao Kato",
+          "phone": "080-7002-0103",
+          "login": "KEX-08070020103",
+          "password": "Test123456"
+        }
+      ],
+      "user_ids": [
+        413,
+        428,
+        429
+      ]
+    },
+    {
+      "company_code": "TYO",
+      "company_name": "Tokyo Premium",
+      "tenant_id": 351,
+      "management_account": {
+        "login": "TYO-08070030000",
+        "legacy_login": "TYO-admin",
+        "password": "Test123456",
+        "role": "admin"
+      },
+      "dispatch_account": {
+        "login": "TYO-08070030001",
+        "legacy_login": "TYO-dispatch",
+        "password": "Test123456",
+        "role": "dispatcher"
+      },
+      "operations_account": {
+        "login": "TYO-08070030002",
+        "legacy_login": "TYO-ops",
+        "password": "Test123456",
+        "role": "operations_manager"
+      },
+      "drivers": [
+        {
+          "driver_code": "TYO-D01",
+          "name": "Shun Watanabe",
+          "phone": "080-7003-0101",
+          "login": "TYO-08070030101",
+          "password": "Test123456"
+        },
+        {
+          "driver_code": "TYO-D02",
+          "name": "Mai Kobayashi",
+          "phone": "080-7003-0102",
+          "login": "TYO-08070030102",
+          "password": "Test123456"
+        },
+        {
+          "driver_code": "TYO-D03",
+          "name": "Ren Yamada",
+          "phone": "080-7003-0103",
+          "login": "TYO-08070030103",
+          "password": "Test123456"
+        }
+      ],
+      "user_ids": [
+        417,
+        430,
+        431
+      ]
+    }
+  ],
+  "agency_portal_accounts": [
+    {
+      "agency_code": "AGA",
+      "agency_name": "Toyo Holiday Travel",
+      "agency_id": 6,
+      "portal_code": "AGA2026",
+      "portal_password": "Test123456",
+      "travel_agency_company_id": 1,
+      "management_account": {
+        "login": "080-7101-0000",
+        "password_seed": "0000",
+        "role": "agency_owner",
+        "account_id": 1
+      },
+      "customer_service_account": {
+        "login": "080-7101-0001",
+        "password_seed": "0001",
+        "role": "agency_customer_service",
+        "account_id": 2
+      },
+      "finance_account": {
+        "login": "080-7101-0002",
+        "password_seed": "0002",
+        "role": "agency_finance",
+        "account_id": 3
+      },
+      "guide_accounts": [
+        {
+          "guide_code": "AGA-G01",
+          "name": "Mico Yamamoto",
+          "phone": "080-7101-0101",
+          "login": "080-7101-0101",
+          "password_seed": "0101",
+          "guide_id": 1,
+          "account_id": 4
+        },
+        {
+          "guide_code": "AGA-G02",
+          "name": "Naomi Kuroda",
+          "phone": "080-7101-0102",
+          "login": "080-7101-0102",
+          "password_seed": "0102",
+          "guide_id": 2,
+          "account_id": 5
+        },
+        {
+          "guide_code": "AGA-G03",
+          "name": "Sho Hayashi",
+          "phone": "080-7101-0103",
+          "login": "080-7101-0103",
+          "password_seed": "0103",
+          "guide_id": 3,
+          "account_id": 6
+        }
+      ]
+    },
+    {
+      "agency_code": "AGB",
+      "agency_name": "Fuji Tour Travel",
+      "agency_id": 7,
+      "portal_code": "AGB2026",
+      "portal_password": "Test123456",
+      "travel_agency_company_id": 2,
+      "management_account": {
+        "login": "080-7102-0000",
+        "password_seed": "0000",
+        "role": "agency_owner",
+        "account_id": 7
+      },
+      "customer_service_account": {
+        "login": "080-7102-0001",
+        "password_seed": "0001",
+        "role": "agency_customer_service",
+        "account_id": 8
+      },
+      "finance_account": {
+        "login": "080-7102-0002",
+        "password_seed": "0002",
+        "role": "agency_finance",
+        "account_id": 9
+      },
+      "guide_accounts": [
+        {
+          "guide_code": "AGB-G01",
+          "name": "Gayun Lee",
+          "phone": "080-7102-0101",
+          "login": "080-7102-0101",
+          "password_seed": "0101",
+          "guide_id": 4,
+          "account_id": 10
+        },
+        {
+          "guide_code": "AGB-G02",
+          "name": "Emily Childers",
+          "phone": "080-7102-0102",
+          "login": "080-7102-0102",
+          "password_seed": "0102",
+          "guide_id": 5,
+          "account_id": 11
+        },
+        {
+          "guide_code": "AGB-G03",
+          "name": "Mahesh Patil",
+          "phone": "080-7102-0103",
+          "login": "080-7102-0103",
+          "password_seed": "0103",
+          "guide_id": 6,
+          "account_id": 12
+        }
+      ]
+    },
+    {
+      "agency_code": "AGC",
+      "agency_name": "Keihan International Travel",
+      "agency_id": 8,
+      "portal_code": "AGC2026",
+      "portal_password": "Test123456",
+      "travel_agency_company_id": 3,
+      "management_account": {
+        "login": "080-7103-0000",
+        "password_seed": "0000",
+        "role": "agency_owner",
+        "account_id": 13
+      },
+      "customer_service_account": {
+        "login": "080-7103-0001",
+        "password_seed": "0001",
+        "role": "agency_customer_service",
+        "account_id": 14
+      },
+      "finance_account": {
+        "login": "080-7103-0002",
+        "password_seed": "0002",
+        "role": "agency_finance",
+        "account_id": 15
+      },
+      "guide_accounts": [
+        {
+          "guide_code": "AGC-G01",
+          "name": "Noki Shi",
+          "phone": "080-7103-0101",
+          "login": "080-7103-0101",
+          "password_seed": "0101",
+          "guide_id": 7,
+          "account_id": 16
+        },
+        {
+          "guide_code": "AGC-G02",
+          "name": "Donghan Yang",
+          "phone": "080-7103-0102",
+          "login": "080-7103-0102",
+          "password_seed": "0102",
+          "guide_id": 8,
+          "account_id": 17
+        },
+        {
+          "guide_code": "AGC-G03",
+          "name": "Mina Okada",
+          "phone": "080-7103-0103",
+          "login": "080-7103-0103",
+          "password_seed": "0103",
+          "guide_id": 9,
+          "account_id": 18
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "车公司 Web 账号写入 users 表，可用用户名和 Test123456 登录。",
+    "车公司司机账号写入 drivers + users 表，登录名格式为 公司代码-手机号数字。",
+    "旅行社门户使用登录代码 + 密码登录；输入登录代码后页面会识别旅行社名称。",
+    "旅行社内部财务/客服/管理/导游账号写入 travel_agency_accounts 表，password_seed 为手机号后四位；当前如未做旅行社内部账号登录页，这些账号先作为权限与数据结构测试用。"
+  ]
+}

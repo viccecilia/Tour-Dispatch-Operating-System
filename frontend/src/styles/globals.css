@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.field {
+  @apply h-10 w-full rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100;
+}
+
 @layer base {
   :root {
     --background: 210 29% 97%;

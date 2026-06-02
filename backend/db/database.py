@@ -34,8 +34,32 @@ ORDER_COLUMNS: dict[str, str] = {
     "snow_tire": "TEXT",
     "passenger_count": "INTEGER NOT NULL DEFAULT 0",
     "luggage_count": "INTEGER NOT NULL DEFAULT 0",
+    "flight_number": "TEXT",
+    "flight_date": "TEXT",
+    "flight_airline": "TEXT",
+    "flight_origin": "TEXT",
+    "flight_destination": "TEXT",
+    "flight_terminal": "TEXT",
+    "flight_gate": "TEXT",
+    "flight_status": "TEXT",
+    "flight_scheduled_departure": "TEXT",
+    "flight_scheduled_arrival": "TEXT",
+    "flight_estimated_departure": "TEXT",
+    "flight_estimated_arrival": "TEXT",
+    "flight_actual_departure": "TEXT",
+    "flight_actual_arrival": "TEXT",
+    "flight_provider": "TEXT",
+    "flight_last_checked_at": "TEXT",
+    "flight_manual_note": "TEXT",
     "guest_name": "TEXT",
     "guest_contact": "TEXT",
+    "guide_name": "TEXT",
+    "guide_phone": "TEXT",
+    "guide_wechat": "TEXT",
+    "guide_line": "TEXT",
+    "guide_whatsapp": "TEXT",
+    "itinerary_pdf_url": "TEXT",
+    "itinerary_pdf_name": "TEXT",
     "agency_name": "TEXT",
     "price": "REAL",
     "price_rmb": "REAL",
@@ -48,6 +72,14 @@ ORDER_COLUMNS: dict[str, str] = {
     "driver_settlement_status": "TEXT NOT NULL DEFAULT 'pending'",
     "driver_settlement_note": "TEXT",
     "agency_settlement_status": "TEXT NOT NULL DEFAULT 'pending'",
+    "payment_amount_jpy": "REAL",
+    "carrier_payment_requested_at": "TEXT",
+    "carrier_payment_request_note": "TEXT",
+    "agency_payment_receipt_url": "TEXT",
+    "agency_payment_receipt_name": "TEXT",
+    "agency_payment_uploaded_at": "TEXT",
+    "carrier_payment_confirmed_at": "TEXT",
+    "carrier_payment_confirmed_by": "TEXT",
     "parking_fee_jpy": "REAL",
     "other_fee_jpy": "REAL",
     "driver_salary_jpy": "REAL",
@@ -276,11 +308,16 @@ AGENCY_COLUMNS: dict[str, str] = {
     "company_name": "TEXT",
     "address": "TEXT",
     "responsible_person": "TEXT",
+    "contact_wechat": "TEXT",
+    "contact_line": "TEXT",
+    "contact_whatsapp": "TEXT",
     "contact_email": "TEXT",
     "fax": "TEXT",
     "status": "TEXT NOT NULL DEFAULT 'active'",
     "remark": "TEXT",
     "portal_code": "TEXT",
+    "portal_password_hash": "TEXT",
+    "portal_password_updated_at": "TEXT",
     "is_portal_enabled": "INTEGER NOT NULL DEFAULT 1",
     "updated_at": "TEXT",
 }
@@ -1164,19 +1201,32 @@ def refresh_order_oids(conn: sqlite3.Connection) -> None:
         date_key = str(order_date).replace("-", "")
         serials[date_key] = serials.get(date_key, 0) + 1
         assignment = assignments.get(row["id"])
-        if assignment:
-            vehicle_code = assignment.get("vehicle_type_code") or normalize_vehicle_type_code(assignment.get("vehicle_type"))
-            oid = build_order_oid(
+        def build_candidate(serial: int) -> str:
+            if assignment:
+                vehicle_code = assignment.get("vehicle_type_code") or normalize_vehicle_type_code(assignment.get("vehicle_type"))
+                return build_order_oid(
+                    order_note_code=row["order_note_code"],
+                    order_source=row["order_source"],
+                    order_date=order_date,
+                    serial=serial,
+                    plate_code=plate_short_code(assignment.get("plate_number")),
+                    driver_code=assignment.get("driver_code"),
+                    driver_name=assignment.get("driver_name"),
+                    vehicle_type_code=vehicle_code,
+                    temporary=False,
+                )
+            return build_order_oid(
                 order_note_code=row["order_note_code"],
                 order_source=row["order_source"],
                 order_date=order_date,
-                serial=serials[date_key],
-                plate_code=plate_short_code(assignment.get("plate_number")),
-                driver_code=assignment.get("driver_code"),
-                driver_name=assignment.get("driver_name"),
-                vehicle_type_code=vehicle_code,
-                temporary=False,
+                serial=serial,
+                vehicle_type_code=row["vehicle_type_code"],
+                vehicle_type=row["vehicle_type"],
+                temporary=True,
             )
+
+        if assignment:
+            vehicle_code = assignment.get("vehicle_type_code") or normalize_vehicle_type_code(assignment.get("vehicle_type"))
             conn.execute(
                 """
                 UPDATE orders
@@ -1192,16 +1242,10 @@ def refresh_order_oids(conn: sqlite3.Connection) -> None:
                     row["id"],
                 ),
             )
-        else:
-            oid = build_order_oid(
-                order_note_code=row["order_note_code"],
-                order_source=row["order_source"],
-                order_date=order_date,
-                serial=serials[date_key],
-                vehicle_type_code=row["vehicle_type_code"],
-                vehicle_type=row["vehicle_type"],
-                temporary=True,
-            )
+        oid = build_candidate(serials[date_key])
+        while conn.execute("SELECT 1 FROM orders WHERE oid = ? AND id != ? LIMIT 1", (oid, row["id"])).fetchone():
+            serials[date_key] += 1
+            oid = build_candidate(serials[date_key])
         conn.execute("UPDATE orders SET oid = ? WHERE id = ?", (oid, row["id"]))
 
 

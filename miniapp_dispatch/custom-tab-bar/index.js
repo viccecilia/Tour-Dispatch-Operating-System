@@ -12,13 +12,12 @@ const ROLE_TABS = {
     { pagePath: '/pages/index/index', text: '首页' },
     { pagePath: '/pages/calendar/index', text: '日历' },
     { pagePath: '/pages/map/index', text: '地图' },
-    { pagePath: '/pages/info/index', text: '信息' },
+    { pagePath: '/pages/info/index', text: '司机车辆' },
     { pagePath: '/pages/profile/index', text: '我的' }
   ],
   dispatcher: [
     { pagePath: '/pages/index/index', text: '首页' },
     { pagePath: '/pages/dispatch/index', text: '派车' },
-    { pagePath: '/pages/auction/index', text: '订单大厅' },
     { pagePath: '/pages/map/index', text: '地图' },
     { pagePath: '/pages/profile/index', text: '我的' }
   ],

@@ -6,8 +6,8 @@ import {
   Building2,
   CalendarDays,
   CarFront,
+  FileCheck2,
   ClipboardList,
-  FileClock,
   FileText,
   Gavel,
   MapPinned,
@@ -18,7 +18,6 @@ import {
   Receipt,
   Route,
   Settings,
-  ServerCog,
   Truck,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -43,25 +42,32 @@ const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
   { key: "attendance", labelKey: "出勤台账", icon: TimerReset },
   { key: "map", labelKey: "nav.map", icon: MapPinned },
   { key: "vehicles", labelKey: "nav.vehicles", icon: Truck },
+  { key: "company-registration", labelKey: "公司注册", icon: FileCheck2 },
   { key: "agencies", labelKey: "nav.agencies", icon: Building2 },
   { key: "incidents", labelKey: "nav.incidents", icon: AlertTriangle },
   { key: "finance", labelKey: "nav.finance", icon: Receipt },
   { key: "analytics", labelKey: "nav.analytics", icon: BarChart3 },
   { key: "automation", labelKey: "nav.automation", icon: Bot },
   { key: "copilot", labelKey: "nav.copilot", icon: Bot },
-  { key: "audit", labelKey: "nav.audit", icon: FileClock },
-  { key: "system", labelKey: "后台控制", icon: ServerCog },
   { key: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
-function visibleNavItems(role: string) {
+function isPlatformAdmin(user: AuthUser) {
+  return user.username === "admin" || Number(user.tenant_id) === 1;
+}
+
+function visibleNavItems(user: AuthUser) {
+  const role = user.role;
+  const platformAdmin = isPlatformAdmin(user);
   return navItems.filter((item) => {
     const key = String(item.key);
-    if (key === "system") return role === "admin";
+    if (key === "audit") return false;
+    if (key === "system") return false;
+    if (["agencies", "company-registration"].includes(key)) return platformAdmin;
     if (key === "finance") return role === "admin";
     if (key === "analytics") return role === "admin";
-    if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system"].includes(key);
-    if (role === "dispatcher") return !["finance", "analytics", "system"].includes(key);
+    if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system", "audit"].includes(key);
+    if (role === "dispatcher") return !["finance", "analytics", "system", "audit"].includes(key);
     return true;
   });
 }
@@ -78,6 +84,7 @@ const titleKeys: Record<PageKey, string> = {
   attendance: "出勤与拘束台账",
   map: "page.map",
   vehicles: "page.vehicles",
+  "company-registration": "公司注册",
   agencies: "page.agencies",
   incidents: "page.incidents",
   finance: "page.finance",
@@ -119,7 +126,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {visibleNavItems(user.role).map((item) => {
+          {visibleNavItems(user).map((item) => {
             const Icon = item.icon;
             const active = item.key === activePage;
             return (

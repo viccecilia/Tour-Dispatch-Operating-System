@@ -1,5 +1,6 @@
 const API_STORAGE_KEY = 'wx_dispatch_api_base_url';
 const ACTIVE_TAB_KEY = 'dispatch_active_tab_path';
+const SESSION_STORAGE_KEY = 'dispatcher_session';
 const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
 const DEFAULT_BASE_URL = TRIAL_BASE_URL;
@@ -18,6 +19,10 @@ function getBaseUrl() {
   return API_CONFIG.baseUrl;
 }
 
+function getSessionStorageKey() {
+  return `${SESSION_STORAGE_KEY}:${API_CONFIG.baseUrl}`;
+}
+
 function useCloudBaseUrl(baseUrl = CLOUD_BASE_URL) {
   setBaseUrl(baseUrl);
 }
@@ -27,20 +32,35 @@ function resetBaseUrl() {
   API_CONFIG.baseUrl = DEFAULT_BASE_URL;
 }
 
+function syncEnvironmentBaseUrl() {
+  try {
+    const systemInfo = wx.getSystemInfoSync();
+    if (systemInfo && systemInfo.platform === 'devtools') {
+      setBaseUrl(LOCAL_BASE_URL);
+      return;
+    }
+  } catch (err) {
+    // Keep the configured cloud endpoint when platform detection is unavailable.
+  }
+  useCloudBaseUrl();
+}
+
 function setActiveTab(path) {
   wx.setStorageSync(ACTIVE_TAB_KEY, path);
 }
 
 function getSession() {
-  return wx.getStorageSync('dispatcher_session') || null;
+  return wx.getStorageSync(getSessionStorageKey()) || null;
 }
 
 function setSession(session) {
-  wx.setStorageSync('dispatcher_session', session);
+  wx.setStorageSync(getSessionStorageKey(), session);
+  wx.removeStorageSync(SESSION_STORAGE_KEY);
 }
 
 function clearSession() {
-  wx.removeStorageSync('dispatcher_session');
+  wx.removeStorageSync(getSessionStorageKey());
+  wx.removeStorageSync(SESSION_STORAGE_KEY);
 }
 
 function getRole(session = getSession()) {
@@ -53,7 +73,7 @@ function canAccess(feature, session = getSession()) {
   const role = getRole(session);
   const rules = {
     dispatch: ['admin', 'dispatcher'],
-    auction: ['admin', 'dispatcher'],
+    auction: ['admin'],
     map: ['admin', 'dispatcher', 'operations_manager', 'driver'],
     finance: ['admin'],
     profile: ['admin', 'dispatcher', 'operations_manager', 'driver']
@@ -74,6 +94,10 @@ function request(path, options = {}) {
       },
       success: (res) => {
         if (res.statusCode >= 400) {
+          if (res.statusCode === 401 && path.indexOf('/login') < 0) {
+            clearSession();
+            wx.reLaunch({ url: '/pages/index/index' });
+          }
           reject(res.data || { error: 'request_failed' });
           return;
         }
@@ -104,6 +128,7 @@ module.exports = {
   getBaseUrl,
   useCloudBaseUrl,
   resetBaseUrl,
+  syncEnvironmentBaseUrl,
   setActiveTab,
   getSession,
   setSession,
@@ -157,8 +182,10 @@ module.exports = {
   vehicles: () => request('/api/dispatch-mobile/vehicles'),
   assignOrders: (payload) => request('/api/dispatch-mobile/dispatch/assign', { method: 'POST', data: withDispatcher(payload) }),
   assignments: () => request('/api/dispatch-mobile/assignments'),
-  auctionListings: () => request('/api/auction/listings?status=listed'),
+  auctionListings: () => request('/api/auction/listings?status=all'),
   createAuctionListing: (payload) => request('/api/auction/listings', { method: 'POST', data: withDispatcher(payload) }),
+  bidAuctionListing: (listingId, payload) => request(`/api/auction/listings/${listingId}/bid`, { method: 'POST', data: withDispatcher(payload) }),
+  claimAuctionListing: (listingId, payload) => request(`/api/auction/listings/${listingId}/claim`, { method: 'POST', data: withDispatcher(payload) }),
   fleetLocations: () => request('/api/dispatch-mobile/fleet/latest-locations'),
   financeSummary: () => request('/api/dispatch-mobile/finance/summary'),
   financeLedger: () => request('/api/dispatch-mobile/finance/ledger')

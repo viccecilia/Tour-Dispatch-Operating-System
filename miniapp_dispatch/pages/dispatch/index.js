@@ -29,6 +29,8 @@ Page({
     loading: false,
     message: '',
     conflictText: '',
+    helpTip: null,
+    canAuction: false,
     preview: {
       orderCount: 0,
       driverName: '未选司机',
@@ -41,11 +43,13 @@ Page({
   _tapTimer: null,
 
   onShow() {
+    api.syncEnvironmentBaseUrl();
     api.setActiveTab('/pages/dispatch/index');
+    this.setData({ canAuction: api.canAccess('auction') });
     this.refreshTabBar();
     if (!api.canAccess('dispatch')) {
       wx.showToast({ title: '当前账号没有派车权限', icon: 'none' });
-      wx.switchTab({ url: '/pages/index/index' });
+      wx.reLaunch({ url: '/pages/index/index' });
       return;
     }
     this.loadAll();
@@ -71,6 +75,38 @@ Page({
 
   noop() {},
 
+  showHelp(e) {
+    const type = e.currentTarget.dataset.type;
+    const contentMap = {
+      hero: '粘贴订单文本后后台解析，确认内容后选择司机和车辆派单，也可以把暂时无法执行的订单放入大厅。',
+      import: '支持微信、LINE 等文本批量导入。解析后可以在卡片中双击修改订单字段。',
+      charter: '包车信息较多，横向占满显示。双击订单可以展开修改。',
+      pickup: '接机订单按时间排列，选择后可派车或放入订单大厅。',
+      dropoff: '送机订单按时间排列，选择后可派车或放入订单大厅。',
+      drivers: '司机列表空闲优先，冲突或忙碌司机会排在后面。',
+      vehicles: '车辆列表空闲优先，冲突或忙碌车辆会排在后面。'
+    };
+    const titleMap = {
+      hero: '导入与派车',
+      import: '订单文本',
+      charter: '包车',
+      pickup: '接机',
+      dropoff: '送机',
+      drivers: '司机',
+      vehicles: '车辆'
+    };
+    this.setData({
+      helpTip: {
+        title: titleMap[type] || '说明',
+        content: contentMap[type] || '暂无说明'
+      }
+    });
+  },
+
+  hideHelp() {
+    this.setData({ helpTip: null });
+  },
+
   parseOrders() {
     const text = String(this.data.importText || '').trim();
     if (!text) {
@@ -94,6 +130,7 @@ Page({
 
   loadAll() {
     this.setData({ loading: true });
+    const tenantId = this.currentTenantId();
     Promise.all([
       api.drafts().catch(() => ({ drafts: [] })),
       api.unassignedOrders().catch(() => ({ orders: [] })),
@@ -103,9 +140,12 @@ Page({
     ])
       .then(([draftsRes, ordersRes, driversRes, vehiclesRes, assignmentsRes]) => {
         const drafts = (draftsRes.drafts || [])
+          .filter((item) => !tenantId || !item.tenant_id || Number(item.tenant_id) === tenantId)
           .filter((item) => item.parse_status !== 'confirmed' && item.parse_status !== 'discarded')
           .map((item) => this.decoratePendingRow({ ...item, kind: 'draft' }));
-        const orders = (ordersRes.orders || []).map((item) => this.decoratePendingRow({ ...item, kind: 'order' }));
+        const orders = (ordersRes.orders || [])
+          .filter((item) => !tenantId || !item.tenant_id || Number(item.tenant_id) === tenantId)
+          .map((item) => this.decoratePendingRow({ ...item, kind: 'order' }));
         const pendingRows = this.sortPendingRows(drafts.concat(orders)).slice(0, 160);
         const assignments = assignmentsRes.assignments || [];
         this.setData({
@@ -123,6 +163,15 @@ Page({
       });
   },
 
+  currentTenantId() {
+    const session = api.getSession() || {};
+    return Number(
+      (session.user && session.user.tenant_id)
+      || (session.dispatcher && session.dispatcher.tenant_id)
+      || 0
+    );
+  },
+
   decoratePendingRow(row) {
     const key = `${row.kind}-${row.id}`;
     const selected = this.data.selectedKeys.includes(key);
@@ -137,7 +186,7 @@ Page({
       dispatchKind,
       riskText: risks.join(' / '),
       hasRisk: risks.length > 0,
-      sourceText: row.kind === 'draft' ? '草稿' : '订单',
+      sourceText: row.kind === 'draft' ? '待确认' : '订单',
       typeText: dispatchKind === 'charter' ? '包车' : dispatchKind === 'dropoff' ? '送机' : '接机',
       timeText: `${row.order_date || '待确认日期'} ${row.start_time || '--:--'}-${row.end_time || '--:--'}`,
       compactTimeText: `${row.order_date || '待确认日期'} ${row.start_time || '--:--'}`,
@@ -374,7 +423,7 @@ Page({
     if (!row) return;
     this.ensureOrder(row)
       .then(() => {
-        wx.showToast({ title: '已确认入库' });
+        wx.showToast({ title: '已保存待派' });
         this.loadAll();
       })
       .catch(() => wx.showToast({ title: '确认失败', icon: 'none' }));
@@ -383,22 +432,22 @@ Page({
   confirmSelectedDrafts() {
     const rows = this.selectedRows().filter((item) => item.kind === 'draft');
     if (!rows.length) {
-      wx.showToast({ title: '请选择需要入库的草稿', icon: 'none' });
+      wx.showToast({ title: '请选择待确认订单', icon: 'none' });
       return;
     }
     this.setData({ loading: true, conflictText: '', message: '' });
     rows.reduce((chain, row) => chain.then(() => this.ensureOrder(row)), Promise.resolve())
       .then(() => {
-        wx.showToast({ title: '批量入库完成' });
+        wx.showToast({ title: '已确认' });
         this.setData({
           loading: false,
           selectedKeys: this.data.selectedKeys.filter((key) => !rows.some((row) => row.key === key)),
-          message: `已确认入库 ${rows.length} 条草稿。`
+          message: `已确认 ${rows.length} 条订单，可继续派车。`
         });
         this.loadAll();
       })
       .catch(() => {
-        this.setData({ loading: false, conflictText: '批量入库失败，请检查草稿字段。' });
+        this.setData({ loading: false, conflictText: '确认失败，请检查字段。' });
       });
   },
 
@@ -461,7 +510,34 @@ Page({
 
   ensureOrder(row) {
     if (row.kind === 'order') return Promise.resolve(row.id);
-    return api.confirmDraft(row.id).then((res) => res.order_id);
+    return api.confirmDraft(row.id).then((res) => {
+      const orderId = res && (res.order_id || (res.order && res.order.id) || res.id);
+      if (!orderId) throw new Error('missing_order_id');
+      return orderId;
+    });
+  },
+
+  ensureOrderForAuction(row, payload) {
+    if (row.kind === 'order') {
+      return Promise.resolve({
+        ...payload,
+        id: Number(row.id),
+        oid: payload.oid || row.oid,
+        kind: 'order'
+      });
+    }
+    return api.confirmDraft(row.id).then((res) => {
+      const order = (res && res.order) || {};
+      const orderId = res && (res.order_id || order.id || res.id);
+      if (!orderId) throw new Error('missing_order_id');
+      return {
+        ...payload,
+        ...order,
+        id: Number(orderId),
+        oid: order.oid || payload.oid || row.oid,
+        kind: 'order'
+      };
+    });
   },
 
   assignSelected() {
@@ -522,6 +598,10 @@ Page({
   },
 
   publishSelectedToAuction() {
+    if (!api.canAccess('auction')) {
+      wx.showToast({ title: '当前账号无订单大厅权限', icon: 'none' });
+      return;
+    }
     const rows = this.selectedRows();
     if (!rows.length) {
       wx.showToast({ title: '请先选择订单', icon: 'none' });
@@ -538,21 +618,36 @@ Page({
           return chain.then((items) => {
             const payload = row.key === this.data.editingKey ? this.data.editing : row;
             return this.saveRow(row, payload)
-              .then(() => this.ensureOrder(row))
-              .then((id) => items.concat({ ...payload, id: Number(id), kind: 'order' }));
+              .then(() => this.ensureOrderForAuction(row, payload))
+              .then((order) => items.concat(order));
           });
         }, Promise.resolve([]))
           .then((orders) => {
             wx.setStorageSync('auction_publish_draft', {
               order_ids: orders.map((item) => item.id),
+              order_oids: orders.map((item) => item.oid).filter(Boolean),
               orders
             });
             this.setData({ loading: false, selectedKeys: [], editingKey: '', editing: {} });
             wx.reLaunch({ url: '/pages/auction/index' });
           })
-          .catch(() => this.setData({ loading: false, conflictText: '放入订单大厅失败，请检查订单或后端连接。' }));
+          .catch((err) => this.setData({
+            loading: false,
+            conflictText: `放入订单大厅失败：${this.humanError(err)}`
+          }));
       }
     });
+  },
+
+  humanError(err) {
+    const code = err && (err.error || err.message || err.errMsg);
+    const map = {
+      draft_not_found: '待确认订单不存在，请刷新后重试。',
+      order_not_found: '订单不存在或不属于当前公司，请刷新后重试。',
+      unauthorized: '登录已失效，请重新登录。',
+      internal_server_error: '后端处理异常，请稍后重试。'
+    };
+    return map[code] || code || '请检查订单或后端连接。';
   },
 
   getSelectedWindows() {

@@ -56,7 +56,7 @@ Page({
   },
 
   onShow() {
-    api.useCloudBaseUrl();
+    api.syncEnvironmentBaseUrl();
     api.setActiveTab('/pages/index/index');
     const session = api.getSession();
     this.setSessionState(session);

@@ -1,5 +1,6 @@
 import type {
   Agency,
+  AgencyOrderChangeRequest,
   AgencyPortalAgency,
   AgencyPortalSession,
   AccountOverview,
@@ -18,6 +19,7 @@ import type {
   DashboardSummary,
   DispatchRecommendation,
   Draft,
+  CompanyRegistration,
   Driver,
   DriverSafetyAlert,
   DriverSettlementStatsResponse,
@@ -53,6 +55,7 @@ const API_BASE_URL =
     : "http://127.0.0.1:18765");
 const TOKEN_KEY = "wx_dispatch_token";
 const AGENCY_TOKEN_KEY = "wx_dispatch_agency_token";
+let agencyTokenCache = "";
 
 export function getAuthToken() {
   return window.localStorage.getItem(TOKEN_KEY) || "";
@@ -67,26 +70,31 @@ export function clearAuthToken() {
 }
 
 export function getAgencyToken() {
-  return window.localStorage.getItem(AGENCY_TOKEN_KEY) || "";
+  agencyTokenCache = agencyTokenCache || window.localStorage.getItem(AGENCY_TOKEN_KEY) || "";
+  return agencyTokenCache;
 }
 
 export function setAgencyToken(token: string) {
+  agencyTokenCache = token;
   window.localStorage.setItem(AGENCY_TOKEN_KEY, token);
 }
 
 export function clearAgencyToken() {
+  agencyTokenCache = "";
   window.localStorage.removeItem(AGENCY_TOKEN_KEY);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAuthToken();
+  const agencyToken = path.startsWith("/api/agency-portal") ? getAgencyToken() : "";
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
+      ...(agencyToken ? { "X-Agency-Token": agencyToken } : {}),
     },
-    ...init,
   });
 
   if (!response.ok) {
@@ -151,12 +159,42 @@ export const api = {
     request<{ deleted: boolean }>(`/api/agencies/${id}`, {
       method: "DELETE",
     }),
+  companyRegistrations: async (params?: { keyword?: string; status?: string; company_type?: string }) => {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value) search.set(key, value);
+    });
+    return listFrom<CompanyRegistration>(await request<unknown>(`/api/company-registrations${search.toString() ? `?${search}` : ""}`), ["registrations", "items", "data"]);
+  },
+  createCompanyRegistration: (payload: Partial<CompanyRegistration>) =>
+    request<{ registration: CompanyRegistration }>("/api/company-registrations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateCompanyRegistration: (id: number, payload: Partial<CompanyRegistration>) =>
+    request<{ registration: CompanyRegistration }>(`/api/company-registrations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  uploadCompanyRegistrationFile: (id: number, payload: { file_type: "registry_certificate" | "business_license" | "bank_book"; file_name: string; file_base64: string }) =>
+    request<{ success: boolean; file_type: string; file_url: string; file_name: string }>(`/api/company-registrations/${id}/upload`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   agencyPortalAgencies: async () =>
     listFrom<AgencyPortalAgency>(await request<unknown>("/api/agency-portal/agencies"), ["agencies", "items", "data"]),
-  agencyPortalLogin: (agencyId: number, portalCode: string) =>
+  resolveAgencyPortalAccount: (portalCode: string) =>
+    request<{ agency: AgencyPortalAgency }>(`/api/agency-portal/resolve?portal_code=${encodeURIComponent(portalCode)}`),
+  agencyPortalLogin: (portalCode: string, password: string) =>
     request<AgencyPortalSession>("/api/agency-portal/login", {
       method: "POST",
-      body: JSON.stringify({ agency_id: agencyId, portal_code: portalCode }),
+      body: JSON.stringify({ portal_code: portalCode, password }),
+    }),
+  changeAgencyPortalPassword: (payload: { current_password: string; new_password: string }) =>
+    request<{ success: boolean }>("/api/agency-portal/password", {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
     }),
   agencyPortalOrders: async () =>
     listFrom<Order>(
@@ -167,6 +205,74 @@ export const api = {
     ),
   createAgencyPortalOrder: (payload: Partial<Order>) =>
     request<{ order: Order }>("/api/agency-portal/orders", {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  updateAgencyPortalOrder: (orderId: number, payload: Partial<Order>) =>
+    request<{ order: Order }>(`/api/agency-portal/orders/${orderId}`, {
+      method: "PUT",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  parseAgencyPortalOrders: (text: string, mode: "airport_batch" | "charter_batch" | "charter", batch = false) =>
+    request<{ orders: Partial<Order>[]; count: number; mode: string }>("/api/agency-portal/orders/parse", {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify({ text, mode, batch }),
+    }),
+  queryAgencyFlightInfo: (payload: Partial<Order>) =>
+    request<{ mode: string; flight: Partial<Order>; official_sources?: Array<{ label: string; url: string }> }>("/api/agency-portal/flight-info/query", {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  updateAgencyOrderFlightInfo: (orderId: number, payload: Partial<Order> & { lookup?: boolean; query?: boolean }) =>
+    request<{ success: boolean; order: Order; flight: Partial<Order> }>(`/api/agency-portal/orders/${orderId}/flight-info`, {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  agencyPortalAuctionListings: async (status = "listed") =>
+    listFrom<AuctionListing>(
+      await request<unknown>(`/api/agency-portal/auction-listings?status=${encodeURIComponent(status)}`, {
+        headers: { "X-Agency-Token": getAgencyToken() },
+      }),
+      ["listings", "items", "data"],
+    ),
+  publishAgencyPortalOrderToAuction: (orderId: number, payload: { start_price_jpy: number; buyout_price_jpy: number; auction_duration_hours: 1 | 2 | 4; note?: string }) =>
+    request<{ success: boolean; count: number; listings: Array<{ listing_id: number; order_id: number; oid?: string; listing_code?: string; publish_round?: number; auction_duration_hours?: number }> }>(`/api/agency-portal/orders/${orderId}/publish-auction`, {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  uploadAgencyOrderItineraryPdf: (orderId: number, payload: { file_name: string; file_base64: string }) =>
+    request<{ success: boolean; order_id: number; file_url: string; file_name: string }>(`/api/agency-portal/orders/${orderId}/itinerary-pdf`, {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  uploadAgencyPaymentReceipt: (orderId: number, payload: { file_name: string; file_base64: string }) =>
+    request<{ success: boolean; order_id: number; file_url: string; file_name: string }>(`/api/agency-portal/orders/${orderId}/payment-receipt`, {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify(payload),
+    }),
+  agencyPortalChangeRequests: async () =>
+    listFrom<AgencyOrderChangeRequest>(
+      await request<unknown>("/api/agency-portal/change-requests", {
+        headers: { "X-Agency-Token": getAgencyToken() },
+      }),
+      ["requests", "items", "data"],
+    ),
+  withdrawAgencyPortalOrder: (orderId: number) =>
+    request<{ result: { success: boolean; mode: string; order_id: number; listing_id?: number } }>(`/api/agency-portal/orders/${orderId}/withdraw`, {
+      method: "POST",
+      headers: { "X-Agency-Token": getAgencyToken() },
+      body: JSON.stringify({}),
+    }),
+  createAgencyPortalChangeRequest: (orderId: number, payload: { request_type: "modify" | "cancel"; reason?: string; force?: boolean; changes?: Partial<Order> }) =>
+    request<{ request: AgencyOrderChangeRequest }>(`/api/agency-portal/orders/${orderId}/change-requests`, {
       method: "POST",
       headers: { "X-Agency-Token": getAgencyToken() },
       body: JSON.stringify(payload),
@@ -441,8 +547,42 @@ export const api = {
     listFrom<Order>(await request<unknown>("/api/dispatch/unassigned-orders"), ["orders", "items", "data"]),
   auctionListings: async (status = "listed") =>
     listFrom<AuctionListing>(await request<unknown>(`/api/auction/listings?status=${encodeURIComponent(status)}`), ["listings", "items", "data"]),
-  createAuctionListing: (payload: { order_ids: number[]; start_price_jpy: number; buyout_price_jpy: number; note?: string }) =>
-    request<{ success: boolean; count: number; listings: Array<{ listing_id: number; order_id: number; oid?: string }> }>("/api/auction/listings", {
+  auctionChangeRequests: async (status = "pending") =>
+    listFrom<AgencyOrderChangeRequest>(await request<unknown>(`/api/auction/change-requests?status=${encodeURIComponent(status)}`), ["requests", "items", "data"]),
+  reviewAuctionChangeRequest: (requestId: number, payload: { decision: "approved" | "rejected"; carrier_note?: string }) =>
+    request<{ request: AgencyOrderChangeRequest }>(`/api/auction/change-requests/${requestId}/review`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  requestAuctionPayment: (orderId: number, payload: { amount_jpy?: number; note?: string }) =>
+    request<{ order: Order }>(`/api/auction/orders/${orderId}/payment-request`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  confirmAuctionPayment: (orderId: number, payload: { confirmed_by?: string; note?: string } = {}) =>
+    request<{ order: Order }>(`/api/auction/orders/${orderId}/confirm-payment`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  auctionListingDetail: (listingId: number) =>
+    request<{ listing: AuctionListing & Order & Record<string, unknown> }>(`/api/auction/listings/${listingId}/detail`),
+  claimAuctionListing: (listingId: number, payload: { claim_price_jpy?: number; buyout_price_jpy?: number; note?: string } = {}) =>
+    request<{ listing: AuctionListing }>(`/api/auction/listings/${listingId}/claim`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  queryFlightInfo: (payload: Partial<Order>) =>
+    request<{ mode: string; flight: Partial<Order>; official_sources?: Array<{ label: string; url: string }> }>("/api/flight-info/query", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateOrderFlightInfo: (orderId: number, payload: Partial<Order> & { lookup?: boolean; query?: boolean }) =>
+    request<{ order: Order }>(`/api/orders/${orderId}/flight-info`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  createAuctionListing: (payload: { order_ids: number[]; start_price_jpy: number; buyout_price_jpy: number; auction_duration_hours?: 1 | 2 | 4; note?: string }) =>
+    request<{ success: boolean; count: number; listings: Array<{ listing_id: number; order_id: number; oid?: string; listing_code?: string; publish_round?: number }> }>("/api/auction/listings", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

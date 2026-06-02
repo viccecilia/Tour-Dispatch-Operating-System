@@ -1,7 +1,7 @@
 @import "../../app.wxss";
 
 .dispatch-page {
-  padding-bottom: 330rpx;
+  padding-bottom: 390rpx;
 }
 
 .quick-hero {
@@ -9,6 +9,36 @@
   align-items: center;
   justify-content: space-between;
   gap: 18rpx;
+}
+
+.title-with-help {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.help-dot {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30rpx;
+  height: 30rpx;
+  border-radius: 999rpx;
+  color: #64748b;
+  background: #eef2f7;
+  border: 1rpx solid #dbe3ee;
+  font-size: 21rpx;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.hero-help {
+  color: #dbeafe;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .hero-count {
@@ -81,6 +111,60 @@
 .small-button::after,
 .dispatch-button::after {
   border: 0;
+}
+
+.help-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.help-popover {
+  position: fixed;
+  top: 152rpx;
+  left: 28rpx;
+  right: 28rpx;
+  z-index: 81;
+  padding: 22rpx;
+  border-radius: 24rpx;
+  border: 1rpx solid #dbe3ee;
+  background: #ffffff;
+  box-shadow: 0 22rpx 52rpx rgba(15, 23, 42, 0.16);
+}
+
+.help-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.help-popover-title {
+  color: #0f172a;
+  font-size: 27rpx;
+  font-weight: 950;
+}
+
+.help-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 999rpx;
+  color: #64748b;
+  background: #f1f5f9;
+  font-size: 30rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.help-popover-body {
+  margin-top: 12rpx;
+  color: #475569;
+  font-size: 23rpx;
+  line-height: 1.5;
 }
 
 .import-panel,
@@ -428,20 +512,25 @@
 
 .dispatch-preview {
   position: fixed;
-  left: 22rpx;
-  right: 22rpx;
-  bottom: 128rpx;
+  left: 32rpx;
+  right: 32rpx;
+  bottom: calc(132rpx + env(safe-area-inset-bottom));
   z-index: 1200;
-  border-radius: 26rpx;
+  box-sizing: border-box;
+  border-radius: 24rpx;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 148rpx;
+  grid-template-columns: minmax(0, 1fr) 128rpx;
   align-items: center;
-  gap: 12rpx;
-  padding: 14rpx;
+  gap: 16rpx;
+  padding: 14rpx 16rpx;
   background: #ffffff;
   color: var(--c-text);
   border: 1rpx solid var(--c-border);
   box-shadow: 0 20rpx 46rpx rgba(30, 54, 92, 0.16);
+}
+
+.preview-copy {
+  min-width: 0;
 }
 
 .preview-title {
@@ -463,48 +552,29 @@
 }
 
 .dispatch-button {
-  width: 148rpx;
+  width: 128rpx;
   min-width: 0;
-  height: 64rpx;
+  height: 66rpx;
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  border-radius: 20rpx;
+  border-radius: 18rpx;
   color: #ffffff;
   font-size: 24rpx;
   font-weight: 900;
   border: 0;
-  line-height: 64rpx;
+  line-height: 66rpx;
   overflow: hidden;
-  text-overflow: clip;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .preview-actions {
-  display: block;
-  width: 148rpx;
-  overflow: hidden;
-}
-
-.preview-actions .dispatch-button {
-  display: none;
-}
-
-.preview-actions .dispatch-button:nth-child(2) {
-  display: block;
-}
-
-.preview-actions .dispatch-button:nth-child(2)::before {
-  content: "分配";
-  color: #ffffff;
-}
-
-.preview-actions .dispatch-button:nth-child(2) {
-  color: transparent;
-}
-
-.dispatch-button.secondary {
-  color: #1d4ed8;
-  background: #eff6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 128rpx;
+  min-width: 128rpx;
 }
 
 .dispatch-button.ready {

@@ -2,7 +2,7 @@
   <view class="hero import-hero">
     <view class="hero-eyebrow">BATCH INTAKE</view>
     <view class="hero-title">批次导入</view>
-    <view class="hero-meta">微信 / LINE 文本 -> 草稿 -> 修正 -> 入库</view>
+    <view class="hero-meta">微信 / LINE 文本 -> 草稿 -> 修正 -> 待派</view>
   </view>
 
   <view class="panel stack">
@@ -19,9 +19,9 @@
     <view class="risk-grid">
       <view class="risk-box danger"><text>高风险</text><strong>{{riskSummary.high}}</strong></view>
       <view class="risk-box warning"><text>需修正</text><strong>{{riskSummary.medium}}</strong></view>
-      <view class="risk-box ok"><text>可入库</text><strong>{{riskSummary.ok}}</strong></view>
+      <view class="risk-box ok"><text>可确认</text><strong>{{riskSummary.ok}}</strong></view>
     </view>
-    <button class="button-primary confirm-button" loading="{{loading}}" bindtap="confirmOkDrafts">确认可入库草稿</button>
+    <button class="button-primary confirm-button" loading="{{loading}}" bindtap="confirmOkDrafts">确认正常草稿</button>
   </view>
 
   <view class="panel">
@@ -40,7 +40,7 @@
             <view class="route">{{item.routeText}}</view>
             <view class="muted">{{item.vehicle_type || '待确认车型'}} · ¥{{item.price || 0}} · {{item.agency_name || '待确认旅行社'}}</view>
           </view>
-          <view class="risk-pill {{item.riskLevel}}">{{item.riskLevel === 'ok' ? '可入库' : '需修正'}}</view>
+          <view class="risk-pill {{item.riskLevel}}">{{item.riskLevel === 'ok' ? '可确认' : '需修正'}}</view>
         </view>
 
         <view wx:if="{{item.risks.length}}" class="risk-line">
@@ -50,7 +50,7 @@
         <view class="draft-actions">
           <button class="small-button" data-id="{{item.id}}" bindtap="toggleExpand">{{expandedId === item.id + '' ? '收起' : '展开'}}</button>
           <button class="small-button" data-id="{{item.id}}" bindtap="startEdit">编辑</button>
-          <button class="small-button primary" data-id="{{item.id}}" bindtap="confirmDraft">入库</button>
+          <button class="small-button primary" data-id="{{item.id}}" bindtap="confirmDraft">确认</button>
         </view>
 
         <view wx:if="{{expandedId === item.id + ''}}" class="draft-detail">
