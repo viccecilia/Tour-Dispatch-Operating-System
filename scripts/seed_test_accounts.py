@@ -143,15 +143,18 @@ def main() -> None:
     for carrier in CARRIERS:
         with get_connection() as conn:
             tenant_id = ensure_tenant(conn, carrier["code"], carrier["name"])
+            management_login = company_login_name(carrier["phone"], carrier["code"], carrier["name"])
+            dispatch_login = company_login_name(bump_phone(carrier["phone"], 1), carrier["code"], carrier["name"])
+            operations_login = company_login_name(bump_phone(carrier["phone"], 2), carrier["code"], carrier["name"])
             web_accounts = [
                 ensure_user(conn, tenant_id, f"{carrier['code']}-admin", "admin", f"{carrier['name']} Admin", carrier["phone"]),
                 ensure_user(conn, tenant_id, f"{carrier['code']}-dispatch", "dispatcher", f"{carrier['name']} Dispatcher", bump_phone(carrier["phone"], 1)),
                 ensure_user(conn, tenant_id, f"{carrier['code']}-ops", "operations_manager", f"{carrier['name']} Operations", bump_phone(carrier["phone"], 2)),
+                ensure_user(conn, tenant_id, management_login, "admin", f"{carrier['name']} Admin", carrier["phone"]),
+                ensure_user(conn, tenant_id, dispatch_login, "dispatcher", f"{carrier['name']} Dispatcher", bump_phone(carrier["phone"], 1)),
+                ensure_user(conn, tenant_id, operations_login, "operations_manager", f"{carrier['name']} Operations", bump_phone(carrier["phone"], 2)),
             ]
             drivers = []
-            management_login = company_login_name(carrier["phone"], carrier["code"], carrier["name"])
-            dispatch_login = company_login_name(bump_phone(carrier["phone"], 1), carrier["code"], carrier["name"])
-            operations_login = company_login_name(bump_phone(carrier["phone"], 2), carrier["code"], carrier["name"])
             for driver_code, driver_name, phone in carrier["drivers"]:
                 driver_id = ensure_driver(conn, tenant_id, driver_code, driver_name, phone)
                 username = company_login_name(phone, carrier["code"], carrier["name"])
@@ -183,7 +186,7 @@ def main() -> None:
             for guide_code, guide_name, phone in agency["guides"]:
                 guide_id = ensure_travel_agency_guide(conn, company_id, guide_code, guide_name, phone)
                 account_id = ensure_travel_agency_account(conn, company_id, "agency_guide", guide_name, phone)
-                guide_accounts.append({"guide_code": guide_code, "name": guide_name, "phone": phone, "login": phone, "password_seed": phone[-4:], "guide_id": guide_id, "account_id": account_id})
+                guide_accounts.append({"guide_code": guide_code, "name": guide_name, "phone": phone, "login": phone, "password": PASSWORD, "guide_id": guide_id, "account_id": account_id})
             conn.commit()
         ensure_company_registration("agency", agency)
         agency_accounts.append(
@@ -194,9 +197,9 @@ def main() -> None:
                 "portal_code": agency["portal_code"],
                 "portal_password": AGENCY_PORTAL_PASSWORD,
                 "travel_agency_company_id": company_id,
-                "management_account": {"login": agency["phone"], "password_seed": agency["phone"][-4:], "role": "agency_owner", "account_id": owner},
-                "customer_service_account": {"login": bump_phone(agency["phone"], 1), "password_seed": bump_phone(agency["phone"], 1)[-4:], "role": "agency_customer_service", "account_id": cs},
-                "finance_account": {"login": bump_phone(agency["phone"], 2), "password_seed": bump_phone(agency["phone"], 2)[-4:], "role": "agency_finance", "account_id": finance},
+                "management_account": {"login": agency["phone"], "password": PASSWORD, "role": "agency_owner", "account_id": owner},
+                "customer_service_account": {"login": bump_phone(agency["phone"], 1), "password": PASSWORD, "role": "agency_customer_service", "account_id": cs},
+                "finance_account": {"login": bump_phone(agency["phone"], 2), "password": PASSWORD, "role": "agency_finance", "account_id": finance},
                 "guide_accounts": guide_accounts,
             }
         )
@@ -210,7 +213,7 @@ def main() -> None:
             "车公司 Web 账号写入 users 表，可用用户名和 Test123456 登录。",
             "车公司司机账号写入 drivers + users 表，登录名格式为 公司代码-手机号数字。",
             "旅行社门户使用登录代码 + 密码登录；输入登录代码后页面会识别旅行社名称。",
-            "旅行社内部财务/客服/管理/导游账号写入 travel_agency_accounts 表，password_seed 为手机号后四位；当前如未做旅行社内部账号登录页，这些账号先作为权限与数据结构测试用。",
+            "旅行社内部客服/管理/导游账号写入 travel_agency_accounts 表；Web 和小程序同一账号使用同一密码。",
         ],
     }
     RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -380,7 +383,7 @@ def ensure_travel_agency_account(conn, company_id: int, role: str, display_name:
         (company_id, role, phone),
     ).fetchone()
     permissions = json.dumps(ROLE_MATRIX[role], ensure_ascii=False)
-    seed = phone[-4:]
+    seed = PASSWORD
     if row:
         account_id = int(row["id"])
         conn.execute(
@@ -524,9 +527,9 @@ def render_markdown(result: dict[str, Any]) -> str:
         lines.append(f"| {agency['agency_code']} | `{agency['portal_code']}` | `{agency['portal_password']}` |")
     lines.extend(["", "## 旅行社内部权限账号规划", "", "这些账号用于旅行社内部权限测试：管理、客服、财务、导游。若要在云端启用，需要执行云端测试账号同步。", "", "| 旅行社 | 管理账号 | 客服账号 | 财务账号 | 导游账号 |", "| --- | --- | --- | --- | --- |"])
     for agency in result["agency_portal_accounts"]:
-        guides = "；".join(f"`{g['login']}` / `{g['password_seed']}` {g['name']}" for g in agency["guide_accounts"])
+        guides = "；".join(f"`{g['login']}` / `{g['password']}` {g['name']}" for g in agency["guide_accounts"])
         lines.append(
-            f"| {agency['agency_code']} | `{agency['management_account']['login']}` / `{agency['management_account']['password_seed']}` | `{agency['customer_service_account']['login']}` / `{agency['customer_service_account']['password_seed']}` | `{agency['finance_account']['login']}` / `{agency['finance_account']['password_seed']}` | {guides} |"
+            f"| {agency['agency_code']} | `{agency['management_account']['login']}` / `{agency['management_account']['password']}` | `{agency['customer_service_account']['login']}` / `{agency['customer_service_account']['password']}` | `{agency['finance_account']['login']}` / `{agency['finance_account']['password']}` | {guides} |"
         )
     lines.extend(
         [
@@ -554,6 +557,89 @@ def render_markdown(result: dict[str, Any]) -> str:
             "3. 不 Git push。",
             "4. 不上传小程序。",
             "5. 如云端 API 需要重启，只重启测试环境 API 服务。",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def render_markdown(result: dict[str, Any]) -> str:
+    lines = [
+        "# TourFlow 测试账户",
+        "",
+        "版本：2026-06-03",
+        "目标：本地和云端使用同一套测试账户；同一登录名在 Web 和小程序端使用同一密码。",
+        "",
+        "## 访问地址",
+        "",
+        "| 端口 | 本地 Web | 云端 Web |",
+        "| --- | --- | --- |",
+        "| 平台总控 / 车公司 Web | `http://127.0.0.1:5173/` | `https://admin-trial.taxi-airport.jp/` |",
+        "| 旅行社 Web | `http://127.0.0.1:5173/#agency-portal` | `https://admin-trial.taxi-airport.jp/#agency-portal` |",
+        "| API | `http://127.0.0.1:18765` | `https://api-trial.taxi-airport.jp` |",
+        "",
+        "## 平台总控 Web",
+        "",
+        "| 入口 | 登录名 | 密码 |",
+        "| --- | --- | --- |",
+        f"| 平台总控 Web | `{result['platform_admin']['login']}` | `{result['platform_admin']['password']}` |",
+        "",
+        "## 车公司端 Web / 小程序管理账号",
+        "",
+        "| 公司代码 | 公司名 | 管理账号 | 调度账号 | 运行管理账号 | 旧管理账号 | 旧调度账号 | 旧运行账号 | 密码 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for carrier in result["carrier_accounts"]:
+        lines.append(
+            f"| {carrier['company_code']} | {carrier['company_name']} | `{carrier['management_account']['login']}` | `{carrier['dispatch_account']['login']}` | `{carrier['operations_account']['login']}` | `{carrier['management_account'].get('legacy_login', '')}` | `{carrier['dispatch_account'].get('legacy_login', '')}` | `{carrier['operations_account'].get('legacy_login', '')}` | `{result['default_carrier_password']}` |"
+        )
+
+    lines.extend(["", "## 车公司司机账号", "", "| 公司 | 司机代码 | 司机名 | 电话 | 登录名 | 密码 |", "| --- | --- | --- | --- | --- | --- |"])
+    for carrier in result["carrier_accounts"]:
+        for driver in carrier["drivers"]:
+            lines.append(f"| {carrier['company_code']} | {driver['driver_code']} | {driver['name']} | {driver['phone']} | `{driver['login']}` | `{driver['password']}` |")
+
+    lines.extend(
+        [
+            "",
+            "## 旅行社 Web / 小程序 Portal 登录",
+            "",
+            "| 旅行社代码 | 旅行社名 | 登录代码 | 密码 |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for agency in result["agency_portal_accounts"]:
+        lines.append(f"| {agency['agency_code']} | {agency['agency_name']} | `{agency['portal_code']}` | `{agency['portal_password']}` |")
+
+    lines.extend(
+        [
+            "",
+            "## 旅行社内部角色账号",
+            "",
+            "管理和客服用于旅行社 Web / 小程序权限测试；财务角色当前保留账号数据，前端可按管理端视图合并。",
+            "",
+            "| 旅行社 | 管理账号 | 客服账号 | 财务账号 |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for agency in result["agency_portal_accounts"]:
+        lines.append(
+            f"| {agency['agency_code']} | `{agency['management_account']['login']}` / `{agency['management_account']['password']}` | `{agency['customer_service_account']['login']}` / `{agency['customer_service_account']['password']}` | `{agency['finance_account']['login']}` / `{agency['finance_account']['password']}` |"
+        )
+
+    lines.extend(["", "## 旅行社导游账号", "", "| 旅行社 | 导游 | 登录名 | 密码 |", "| --- | --- | --- | --- |"])
+    for agency in result["agency_portal_accounts"]:
+        for guide in agency["guide_accounts"]:
+            lines.append(f"| {agency['agency_code']} | {guide['name']} | `{guide['login']}` | `{guide['password']}` |")
+
+    lines.extend(
+        [
+            "",
+            "## 说明",
+            "",
+            "- 车公司 Web 和车公司小程序使用同一套账号密码。",
+            "- 旅行社 Web 和旅行社小程序使用同一套账号密码。",
+            "- 旧车公司账号仍保留，便于回归测试；新账号以 `公司代码-手机号数字` 为主。",
+            "- 微信小程序源码更新后，需要用微信开发者工具重新上传版本，手机端才会看到最新 UI。",
         ]
     )
     return "\n".join(lines) + "\n"

@@ -8,7 +8,7 @@ from typing import Optional
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from backend.config import JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, WECHAT_MINIAPP_APPID, WECHAT_MINIAPP_SECRET
+from backend.config import DEMO_MODE, JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, TRIAL_MODE, WECHAT_MINIAPP_APPID, WECHAT_MINIAPP_SECRET
 from backend.db.database import get_connection, hash_password
 from backend.services.audit_service import record_audit
 from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
@@ -483,6 +483,8 @@ def _mark_login(user_id: int | str) -> None:
 
 
 def _requires_wechat(client_type: str, role: str) -> bool:
+    if DEMO_MODE or TRIAL_MODE:
+        return False
     return client_type in MINIAPP_CLIENTS and role in {"driver", "dispatcher", "operations_manager", "admin"}
 
 

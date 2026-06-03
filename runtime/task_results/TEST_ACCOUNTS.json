@@ -53,7 +53,10 @@
       "user_ids": [
         409,
         426,
-        427
+        427,
+        512,
+        513,
+        514
       ]
     },
     {
@@ -104,7 +107,10 @@
       "user_ids": [
         413,
         428,
-        429
+        429,
+        515,
+        516,
+        517
       ]
     },
     {
@@ -155,7 +161,10 @@
       "user_ids": [
         417,
         430,
-        431
+        431,
+        518,
+        519,
+        520
       ]
     }
   ],
@@ -169,19 +178,19 @@
       "travel_agency_company_id": 1,
       "management_account": {
         "login": "080-7101-0000",
-        "password_seed": "0000",
+        "password": "Test123456",
         "role": "agency_owner",
         "account_id": 1
       },
       "customer_service_account": {
         "login": "080-7101-0001",
-        "password_seed": "0001",
+        "password": "Test123456",
         "role": "agency_customer_service",
         "account_id": 2
       },
       "finance_account": {
         "login": "080-7101-0002",
-        "password_seed": "0002",
+        "password": "Test123456",
         "role": "agency_finance",
         "account_id": 3
       },
@@ -191,7 +200,7 @@
           "name": "Mico Yamamoto",
           "phone": "080-7101-0101",
           "login": "080-7101-0101",
-          "password_seed": "0101",
+          "password": "Test123456",
           "guide_id": 1,
           "account_id": 4
         },
@@ -200,7 +209,7 @@
           "name": "Naomi Kuroda",
           "phone": "080-7101-0102",
           "login": "080-7101-0102",
-          "password_seed": "0102",
+          "password": "Test123456",
           "guide_id": 2,
           "account_id": 5
         },
@@ -209,7 +218,7 @@
           "name": "Sho Hayashi",
           "phone": "080-7101-0103",
           "login": "080-7101-0103",
-          "password_seed": "0103",
+          "password": "Test123456",
           "guide_id": 3,
           "account_id": 6
         }
@@ -224,19 +233,19 @@
       "travel_agency_company_id": 2,
       "management_account": {
         "login": "080-7102-0000",
-        "password_seed": "0000",
+        "password": "Test123456",
         "role": "agency_owner",
         "account_id": 7
       },
       "customer_service_account": {
         "login": "080-7102-0001",
-        "password_seed": "0001",
+        "password": "Test123456",
         "role": "agency_customer_service",
         "account_id": 8
       },
       "finance_account": {
         "login": "080-7102-0002",
-        "password_seed": "0002",
+        "password": "Test123456",
         "role": "agency_finance",
         "account_id": 9
       },
@@ -246,7 +255,7 @@
           "name": "Gayun Lee",
           "phone": "080-7102-0101",
           "login": "080-7102-0101",
-          "password_seed": "0101",
+          "password": "Test123456",
           "guide_id": 4,
           "account_id": 10
         },
@@ -255,7 +264,7 @@
           "name": "Emily Childers",
           "phone": "080-7102-0102",
           "login": "080-7102-0102",
-          "password_seed": "0102",
+          "password": "Test123456",
           "guide_id": 5,
           "account_id": 11
         },
@@ -264,7 +273,7 @@
           "name": "Mahesh Patil",
           "phone": "080-7102-0103",
           "login": "080-7102-0103",
-          "password_seed": "0103",
+          "password": "Test123456",
           "guide_id": 6,
           "account_id": 12
         }
@@ -279,19 +288,19 @@
       "travel_agency_company_id": 3,
       "management_account": {
         "login": "080-7103-0000",
-        "password_seed": "0000",
+        "password": "Test123456",
         "role": "agency_owner",
         "account_id": 13
       },
       "customer_service_account": {
         "login": "080-7103-0001",
-        "password_seed": "0001",
+        "password": "Test123456",
         "role": "agency_customer_service",
         "account_id": 14
       },
       "finance_account": {
         "login": "080-7103-0002",
-        "password_seed": "0002",
+        "password": "Test123456",
         "role": "agency_finance",
         "account_id": 15
       },
@@ -301,7 +310,7 @@
           "name": "Noki Shi",
           "phone": "080-7103-0101",
           "login": "080-7103-0101",
-          "password_seed": "0101",
+          "password": "Test123456",
           "guide_id": 7,
           "account_id": 16
         },
@@ -310,7 +319,7 @@
           "name": "Donghan Yang",
           "phone": "080-7103-0102",
           "login": "080-7103-0102",
-          "password_seed": "0102",
+          "password": "Test123456",
           "guide_id": 8,
           "account_id": 17
         },
@@ -319,7 +328,7 @@
           "name": "Mina Okada",
           "phone": "080-7103-0103",
           "login": "080-7103-0103",
-          "password_seed": "0103",
+          "password": "Test123456",
           "guide_id": 9,
           "account_id": 18
         }
@@ -330,6 +339,6 @@
     "车公司 Web 账号写入 users 表，可用用户名和 Test123456 登录。",
     "车公司司机账号写入 drivers + users 表，登录名格式为 公司代码-手机号数字。",
     "旅行社门户使用登录代码 + 密码登录；输入登录代码后页面会识别旅行社名称。",
-    "旅行社内部财务/客服/管理/导游账号写入 travel_agency_accounts 表，password_seed 为手机号后四位；当前如未做旅行社内部账号登录页，这些账号先作为权限与数据结构测试用。"
+    "旅行社内部客服/管理/导游账号写入 travel_agency_accounts 表；Web 和小程序同一账号使用同一密码。"
   ]
 }

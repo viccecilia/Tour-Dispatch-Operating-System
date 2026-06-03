@@ -48,11 +48,12 @@ import type {
   WorkflowRunResult,
 } from "@/types/api";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-    ? window.location.origin
-    : "http://127.0.0.1:18765");
+const DEFAULT_API_BASE_URL =
+  typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ? "http://127.0.0.1:18765"
+    : "https://api-trial.taxi-airport.jp";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL;
 const TOKEN_KEY = "wx_dispatch_token";
 const AGENCY_TOKEN_KEY = "wx_dispatch_agency_token";
 let agencyTokenCache = "";

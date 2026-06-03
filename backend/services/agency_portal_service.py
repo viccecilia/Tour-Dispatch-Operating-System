@@ -158,6 +158,10 @@ def agency_portal_login(payload: dict[str, Any]) -> dict[str, Any] | None:
     password = str(payload.get("password") or "").strip()
     if not portal_code or not password:
         return None
+    if re.search(r"\d", portal_code) and not re.fullmatch(r"[A-Za-z]{2,5}\d{4,}", portal_code):
+        internal_result = _agency_internal_account_login(portal_code, password)
+        if internal_result:
+            return internal_result
     with get_connection() as conn:
         ensure_agency_portal_auth_schema(conn)
         row = conn.execute(
@@ -201,11 +205,80 @@ def agency_portal_login(payload: dict[str, Any]) -> dict[str, Any] | None:
             JOIN agencies ag
               ON UPPER(ag.agency_code) = UPPER(c.company_code)
              AND COALESCE(ag.is_portal_enabled, 1) = 1
-            WHERE a.phone = ?
+            WHERE REPLACE(REPLACE(REPLACE(COALESCE(a.phone, ''), '-', ''), ' ', ''), '+', '') =
+                  REPLACE(REPLACE(REPLACE(COALESCE(?, ''), '-', ''), ' ', ''), '+', '')
               AND COALESCE(a.status, 'active') = 'active'
             LIMIT 1
             """,
             (portal_code,),
+        ).fetchone()
+    if not internal or str(internal["password_seed"] or "") != password:
+        return None
+    agency = {
+        "id": internal["agency_id"],
+        "tenant_id": internal["agency_tenant_id"],
+        "name": internal["agency_name"],
+        "contact_name": internal["contact_name"],
+        "contact_phone": internal["contact_phone"],
+    }
+    token = create_agency_token(
+        agency,
+        {
+            "role": internal["role"],
+            "phone": internal["phone"],
+            "display_name": internal["display_name"],
+            "account_id": internal["account_id"],
+        },
+    )
+    return {
+        "token": token,
+        "agency": _public_agency(agency),
+        "account": {
+            "id": internal["account_id"],
+            "role": internal["role"],
+            "display_name": internal["display_name"],
+            "phone": internal["phone"],
+            "company_id": internal["company_id"],
+            "company_code": internal["company_code"],
+            "company_name": internal["company_name"],
+        },
+    }
+
+
+def _agency_internal_account_login(login_code: str, password: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        internal = conn.execute(
+            """
+            SELECT
+                a.id AS account_id,
+                a.tenant_id,
+                a.company_id,
+                a.role,
+                a.display_name,
+                a.phone,
+                a.password_seed,
+                c.company_code,
+                c.company_name,
+                ag.id AS agency_id,
+                ag.tenant_id AS agency_tenant_id,
+                ag.name AS agency_name,
+                ag.contact_name,
+                ag.contact_phone,
+                ag.portal_code,
+                ag.is_portal_enabled
+            FROM travel_agency_accounts a
+            JOIN travel_agency_companies c
+              ON c.id = a.company_id
+             AND c.tenant_id = a.tenant_id
+            JOIN agencies ag
+              ON UPPER(ag.agency_code) = UPPER(c.company_code)
+             AND COALESCE(ag.is_portal_enabled, 1) = 1
+            WHERE REPLACE(REPLACE(REPLACE(COALESCE(a.phone, ''), '-', ''), ' ', ''), '+', '') =
+                  REPLACE(REPLACE(REPLACE(COALESCE(?, ''), '-', ''), ' ', ''), '+', '')
+              AND COALESCE(a.status, 'active') = 'active'
+            LIMIT 1
+            """,
+            (login_code,),
         ).fetchone()
     if not internal or str(internal["password_seed"] or "") != password:
         return None
