@@ -23,6 +23,11 @@
 ## Post-Deploy
 
 - [ ] Run `python scripts/health_check.py`.
+- [ ] For trial cloud deployment, run `python scripts/verify_trial_deploy.py`.
+- [ ] Confirm hosted Web bundle points to `https://api-trial.taxi-airport.jp`, not the admin domain and not local API.
+- [ ] Confirm cloud API uses `WX_DISPATCH_ENV=trial` and `runtime/trial/wx_dispatch_trial.sqlite3`.
+- [ ] Confirm seeded test accounts log in against the cloud API, not only local DB.
+- [ ] Confirm miniapp API base URL and cached base URL are correct before asking testers to use WeChat DevTools or phone.
 - [ ] Login as admin.
 - [ ] Open Dashboard.
 - [ ] Open Orders.
@@ -42,4 +47,3 @@ Go only if:
 - backup is available
 - audit trail records a test operation
 - rollback file and rollback code are known
-

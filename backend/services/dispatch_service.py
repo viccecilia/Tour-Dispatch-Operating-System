@@ -1,4 +1,4 @@
-import re
+﻿import re
 from typing import Any
 
 from backend.db.database import get_connection
@@ -18,8 +18,6 @@ def list_available_drivers() -> list[dict[str, Any]]:
                   AND tenant_id = ?
                   AND COALESCE(driver_code, '') != ''
                   AND COALESCE(phone, '') LIKE '0%'
-                  AND name NOT LIKE 'R%'
-                  AND name NOT LIKE '财务验证%'
                 ORDER BY id
                 """
                 ,

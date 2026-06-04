@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import hmac
 import json
@@ -603,6 +603,9 @@ def parse_agency_order_text(token: str, payload: dict[str, Any]) -> dict[str, An
     mode = str(payload.get("mode") or payload.get("order_type") or "").strip()
     batch = bool(payload.get("batch")) or mode in {"airport_batch", "batch_airport", "charter_batch", "batch_charter"}
     chunks = split_batch_order_text(text) if batch else [text]
+    agency_chunks = _split_agency_batch_text(text) if batch else []
+    if agency_chunks and len(agency_chunks) >= len(chunks):
+        chunks = agency_chunks
     parsed_orders = [_agency_parsed_order(chunk, mode) for chunk in chunks if str(chunk).strip()]
     return {"orders": parsed_orders, "count": len(parsed_orders), "mode": mode or ("airport_batch" if batch else "charter")}
 
@@ -1581,6 +1584,7 @@ def _agency_parsed_order(text: str, mode: str = "") -> dict[str, Any]:
     if order_type in {"包车", "charter"}:
         result.update(_extract_charter_fields(text))
     result.update(_extract_structured_agency_fields(text, order_type))
+    result.update(_extract_modern_charter_line(text, order_type))
     result.update(_extract_guide_fields(text))
     if result.get("flight_number") and result.get("order_date"):
         result["flight_date"] = result.get("order_date")
@@ -1600,6 +1604,132 @@ def _agency_order_type(parsed_type: Any, text: str, mode: str) -> str:
     if "charter" in mode_text or "包车" in raw or "往返" in raw:
         return "包车"
     return str(parsed_type or "包车")
+
+
+def _split_agency_batch_text(text: str) -> list[str]:
+    """Split agency pasted orders, including date-only charter lines like 6.09日京都-安来2300."""
+    normalized = _normalize_full_width(str(text or "").replace("\r\n", "\n").replace("\r", "\n"))
+    normalized = re.sub(
+        r"(?<!^)\s+(?=(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2})\s*(?:日|号)?)",
+        "\n",
+        normalized,
+    )
+    date_start = re.compile(r"^\s*(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2})\s*(?:日|号)?")
+    chunks: list[str] = []
+    current: list[str] = []
+    for raw_line in normalized.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if date_start.search(line):
+            if current:
+                chunks.append(" ".join(current).strip())
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        chunks.append(" ".join(current).strip())
+    return chunks
+
+
+def _extract_modern_charter_line(text: str, order_type: str = "") -> dict[str, Any]:
+    line = _normalize_full_width(str(text or "").replace("\r\n", " ").replace("\r", " ").replace("\n", " "))
+    line = re.sub(r"\s+", " ", line).strip()
+    if not line:
+        return {}
+
+    lower_mode = str(order_type or "").lower()
+    if any(token in line for token in ["接机", "送机", "机场", "空港", "KIX", "関西机场", "关西机场"]):
+        return {}
+    if not any(token in line for token in ["包车", "游玩", "路程", "车程", "行程"]) and "-" not in line and "到" not in line and "至" not in line:
+        return {}
+    if lower_mode in {"接机", "送机", "airport_transfer"}:
+        return {}
+
+    date_match = re.search(
+        r"^\s*(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2})\s*(?:日|号)?",
+        line,
+    )
+    if not date_match:
+        return {}
+    order_date = _normalize_agency_date(date_match.group(1))
+    body = line[date_match.end():].strip()
+
+    explicit_time = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", body)
+    start_time = f"{int(explicit_time.group(1)):02d}:{explicit_time.group(2)}" if explicit_time else "09:00"
+    if explicit_time:
+        body = f"{body[: explicit_time.start()]} {body[explicit_time.end():]}".strip()
+
+    price_match = re.search(r"(?<!\d)(\d{3,7})(?:\s*(?:円|日元|JPY|人民币|RMB|元))?\s*$", body, re.IGNORECASE)
+    price: float | None = None
+    if price_match:
+        price = float(price_match.group(1))
+        body = body[: price_match.start()].strip()
+
+    duration_match = re.search(r"(?:路程|车程|行程)\s*(\d+(?:\.\d+)?)\s*(?:小时|小時|h|H)", body)
+    duration_hours = float(duration_match.group(1)) if duration_match else 10.0
+    end_time = _add_hours_to_time(start_time, duration_hours)
+
+    route = re.sub(r"[（(]\s*(?:路程|车程|行程).*?[）)]", "", body)
+    route = re.sub(r"\b(?:包车|包車)\b", "", route, flags=re.IGNORECASE)
+    route = re.sub(r"\s+", " ", route).strip(" -、,，")
+    pickup, dropoff = _modern_charter_route_endpoints(route)
+
+    fields: dict[str, Any] = {
+        "order_date": order_date,
+        "end_date": order_date,
+        "start_time": start_time,
+        "end_time": end_time,
+        "order_type": "包车",
+        "pickup_location": pickup,
+        "dropoff_location": dropoff,
+        "remark": f"包车行程：{route}",
+    }
+    if price is not None:
+        fields["price"] = price
+        fields["price_jpy"] = price
+    if duration_match:
+        fields["fee_remark"] = f"路程{duration_hours:g}小时"
+    return {key: value for key, value in fields.items() if value not in (None, "")}
+
+
+def _add_hours_to_time(value: str, hours: float) -> str:
+    try:
+        base = datetime.strptime(value, "%H:%M")
+    except ValueError:
+        base = datetime.strptime("09:00", "%H:%M")
+    result = base + timedelta(minutes=round(hours * 60))
+    if result.day != base.day:
+        return "23:59"
+    return result.strftime("%H:%M")
+
+
+def _modern_charter_route_endpoints(route: str) -> tuple[str, str]:
+    clean = route.strip()
+    if not clean:
+        return "", ""
+    parts = [part.strip(" 、,，") for part in re.split(r"\s*(?:->|→|-|－|到|至)\s*", clean) if part.strip(" 、,，")]
+    if len(parts) >= 2:
+        return parts[0], _trim_optional_note(parts[-1])
+
+    play_match = re.match(r"(.{1,16}?)(?:市区)?游玩(.+)$", clean)
+    if play_match:
+        pickup = play_match.group(1).strip(" 、,，")
+        detail = play_match.group(2).strip(" 、,，")
+        notable = [item.strip(" 、,，") for item in re.split(r"[、,，]", detail) if item.strip(" 、,，")]
+        dropoff = _trim_optional_note(notable[-1] if notable else pickup)
+        return pickup, dropoff or pickup
+    return clean, clean
+
+
+def _trim_optional_note(value: str) -> str:
+    value = re.sub(r"[（(].*?[）)]", "", value).strip()
+    if "游玩" in value:
+        value = value.split("游玩", 1)[0].strip()
+    lake_index = value.find("琵琶湖")
+    if lake_index >= 0:
+        value = value[lake_index:].strip()
+    return value
 
 
 def _extract_structured_agency_fields(text: str, order_type: str = "") -> dict[str, Any]:

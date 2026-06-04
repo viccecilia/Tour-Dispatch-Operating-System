@@ -531,12 +531,7 @@ function StatusText({ status }: { status?: string }) {
 
 function assetUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
-  const base =
-    import.meta.env.VITE_API_BASE_URL ||
-    (typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-      ? window.location.origin
-      : "http://127.0.0.1:18765");
-  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  return `${api.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 function formatRequestChanges(item: AgencyOrderChangeRequest) {

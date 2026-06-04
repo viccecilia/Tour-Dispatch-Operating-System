@@ -2742,12 +2742,7 @@ function InfoBlock({ icon, title, lines }: { icon: React.ReactNode; title: strin
 }
 
 function apiBaseUrl() {
-  return (
-    import.meta.env.VITE_API_BASE_URL ||
-    (typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-      ? window.location.origin
-      : "http://127.0.0.1:18765")
-  );
+  return api.baseUrl;
 }
 
 function apiAssetUrl(path: string) {
