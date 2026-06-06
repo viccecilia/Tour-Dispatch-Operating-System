@@ -1,31 +1,44 @@
 <view class="page driver-theme">
   <view class="hero expense-hero">
-    <view class="hero-eyebrow">DRIVER EXPENSES</view>
-    <view class="hero-title">费用</view>
-    <view class="hero-meta">垫付、代收和司机收入记录。</view>
+    <view class="hero-eyebrow">DRIVER FINANCE</view>
+    <view class="hero-title">费用上报</view>
+    <view class="hero-meta">垫付报销和代收上交都会同步到车公司财务端。</view>
   </view>
 
   <view class="panel">
-    <view class="panel-title">提交费用</view>
     <view class="expense-form">
       <view class="field">
         <view class="field-label">类型</view>
-        <picker range="{{['垫付', '代收']}}" bindchange="onKindChange">
+        <picker range="{{['垫付报销', '代收上交']}}" bindchange="onKindChange">
           <view class="input expense-input picker-cell">
-            <text>{{form.expense_kind === 'collect' ? '代收' : '垫付'}}</text>
+            <text>{{form.expense_kind === 'collect' ? '代收上交' : '垫付报销'}}</text>
             <text class="picker-arrow">切换</text>
           </view>
         </picker>
       </view>
+
       <view class="field">
         <view class="field-label">金额</view>
-        <input class="input expense-input" type="digit" data-key="amount" bindinput="onInput" value="{{form.amount}}" placeholder="请输入金额" />
+        <input class="input expense-input" type="digit" data-key="amount" bindinput="onInput" value="{{form.amount}}" placeholder="输入金额" />
       </view>
+
       <view class="field">
         <view class="field-label">备注</view>
-        <input class="input expense-input" data-key="note" bindinput="onInput" value="{{form.note}}" placeholder="例如停车费、高速费、代收说明" />
+        <input class="input expense-input" data-key="note" bindinput="onInput" value="{{form.note}}" placeholder="例如：高速费 / 停车费 / 客人代收" />
       </view>
-      <button class="button-primary submit-button" bindtap="submitExpense">提交</button>
+
+      <view wx:if="{{form.expense_kind === 'advance'}}" class="receipt-box">
+        <view>
+          <view class="receipt-title">领取书照片</view>
+          <view class="muted">{{form.receipt_file_name || '垫付报销建议上传领取书。'}}</view>
+        </view>
+        <view class="receipt-actions">
+          <button class="button-secondary compact-button" bindtap="chooseReceipt">拍照/上传</button>
+          <button wx:if="{{form.receipt_file_name}}" class="button-ghost compact-button" bindtap="clearReceipt">清除</button>
+        </view>
+      </view>
+
+      <button class="button-primary submit-button" loading="{{saving}}" bindtap="submitExpense">提交</button>
     </view>
   </view>
 
@@ -33,22 +46,25 @@
     <view class="panel-header-lite">
       <view>
         <view class="panel-title">费用记录</view>
-        <view class="muted">只显示当前司机自己的费用。</view>
+        <view class="muted">只显示当前司机自己的垫付和代收。</view>
       </view>
       <view class="soft-count">{{expenses.length}} 条</view>
     </view>
     <view class="expense-list">
       <view wx:for="{{expenses}}" wx:key="id" class="expense-row">
-        <view>
-          <view class="row-title">{{item.expense_kind || item.category || '费用'}}</view>
-          <view class="muted">{{item.note || '-'}} · {{item.created_at || item.reported_at || ''}}</view>
+        <view class="expense-main">
+          <view class="row-title">{{item.kind_label}} · ¥{{item.amount || 0}}</view>
+          <view class="muted">{{item.note || '-'}} · {{item.created_at || item.submitted_at || ''}}</view>
+          <view class="expense-tags">
+            <text>{{item.status_label}}</text>
+            <text>{{item.receipt_label}}</text>
+          </view>
         </view>
-        <view class="amount">¥{{item.amount || 0}}</view>
       </view>
-      <view wx:if="{{!expenses.length && !loading}}" class="empty-state">暂无费用记录。</view>
+      <view wx:if="{{!expenses.length && !loading}}" class="empty-state">暂无费用记录</view>
     </view>
   </view>
 
-  <view wx:if="{{message}}" class="panel muted">{{message}}</view>
+  <view wx:if="{{message}}" class="panel message-line">{{message}}</view>
   <custom-tab-bar />
 </view>

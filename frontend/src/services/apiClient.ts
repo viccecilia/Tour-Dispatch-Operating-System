@@ -53,7 +53,7 @@ const DEFAULT_API_BASE_URL =
     ? "http://127.0.0.1:18765"
     : "https://api-trial.taxi-airport.jp";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL;
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL;
 const TOKEN_KEY = "wx_dispatch_token";
 const AGENCY_TOKEN_KEY = "wx_dispatch_agency_token";
 let agencyTokenCache = "";
@@ -538,6 +538,10 @@ export const api = {
     request<{ draft: Draft }>(`/api/parser/drafts/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
+    }),
+  deleteDraft: (id: number) =>
+    request<{ deleted: boolean; draft?: Draft }>(`/api/parser/drafts/${id}`, {
+      method: "DELETE",
     }),
   confirmDraft: (id: number) =>
     request<{ draft: Draft; order_id: number; order?: Order; already_confirmed?: boolean }>(

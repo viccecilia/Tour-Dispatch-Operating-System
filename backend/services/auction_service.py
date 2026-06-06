@@ -1,7 +1,9 @@
 from typing import Any
 
 from backend.db.database import get_connection
+from backend.services.auth_service import company_code_for_tenant
 from backend.services.flight_info_service import FLIGHT_INFO_FIELDS, ensure_flight_info_schema
+from backend.services.order_number_service import actor_account_code, append_company_order_oid
 from backend.services.tenant_context import get_current_tenant_id
 
 AUCTION_LISTING_COLUMNS = {
@@ -234,7 +236,7 @@ def claim_auction_listing(listing_id: int | str, payload: dict[str, Any] | None 
         _expire_auction_listings(conn)
         listing = conn.execute(
             """
-            SELECT l.*, o.tenant_id AS order_tenant_id
+            SELECT l.*, o.tenant_id AS order_tenant_id, o.oid, o.order_date
             FROM auction_listings l
             JOIN orders o ON o.id = l.order_id
             WHERE l.id = ?
@@ -256,6 +258,22 @@ def claim_auction_listing(listing_id: int | str, payload: dict[str, Any] | None 
             raise ValueError("claim_price_less_than_buyout_price")
         if start_price and final_price > start_price:
             raise ValueError("claim_price_greater_than_start_price")
+        buyer_tenant = conn.execute(
+            "SELECT slug, name FROM tenants WHERE id = ?",
+            (buyer_tenant_id,),
+        ).fetchone()
+        buyer_code = _tenant_order_code(dict(buyer_tenant) if buyer_tenant else None, buyer_tenant_id)
+        serial = _next_buyer_order_serial(conn, buyer_tenant_id, listing["order_date"], buyer_code, listing_id_int)
+        claimed_oid = _unique_claimed_oid(
+            conn,
+            append_company_order_oid(
+                listing["oid"],
+                company_code=buyer_code,
+                order_date=listing["order_date"],
+                account_code=actor_account_code(actor, "A1"),
+                serial=serial,
+            ),
+        )
         conn.execute(
             """
             UPDATE auction_listings
@@ -272,12 +290,13 @@ def claim_auction_listing(listing_id: int | str, payload: dict[str, Any] | None 
         conn.execute(
             """
             UPDATE orders
-            SET dispatch_status = 'auction_claimed',
+            SET oid = ?,
+                dispatch_status = 'auction_claimed',
                 execution_status = 'auction_claimed',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
-            (listing["order_id"], listing["seller_tenant_id"]),
+            (claimed_oid, listing["order_id"], listing["seller_tenant_id"]),
         )
         conn.commit()
     claimed = list_auction_listings("claimed")
@@ -501,6 +520,40 @@ def _money(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _tenant_order_code(row: dict[str, Any] | None, tenant_id: Any) -> str:
+    code = company_code_for_tenant((row or {}).get("slug"), (row or {}).get("name"))
+    return "".join(ch for ch in str(code or "").upper() if ch.isalnum())[:5] or f"T{tenant_id}"
+
+
+def _next_buyer_order_serial(conn, buyer_tenant_id: int, order_date: Any, buyer_code: str, listing_id: int) -> int:
+    date_text = str(order_date or "").replace("-", "").replace("/", "")
+    if len(date_text) == 8:
+        date_text = date_text[2:]
+    pattern = f"%-{buyer_code}{date_text}%"
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM auction_listings l
+        JOIN orders o ON o.id = l.order_id
+        WHERE l.buyer_tenant_id = ?
+          AND l.id <= ?
+          AND o.order_date = ?
+          AND o.oid LIKE ?
+        """,
+        (buyer_tenant_id, listing_id, str(order_date), pattern),
+    ).fetchone()
+    return int(row["count"] if row else 0) + 1
+
+
+def _unique_claimed_oid(conn, oid: str) -> str:
+    base = oid
+    suffix = 1
+    while conn.execute("SELECT 1 FROM orders WHERE oid = ? LIMIT 1", (oid,)).fetchone():
+        suffix += 1
+        oid = f"{base}-{suffix:02d}"
+    return oid
 
 
 def _buyer_tenant_id(payload: dict[str, Any], actor: dict[str, Any] | None) -> int:

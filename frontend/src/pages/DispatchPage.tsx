@@ -67,10 +67,19 @@ function vehicleTags(vehicle?: Vehicle | null) {
   if (!vehicle) return [];
   const tags = [];
   const text = `${vehicle.vehicle_type || ""} ${vehicle.plate_number || ""}`;
-  if (text.includes("绿")) tags.push("绿牌");
-  if (vehicle.vehicle_color || vehicle.color) tags.push(vehicle.vehicle_color || vehicle.color);
   if (vehicle.snow_tire || text.includes("雪")) tags.push("雪胎");
   return tags;
+}
+
+function vehicleLampClass(vehicle?: Vehicle | null) {
+  const status = `${vehicle?.status || ""}`.toLowerCase();
+  if (["busy", "assigned", "maintenance", "inactive"].some((item) => status.includes(item))) {
+    return "bg-amber-500";
+  }
+  const color = `${vehicle?.vehicle_color || vehicle?.color || ""}`.toLowerCase();
+  if (color.includes("green") || color.includes("绿")) return "bg-emerald-500";
+  if (color.includes("white") || color.includes("白")) return "bg-slate-300";
+  return "bg-emerald-500";
 }
 
 function assignmentId(item: Assignment) {
@@ -496,7 +505,7 @@ export function DispatchPage() {
           title="车辆池"
           search={filters.vehicle}
           onSearch={(value) => setFilters((current) => ({ ...current, vehicle: value }))}
-          placeholder="搜索车牌/车型/绿牌"
+          placeholder="搜索车牌/车型/状态"
         >
           {filteredVehicles.map((item) => {
             const tags = vehicleTags(item);
@@ -510,7 +519,10 @@ export function DispatchPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-bold text-slate-950">{item.plate_number}</p>
+                    <p className="flex items-center gap-2 text-sm font-bold text-slate-950">
+                      <span className={`h-2.5 w-2.5 rounded-full ${vehicleLampClass(item)}`} />
+                      <span>{item.plate_number}</span>
+                    </p>
                     <p className="mt-1 text-xs text-slate-500">{item.vehicle_type || "-"} · {item.vehicle_type_code || "-"} · {item.plate_short_code || "-"} · {item.seat_count || "-"}座</p>
                     {tags.length ? <p className="mt-2 flex flex-wrap gap-1">{tags.map((tag) => <span key={tag} className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">{tag}</span>)}</p> : null}
                   </div>

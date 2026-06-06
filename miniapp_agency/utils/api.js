@@ -2,7 +2,7 @@ const API_STORAGE_KEY = 'tourflow_agency_api_base_url';
 const SESSION_STORAGE_KEY = 'tourflow_agency_session';
 const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
-const DEFAULT_BASE_URL = LOCAL_BASE_URL;
+const DEFAULT_BASE_URL = TRIAL_BASE_URL;
 
 const API_CONFIG = {
   baseUrl: DEFAULT_BASE_URL
@@ -23,6 +23,19 @@ function useLocalBaseUrl() {
 
 function useTrialBaseUrl() {
   setBaseUrl(TRIAL_BASE_URL);
+}
+
+function syncEnvironmentBaseUrl() {
+  try {
+    const systemInfo = wx.getSystemInfoSync();
+    if (systemInfo && systemInfo.platform === 'devtools') {
+      setBaseUrl(LOCAL_BASE_URL);
+      return;
+    }
+  } catch (err) {
+    // Keep trial endpoint when environment detection is unavailable.
+  }
+  useTrialBaseUrl();
 }
 
 function getSession() {
@@ -110,6 +123,7 @@ module.exports = {
   getBaseUrl,
   useLocalBaseUrl,
   useTrialBaseUrl,
+  syncEnvironmentBaseUrl,
   getSession,
   setSession,
   clearSession,

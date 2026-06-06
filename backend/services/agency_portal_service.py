@@ -22,6 +22,7 @@ from backend.services.flight_info_service import (
     query_flight_info,
 )
 from backend.services.order_service import create_order
+from backend.services.order_number_service import normalize_account_code, normalize_vehicle_type_label
 from backend.services.parser_service import parse_chinese_order, split_batch_order_text
 from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
 
@@ -370,7 +371,7 @@ def get_agency_by_token(token: str) -> dict[str, Any] | None:
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, tenant_id, name, contact_name, contact_phone, is_portal_enabled
+            SELECT id, tenant_id, agency_code, name, contact_name, contact_phone, is_portal_enabled
             FROM agencies
             WHERE id = ? AND tenant_id = ? AND COALESCE(is_portal_enabled, 1) = 1
             """,
@@ -383,6 +384,7 @@ def get_agency_by_token(token: str) -> dict[str, Any] | None:
     agency["account_role"] = payload.get("account_role")
     agency["account_phone"] = payload.get("account_phone")
     agency["account_display_name"] = payload.get("account_display_name")
+    agency["account_code"] = payload.get("account_code") or normalize_account_code(None, payload.get("account_role"), "A1")
     set_current_tenant_id(agency["tenant_id"])
     return agency
 
@@ -520,7 +522,8 @@ def create_agency_order(token: str, payload: dict[str, Any]) -> dict[str, Any]:
         "agency_id": agency["id"],
         "agency_name": agency["name"],
         "order_source": "agency_portal",
-        "order_note_code": "A",
+        "order_note_code": agency.get("agency_code") or "A",
+        "created_by_dispatcher_code": agency.get("account_code") or "A1",
         "price": payload.get("price"),
         "price_jpy": payload.get("price_jpy") or payload.get("price"),
         "fee_remark": payload.get("fee_remark"),
@@ -1349,6 +1352,7 @@ def create_agency_token(agency: dict[str, Any], account: dict[str, Any] | None =
                 "account_role": account.get("role"),
                 "account_phone": account.get("phone"),
                 "account_display_name": account.get("display_name"),
+                "account_code": account.get("account_code") or normalize_account_code(None, account.get("role"), "A1"),
             }
         )
     signing_input = f"{_b64_json(header)}.{_b64_json(payload)}"
@@ -1589,6 +1593,9 @@ def _agency_parsed_order(text: str, mode: str = "") -> dict[str, Any]:
     if result.get("flight_number") and result.get("order_date"):
         result["flight_date"] = result.get("order_date")
     result["remark"] = _merge_text(result.get("remark"), f"原始解析文本：{text}")
+    vehicle_label = normalize_vehicle_type_label(result.get("vehicle_type"), text)
+    if vehicle_label:
+        result["vehicle_type"] = vehicle_label
     return {key: value for key, value in result.items() if value not in (None, "")}
 
 
@@ -1599,7 +1606,20 @@ def _agency_order_type(parsed_type: Any, text: str, mode: str) -> str:
         return "接机"
     if any(token in raw for token in ["送机", "送機", "单送", "單送", "departure", "dropoff"]):
         return "送机"
-    if "airport" in mode_text or "airport" in raw or any(token in raw for token in ["机场", "空港", "接机", "送机", "haneda", "narita", "kansai"]):
+    airport_tokens = ["机场", "空港", "haneda", "narita", "kansai", "kix", "itm", "nrt", "hnd", "ukb", "关西", "関西"]
+    if "airport" in mode_text or "airport" in raw or any(token in raw for token in airport_tokens):
+        route_parts = [part for part in re.split(r"->|→|>|-|－|—", raw) if part.strip()]
+        if len(route_parts) >= 2:
+            left = route_parts[0]
+            right = route_parts[-1]
+            left_airport = any(token in left for token in airport_tokens)
+            right_airport = any(token in right for token in airport_tokens)
+            if right_airport and not left_airport:
+                return "送机"
+            if left_airport and not right_airport:
+                return "接机"
+        if re.search(r"(?:->|→|>|-|－|—)\s*(?:kix|itm|nrt|hnd|ukb|关西|関西|[^ ]*机场|[^ ]*空港)", raw):
+            return "送机"
         return "接机"
     if "charter" in mode_text or "包车" in raw or "往返" in raw:
         return "包车"
@@ -1637,6 +1657,10 @@ def _extract_modern_charter_line(text: str, order_type: str = "") -> dict[str, A
     line = re.sub(r"\s+", " ", line).strip()
     if not line:
         return {}
+
+    readable = _extract_readable_charter_line(line, order_type)
+    if readable:
+        return readable
 
     lower_mode = str(order_type or "").lower()
     if any(token in line for token in ["接机", "送机", "机场", "空港", "KIX", "関西机场", "关西机场"]):
@@ -1691,6 +1715,112 @@ def _extract_modern_charter_line(text: str, order_type: str = "") -> dict[str, A
     if duration_match:
         fields["fee_remark"] = f"路程{duration_hours:g}小时"
     return {key: value for key, value in fields.items() if value not in (None, "")}
+
+
+def _extract_readable_charter_line(line: str, order_type: str = "") -> dict[str, Any]:
+    """Parse readable Chinese charter rows and keep the full route chain.
+
+    Examples:
+    6.08 神户-箕面-池田-神户 包车 3代 绿
+    6.15 尾道市 包车 3代 绿
+    """
+    lower_mode = str(order_type or "").lower()
+    if lower_mode in {"接机", "送机", "airport_transfer"}:
+        return {}
+    airport_tokens = ["接机", "送机", "机场", "空港", "KIX", "ITM", "NRT", "HND", "関西机场", "关西机场"]
+    if any(token in line for token in airport_tokens) and "包车" not in line and "包車" not in line:
+        return {}
+
+    date_match = re.search(r"^\s*(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2})\s*(?:日|号)?", line)
+    if not date_match:
+        return {}
+    order_date = _normalize_agency_date(date_match.group(1))
+    body = line[date_match.end():].strip()
+
+    time_match = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", body)
+    start_time = f"{int(time_match.group(1)):02d}:{time_match.group(2)}" if time_match else "09:00"
+    if time_match:
+        body = f"{body[: time_match.start()]} {body[time_match.end():]}".strip()
+
+    duration_hours = 10.0
+    duration_match = re.search(r"(?:路程|行程|车程)?\s*(\d+(?:\.\d+)?)\s*(?:小时|小時|h|H)", body)
+    duration_note = ""
+    if duration_match:
+        duration_hours = float(duration_match.group(1))
+        duration_note = f"路程{duration_hours:g}小时"
+        body = f"{body[: duration_match.start()]} {body[duration_match.end():]}".strip()
+
+    price: float | None = None
+    price_match = re.search(r"(?<!\d)(\d{3,7})(?:\s*(?:元|円|日元|JPY|RMB|人民币)?)\s*$", body, flags=re.I)
+    if price_match:
+        price = float(price_match.group(1))
+        body = body[: price_match.start()].strip()
+
+    charter_match = re.search(r"(?:包车|包車|包车单|包車單)", body)
+    if not charter_match and "-" not in body and "－" not in body and "—" not in body:
+        return {}
+
+    if charter_match:
+        route_part = body[: charter_match.start()].strip()
+        meta_part = body[charter_match.end():].strip()
+    else:
+        route_part = body
+        meta_part = ""
+
+    vehicle_match = re.search(r"(\d+\s*(?:代|座|人|台|臺))", meta_part) or re.search(r"(\d+\s*(?:代|座|人|台|臺))", route_part)
+    vehicle_type = re.sub(r"\s+", "", vehicle_match.group(1)) if vehicle_match else ""
+    if vehicle_match and vehicle_match.re is not None:
+        route_part = route_part.replace(vehicle_match.group(0), " ")
+
+    fee_parts: list[str] = []
+    if duration_note:
+        fee_parts.append(duration_note)
+    if re.search(r"(?:^|[\s;；,，])绿(?:牌|色)?", meta_part) or "绿牌" in meta_part:
+        fee_parts.append("绿牌")
+    if "英文司机" in meta_part:
+        fee_parts.append("英文司机")
+
+    route_part = _clean_readable_route_text(route_part)
+    route_points = _split_readable_route_points(route_part)
+    if not route_points:
+        return {}
+    route_summary = f"{route_points[0]} 包车" if len(route_points) == 1 else " -> ".join(route_points)
+    pickup, dropoff = route_points[0], route_points[-1]
+
+    fields: dict[str, Any] = {
+        "order_date": order_date,
+        "end_date": order_date,
+        "start_time": start_time,
+        "end_time": _add_hours_to_time(start_time, duration_hours),
+        "order_type": "包车",
+        "pickup_location": pickup,
+        "dropoff_location": dropoff,
+        "remark": f"完整路线：{route_summary}",
+    }
+    if vehicle_type:
+        fields["vehicle_type"] = vehicle_type
+    if price is not None:
+        fields["price"] = price
+        fields["price_jpy"] = price
+    if fee_parts:
+        fields["fee_remark"] = "；".join(fee_parts)
+    return {key: value for key, value in fields.items() if value not in (None, "")}
+
+
+def _clean_readable_route_text(value: str) -> str:
+    text = str(value or "")
+    text = re.sub(r"[（(].*?[）)]", " ", text)
+    text = re.sub(r"\b\d+\s*(?:代|座|人|台|臺)\b", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" -－—,，;；。.")
+
+
+def _split_readable_route_points(value: str) -> list[str]:
+    text = _clean_readable_route_text(value)
+    if not text:
+        return []
+    parts = [part.strip(" -－—,，;；。.") for part in re.split(r"\s*(?:->|→|－|—|-|到|至)\s*", text)]
+    return [part for part in parts if part]
 
 
 def _add_hours_to_time(value: str, hours: float) -> str:
@@ -1766,7 +1896,7 @@ def _extract_structured_agency_fields(text: str, order_type: str = "") -> dict[s
             if not hotel:
                 fields["pickup_location"] = stops[0]
             fields["remark"] = f"完整路线：{' -> '.join(stops)}"
-    elif "->" in line:
+    elif "->" in line and not compact_transfer:
         route_source = _route_segment_from_line(line)
         stops = _split_route_stops(route_source)
         if len(stops) >= 2:
@@ -1876,17 +2006,31 @@ def _extract_compact_airport_transfer(line: str, fallback_type: str = "") -> dic
     order_type = "接机" if fallback_type not in {"送机", "送機"} else "送机"
     pickup = ""
     dropoff = ""
-    if re.search(r"接机|接機", compact):
+    route_parts = [part for part in re.split(r"->|→|>|-|－|—", compact) if part]
+    if len(route_parts) >= 2:
+        left = _normalize_compact_place(route_parts[0])
+        right = _normalize_compact_place(route_parts[-1])
+        left_airport = _find_airport_alias(left)
+        right_airport = _find_airport_alias(right)
+        if left_airport and not right_airport:
+            order_type = "接机"
+            pickup = left_airport[0]
+            dropoff = right
+        elif right_airport and not left_airport:
+            order_type = "送机"
+            pickup = left
+            dropoff = right_airport[0]
+    if not pickup and re.search(r"接机|接機", compact):
         order_type = "接机"
         parts = re.split(r"接机|接機", compact, maxsplit=1)
         pickup = _normalize_compact_place(parts[0] or (airport[0] if airport else ""))
         dropoff = _normalize_compact_place(parts[1] if len(parts) > 1 else "")
-    elif re.search(r"送机|送機|单送|單送", compact):
+    elif not pickup and re.search(r"送机|送機|单送|單送", compact):
         order_type = "送机"
         parts = re.split(r"送机|送機|单送|單送", compact, maxsplit=1)
         pickup = _normalize_compact_place(parts[0] if parts else "")
         dropoff = _normalize_compact_place(parts[1] if len(parts) > 1 else (airport[0] if airport else ""))
-    elif airport:
+    elif not pickup and airport:
         std, alias, index = airport
         alias_len = len(re.sub(r"\s+", "", alias))
         before = compact[:index]
@@ -1962,6 +2106,9 @@ def _route_segment_from_line(line: str) -> str:
 
 
 def _extract_vehicle_type(value: str) -> str:
+    label = normalize_vehicle_type_label(value)
+    if label:
+        return label
     match = re.search(r"\b(Hiace|Alphard|Vellfire|Coaster|Sedan|Van|Bus)\b|(\d+\s*座)|(\d+\s*代)", value, re.IGNORECASE)
     if not match:
         return ""

@@ -34,14 +34,18 @@
         <view class="summary-note">{{statusHint}}</view>
       </view>
 
-      <view class="summary-side">
-        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'orders' ? 'active' : ''}}" data-mode="orders" bindtap="switchPanel">
-          <text>今日订单</text>
-          <strong>{{dashboard.counts.today_orders || 0}}</strong>
+      <view class="summary-side {{!isOperationsManager ? 'driver-summary-side' : ''}}">
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip summary-wide {{panelMode === 'orders' ? 'active' : ''}} {{driverOrderChipAlert ? 'danger' : ''}}" data-mode="orders" bindtap="switchPanel">
+          <text>{{driverOrderChipLabel}}</text>
+          <strong>{{driverOrderChipCount}}</strong>
         </view>
-        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'pending' ? 'active' : ''}}" data-mode="pending" bindtap="switchPanel">
-          <text>待确认</text>
-          <strong>{{dashboard.counts.pending_confirmations || 0}}</strong>
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'unread' ? 'active' : ''}}" data-mode="unread" bindtap="switchPanel">
+          <text>未读通知</text>
+          <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
+        </view>
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'all' ? 'active' : ''}}" data-mode="all" bindtap="switchPanel">
+          <text>全部订单</text>
+          <strong>{{driverAssignments.length || 0}}</strong>
         </view>
         <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'tasks' ? 'active' : ''}}" data-section="tasks" bindtap="switchOperationsSection">
           <text>司机任务</text>
@@ -93,21 +97,6 @@
           </view>
         </view>
         <view wx:if="{{!operationsDetailRows.length}}" class="empty-state">暂无数据</view>
-      </view>
-    </view>
-
-    <view wx:else class="status-strip">
-      <view class="status-card good {{panelMode === 'orders' ? 'active' : ''}}" data-mode="orders" bindtap="switchPanel">
-        <text>在线司机</text>
-        <strong>{{dashboard.counts.online_drivers || 0}}</strong>
-      </view>
-      <view class="status-card warn {{panelMode === 'exceptions' ? 'active' : ''}}" data-mode="exceptions" bindtap="switchPanel">
-        <text>异常订单</text>
-        <strong>{{dashboard.counts.exception_orders || dashboard.counts.incident_orders || 0}}</strong>
-      </view>
-      <view class="status-card notice {{panelMode === 'unread' ? 'active' : ''}}" data-mode="unread" bindtap="switchPanel">
-        <text>未读通知</text>
-        <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
       </view>
     </view>
 

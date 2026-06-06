@@ -15,7 +15,12 @@ from backend.services.location_service import (
     normalize_time_token,
 )
 from backend.services.order_service import create_order
-from backend.services.order_number_service import build_order_oid, normalize_source_code, normalize_vehicle_type_code
+from backend.services.order_number_service import (
+    build_order_oid,
+    normalize_source_code,
+    normalize_vehicle_type_code,
+    normalize_vehicle_type_label,
+)
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -96,6 +101,8 @@ EDITABLE_FIELDS = [
     "source_channel",
 ]
 
+_AGENCY_PARSER_OVERLAY_ACTIVE = False
+
 
 def parse_text_to_draft(raw_text: str, source_type: str = "text") -> dict[str, Any]:
     raw_text = normalize_parser_input(raw_text)
@@ -112,7 +119,7 @@ def parse_text_to_draft(raw_text: str, source_type: str = "text") -> dict[str, A
     parsed["raw_text"] = raw_text
     parsed["source_type"] = source_type
     parsed["parse_status"] = parse_status
-    parsed["remark"] = _merge_remark(parsed.get("remark"), raw_text)
+    parsed["remark"] = parsed.get("remark")
     parsed["parse_result_json"] = json.dumps(
         {
             "status": parse_status,
@@ -326,7 +333,7 @@ def confirm_draft(draft_id: str) -> dict[str, Any] | None:
             "parking_fee_jpy": draft.get("parking_fee_jpy"),
             "other_fee_jpy": draft.get("other_fee_jpy"),
             "driver_salary_jpy": draft.get("driver_salary_jpy"),
-            "remark": _merge_remark(draft.get("remark"), f"原始文本：{draft.get('raw_text') or ''}"),
+            "remark": draft.get("remark"),
             "dispatch_status": "unassigned",
             "settlement_status": "pending",
             "source_channel": draft.get("source_channel"),
@@ -352,12 +359,12 @@ def discard_draft(draft_id: str) -> dict[str, Any] | None:
     draft = get_draft(draft_id)
     if not draft:
         return None
-    remark = _merge_remark(draft.get("remark"), "草稿已废弃，原始文本保留。")
+    remark = _merge_remark(draft.get("remark"), "解析草稿已删除，原始文本保留。")
     with get_connection() as conn:
         conn.execute(
             """
             UPDATE order_drafts
-            SET parse_status = 'failed',
+            SET parse_status = 'discarded',
                 remark = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -405,7 +412,7 @@ def parse_chinese_order(text: str) -> dict[str, Any]:
     parsed["pickup_location"] = pickup
     parsed["dropoff_location"] = dropoff
     parsed["order_type"] = _extract_order_type(raw)
-    parsed["vehicle_type"] = identify_vehicle_type(raw)
+    parsed["vehicle_type"] = normalize_vehicle_type_label(identify_vehicle_type(raw), raw)
     parsed["vehicle_class"] = parsed["vehicle_type"]
     parsed["vehicle_type_code"] = normalize_vehicle_type_code(parsed["vehicle_type"])
     parsed["order_note_code"] = _extract_order_note_code(raw)
@@ -533,6 +540,8 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
     """Overlay clean real-order rules from the legacy parser onto the current parser output."""
     if not raw:
         return
+    if _apply_agency_parser_overlay(raw, parsed):
+        return
     date_value = _real_extract_date(raw)
     start_time, end_time = _real_extract_times(raw)
     if date_value:
@@ -552,7 +561,7 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
     if order_type:
         parsed["order_type"] = order_type
 
-    vehicle_type = _real_identify_vehicle_type(raw)
+    vehicle_type = normalize_vehicle_type_label(_real_identify_vehicle_type(raw), raw)
     if vehicle_type:
         parsed["vehicle_type"] = vehicle_type
         parsed["vehicle_class"] = vehicle_type
@@ -577,6 +586,58 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
     if remarks:
         parsed["fee_remark"] = _merge_remark(parsed.get("fee_remark"), "；".join(remarks))
     parsed["remark"] = _merge_remark(parsed.get("remark"), raw)
+
+
+def _apply_agency_parser_overlay(raw: str, parsed: dict[str, Any]) -> bool:
+    """Reuse the newest agency parser as the shared readable-text parser.
+
+    The agency parser calls parse_chinese_order internally, so this guard avoids
+    recursive overlay while still allowing carrier drafts to use the same rules.
+    """
+    global _AGENCY_PARSER_OVERLAY_ACTIVE
+    if _AGENCY_PARSER_OVERLAY_ACTIVE:
+        return False
+    try:
+        _AGENCY_PARSER_OVERLAY_ACTIVE = True
+        from backend.services.agency_portal_service import _agency_parsed_order
+
+        shared = _agency_parsed_order(raw, "mixed")
+    except Exception:
+        return False
+    finally:
+        _AGENCY_PARSER_OVERLAY_ACTIVE = False
+
+    meaningful = any(shared.get(key) for key in ("order_date", "pickup_location", "dropoff_location", "order_type", "vehicle_type", "price"))
+    if not meaningful:
+        return False
+    parsed["remark"] = None
+    route_note = _shared_parser_route_note(shared.get("remark"))
+    if route_note:
+        parsed["fee_remark"] = _merge_remark(parsed.get("fee_remark"), route_note)
+    for key, value in shared.items():
+        if key in {"flight_date", "flight_status", "remark"}:
+            continue
+        if value not in (None, ""):
+            if key == "fee_remark" and parsed.get("fee_remark"):
+                parsed[key] = _merge_remark(parsed.get("fee_remark"), value)
+                continue
+            parsed[key] = value
+    if parsed.get("vehicle_type"):
+        parsed["vehicle_type"] = normalize_vehicle_type_label(parsed.get("vehicle_type"), raw)
+        parsed["vehicle_class"] = parsed.get("vehicle_type")
+        parsed["vehicle_type_code"] = normalize_vehicle_type_code(parsed.get("vehicle_type"))
+    if parsed.get("price") is not None:
+        parsed["price_rmb"] = parsed.get("price")
+    return True
+
+
+def _shared_parser_route_note(value: Any) -> str:
+    text = str(value or "")
+    match = re.search(r"(?:完整路线|包车行程)[:：]\s*([^\n；;]+)", text)
+    if not match:
+        return ""
+    route = match.group(1).strip()
+    return f"完整路线：{route}" if route else ""
 
 
 def _real_extract_date(text: str) -> str | None:

@@ -197,6 +197,8 @@ def get_driver_settlement_stats(params: dict[str, Any] | None = None) -> dict:
     params = params or {}
     where, values = _finance_filters(params, include_driver_settlement=False)
     tenant_id = get_current_tenant_id()
+    transfer_types = ("接机", "送机", "机场接送", "送迎", "airport_pickup", "airport_dropoff", "airport_transfer", "airport")
+    charter_types = ("包车", "市内包车", "charter")
     with get_connection() as conn:
         rows = [
             dict(row)
@@ -206,9 +208,9 @@ def get_driver_settlement_stats(params: dict[str, Any] | None = None) -> dict:
                     d.id AS driver_id,
                     COALESCE(NULLIF(d.name, ''), '未派司机') AS driver_name,
                     COUNT(DISTINCT o.id) AS completed_order_count,
-                    SUM(CASE WHEN o.order_type IN ('接机', '送机', '机场接送', 'airport_pickup', 'airport_dropoff', 'airport') THEN 1 ELSE 0 END) AS airport_order_count,
-                    SUM(CASE WHEN o.order_type IN ('包车', 'charter') THEN 1 ELSE 0 END) AS charter_order_count,
-                    SUM(CASE WHEN o.order_type NOT IN ('接机', '送机', '机场接送', 'airport_pickup', 'airport_dropoff', 'airport', '包车', 'charter') OR o.order_type IS NULL THEN 1 ELSE 0 END) AS other_order_count,
+                    SUM(CASE WHEN o.order_type IN ({','.join('?' for _ in transfer_types)}) THEN 1 ELSE 0 END) AS airport_order_count,
+                    SUM(CASE WHEN o.order_type IN ({','.join('?' for _ in charter_types)}) THEN 1 ELSE 0 END) AS charter_order_count,
+                    SUM(CASE WHEN o.order_type NOT IN ({','.join('?' for _ in (*transfer_types, *charter_types))}) OR o.order_type IS NULL THEN 1 ELSE 0 END) AS other_order_count,
                     COALESCE(SUM(o.price), 0) AS total_order_amount,
                     COALESCE(SUM(o.driver_advance_amount), 0) AS driver_advance_amount,
                     COALESCE(SUM(COALESCE(o.driver_collect_amount, o.collection_amount_jpy, 0)), 0) AS driver_collect_amount,
@@ -224,7 +226,7 @@ def get_driver_settlement_stats(params: dict[str, Any] | None = None) -> dict:
                 GROUP BY d.id, d.name
                 ORDER BY completed_order_count DESC, total_order_amount DESC
                 """,
-                [tenant_id, *values],
+                [*transfer_types, *charter_types, *transfer_types, *charter_types, tenant_id, *values],
             ).fetchall()
         ]
     return {
@@ -242,7 +244,6 @@ def get_driver_settlement_stats(params: dict[str, Any] | None = None) -> dict:
             "settled_driver_settlement_amount": sum(_num(row.get("settled_driver_settlement_amount")) for row in rows),
         },
     }
-
 
 def get_driver_income_summary(driver_id: Any, params: dict[str, Any] | None = None) -> dict[str, Any]:
     params = params or {}
@@ -276,8 +277,8 @@ def get_driver_income_summary(driver_id: Any, params: dict[str, Any] | None = No
             SELECT
                 COUNT(DISTINCT o.id) AS order_count,
                 COALESCE(SUM(CASE WHEN o.execution_status IN ('completed', 'returned') THEN 1 ELSE 0 END), 0) AS completed_count,
-                COALESCE(SUM(CASE WHEN o.order_type IN ('接机', '送机', '机场接送', 'airport_pickup', 'airport_dropoff', 'airport') THEN 1 ELSE 0 END), 0) AS airport_order_count,
-                COALESCE(SUM(CASE WHEN o.order_type IN ('包车', 'charter') THEN 1 ELSE 0 END), 0) AS charter_order_count,
+                COALESCE(SUM(CASE WHEN o.order_type IN ('接机', '送机', '机场接送', '送迎', 'airport_pickup', 'airport_dropoff', 'airport_transfer', 'airport') THEN 1 ELSE 0 END), 0) AS airport_order_count,
+                COALESCE(SUM(CASE WHEN o.order_type IN ('包车', '市内包车', 'charter') THEN 1 ELSE 0 END), 0) AS charter_order_count,
                 COALESCE(SUM(COALESCE(o.driver_salary_jpy, 0)), 0) AS salary_amount,
                 COALESCE(SUM(COALESCE(o.driver_advance_amount, 0)), 0) AS advance_amount,
                 COALESCE(SUM(COALESCE(o.driver_collect_amount, o.collection_amount_jpy, 0)), 0) AS collect_amount,
@@ -330,7 +331,7 @@ def get_driver_income_summary(driver_id: Any, params: dict[str, Any] | None = No
         "date_to": date_to,
         "monthly": _income_row(month_row, include_type_counts=True),
         "recent_orders": [_driver_income_order(dict(row)) for row in recent_rows],
-        "note": "司机端只展示司机工资、垫付、代收和司机结算状态，不展示订单销售价格。",
+        "note": "司机端只展示司机自己的工资、垫付、代收和结算状态，不展示订单毛利价格。",
     }
 
 

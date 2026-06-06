@@ -210,6 +210,7 @@ export type Order = {
   remark?: string;
   dispatch_status?: string;
   settlement_status?: string;
+  source_channel?: string;
   execution_status?: string;
   agency_settlement_status?: string;
   payment_amount_jpy?: number;
@@ -227,6 +228,7 @@ export type Order = {
   driver_name?: string;
   driver_phone?: string;
   assigned_driver_code?: string;
+  assigned_driver_name?: string;
   assigned_driver_language?: string;
   vehicle_id?: number;
   plate_number?: string;
@@ -438,6 +440,7 @@ export type Driver = {
 export type Vehicle = {
   id: number;
   plate_number: string;
+  plate_no?: string;
   vehicle_type?: string;
   seat_count?: number;
   status?: string;

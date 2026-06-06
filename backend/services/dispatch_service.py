@@ -2,7 +2,7 @@
 from typing import Any
 
 from backend.db.database import get_connection
-from backend.services.order_number_service import build_order_oid, normalize_vehicle_type_code, plate_short_code
+from backend.services.order_number_service import build_execution_order_oid, normalize_vehicle_type_code, plate_short_code
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -124,7 +124,7 @@ def list_assignments(status: str | None = "active") -> list[dict[str, Any]]:
         return [dict(row) for row in conn.execute(" ".join(sql), params).fetchall()]
 
 
-def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any) -> dict[str, Any]:
+def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized_order_ids = _normalize_ids(order_ids)
     driver_id_int = _to_int(driver_id)
     vehicle_id_int = _to_int(vehicle_id)
@@ -251,7 +251,7 @@ def cancel_assignment(assignment_id: Any = None, order_id: Any = None) -> dict[s
     }
 
 
-def reassign_orders(order_ids: list[Any], new_driver_id: Any, new_vehicle_id: Any) -> dict[str, Any]:
+def reassign_orders(order_ids: list[Any], new_driver_id: Any, new_vehicle_id: Any, actor: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized_order_ids = _normalize_ids(order_ids)
     cancelled_ids: list[int] = []
     with get_connection() as conn:
@@ -290,7 +290,7 @@ def reassign_orders(order_ids: list[Any], new_driver_id: Any, new_vehicle_id: An
             )
         conn.commit()
 
-    assigned = assign_orders(normalized_order_ids, new_driver_id, new_vehicle_id)
+    assigned = assign_orders(normalized_order_ids, new_driver_id, new_vehicle_id, actor=actor)
     return {
         "success": assigned["success"],
         "new_assignment_ids": assigned["assignment_ids"],
@@ -577,18 +577,14 @@ def _mark_vehicle_available_if_idle(conn, vehicle_id: Any) -> None:
 
 
 def _build_assigned_oid(conn, order: dict[str, Any], vehicle: dict[str, Any], driver: dict[str, Any]) -> str:
-    serial = _serial_for_order(conn, order)
     vehicle_code = vehicle.get("vehicle_type_code") or normalize_vehicle_type_code(order.get("vehicle_type_code"), order.get("vehicle_type"), vehicle.get("vehicle_type"))
-    return build_order_oid(
-        order_note_code=order.get("order_note_code"),
-        order_source=order.get("order_source"),
-        order_date=order.get("order_date"),
-        serial=serial,
+    base_oid = order.get("oid") or f"D000000A1-{_serial_for_order(conn, order):04d}"
+    return build_execution_order_oid(
+        base_oid,
         plate_code=vehicle.get("plate_short_code") or plate_short_code(vehicle.get("plate_number")),
         driver_code=order.get("driver_code") or driver.get("driver_code"),
         driver_name=driver.get("name"),
         vehicle_type_code=vehicle_code,
-        temporary=False,
     )
 
 

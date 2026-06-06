@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>司机首页点呼按钮 Demo</title>
+  <style>
+    :root {
+      --bg: #eef7f5;
+      --card: #ffffff;
+      --text: #071527;
+      --muted: #597083;
+      --line: #d9e7ef;
+      --teal: #0f766e;
+      --teal2: #14b8a6;
+      --soft: #e9fbf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+      background: #f2f6f8;
+      color: var(--text);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .note { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 22px;
+      align-items: start;
+    }
+    .demo {
+      border: 1px solid #dbe6ee;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 16px 38px rgba(15, 23, 42, .08);
+      overflow: hidden;
+    }
+    .demo-title {
+      padding: 14px 18px;
+      border-bottom: 1px solid #e8eef4;
+      font-size: 15px;
+      font-weight: 800;
+    }
+    .phone {
+      width: 390px;
+      max-width: 100%;
+      min-height: 740px;
+      margin: 0 auto;
+      padding: 18px 14px 76px;
+      background: var(--bg);
+      position: relative;
+    }
+    .hero {
+      padding: 22px 18px;
+      border-radius: 18px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--teal) 0%, var(--teal2) 100%);
+      box-shadow: 0 18px 38px rgba(20, 184, 166, .18);
+    }
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .04em;
+      opacity: .88;
+    }
+    .hero h2 {
+      margin: 10px 0 4px;
+      font-size: 26px;
+      line-height: 1;
+    }
+    .hero p { margin: 0; opacity: .9; font-size: 13px; font-weight: 700; }
+    .status {
+      margin-top: 14px;
+      padding: 18px;
+      border-radius: 18px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--teal) 0%, var(--teal2) 100%);
+      min-height: 156px;
+    }
+    .label { font-size: 13px; font-weight: 900; opacity: .86; }
+    .big { margin: 8px 0 6px; font-size: 42px; font-weight: 950; line-height: 1; }
+    .hint { font-size: 13px; font-weight: 750; opacity: .9; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .pill {
+      border: 0;
+      height: 30px;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.92);
+      color: var(--teal);
+      font-weight: 900;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .pill.outline {
+      border: 1px solid rgba(255,255,255,.72);
+      background: rgba(255,255,255,.14);
+      color: #fff;
+    }
+    .ghost {
+      height: 28px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid #bfeee8;
+      background: #fff;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .panel {
+      margin-top: 12px;
+      padding: 15px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+    .panel h3 { margin: 0; font-size: 18px; }
+    .panel p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .count {
+      min-width: 38px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #dcfce7;
+      color: #047857;
+      font-weight: 900;
+      font-size: 12px;
+      text-align: center;
+    }
+    .empty {
+      margin-top: 14px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px dashed #cbd9e3;
+      border-radius: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tabs {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      padding: 8px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid #dbe7ef;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, .08);
+    }
+    .tab {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      color: #4d6478;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .tab.active { background: var(--teal); color: #fff; }
+
+    .variant-a .status-actions { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .variant-b .status { position: relative; padding-bottom: 56px; }
+    .variant-b .status-actions {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .variant-c .yard-strip {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+    .variant-c .ghost { height: 34px; }
+    .variant-d .status { min-height: 132px; }
+    .variant-d .yard-card {
+      margin-top: -18px;
+      margin-left: 18px;
+      margin-right: 18px;
+      padding: 10px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.96);
+      border: 1px solid #cceee8;
+      box-shadow: 0 12px 24px rgba(15, 118, 110, .12);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      position: relative;
+      z-index: 2;
+    }
+    .recommend {
+      margin: 10px 18px 0;
+      color: #0f766e;
+      font-size: 12px;
+      font-weight: 900;
+    }
+  </style>
+</head>
+<body>
+  <h1>司机首页点呼按钮 Demo</h1>
+  <p class="note">这些是独立视觉方案，不改小程序源码。共同原则：保留原首页结构，只在“当前状态”附近加入点呼出库 / 点呼入库入口。</p>
+
+  <div class="grid">
+    <section class="demo variant-a">
+      <div class="demo-title">方案 A：状态卡内部底部双按钮</div>
+      <div class="phone">
+        <div class="hero"><div class="eyebrow">TOURFLOW MOBILE</div><h2>Ken Sato</h2><p>D410 - driver</p></div>
+        <div class="status">
+          <div class="label">当前状态</div><div class="big">未出库</div><div class="hint">确认接单后进入任务页完成出库。</div>
+          <div class="status-actions"><button class="pill">点呼出库</button><button class="pill">点呼入库</button></div>
+        </div>
+        <div class="panel"><div class="panel-head"><div><h3>今日订单</h3><p>今天的订单集中显示在这里。</p></div><div class="count">0条</div></div><div class="empty">暂无内容</div></div>
+        <div class="tabs"><div class="tab active">首页</div><div class="tab">任务</div><div class="tab">地图</div><div class="tab">费用</div><div class="tab">我的</div></div>
+      </div>
+    </section>
+
+    <section class="demo variant-b">
+      <div class="demo-title">方案 B：状态卡底部悬停条</div>
+      <div class="phone">
+        <div class="hero"><div class="eyebrow">TOURFLOW MOBILE</div><h2>Ken Sato</h2><p>D410 - driver</p></div>
+        <div class="status">
+          <div class="label">当前状态</div><div class="big">未出库</div><div class="hint">确认接单后进入任务页完成出库。</div>
+          <div class="status-actions"><button class="pill">点呼出库</button><button class="pill outline">点呼入库</button></div>
+        </div>
+        <div class="panel"><div class="panel-head"><div><h3>今日订单</h3><p>今天的订单集中显示在这里。</p></div><div class="count">0条</div></div><div class="empty">暂无内容</div></div>
+        <div class="tabs"><div class="tab active">首页</div><div class="tab">任务</div><div class="tab">地图</div><div class="tab">费用</div><div class="tab">我的</div></div>
+      </div>
+    </section>
+
+    <section class="demo variant-c">
+      <div class="demo-title">方案 C：状态卡下方独立轻量操作条</div>
+      <div class="phone">
+        <div class="hero"><div class="eyebrow">TOURFLOW MOBILE</div><h2>Ken Sato</h2><p>D410 - driver</p></div>
+        <div class="status"><div class="label">当前状态</div><div class="big">未出库</div><div class="hint">确认接单后进入任务页完成出库。</div></div>
+        <div class="yard-strip"><button class="ghost">点呼出库</button><button class="ghost">点呼入库</button></div>
+        <div class="panel"><div class="panel-head"><div><h3>今日订单</h3><p>今天的订单集中显示在这里。</p></div><div class="count">0条</div></div><div class="empty">暂无内容</div></div>
+        <div class="tabs"><div class="tab active">首页</div><div class="tab">任务</div><div class="tab">地图</div><div class="tab">费用</div><div class="tab">我的</div></div>
+      </div>
+    </section>
+
+    <section class="demo variant-d">
+      <div class="demo-title">方案 D：半浮层操作卡</div>
+      <div class="phone">
+        <div class="hero"><div class="eyebrow">TOURFLOW MOBILE</div><h2>Ken Sato</h2><p>D410 - driver</p></div>
+        <div class="status"><div class="label">当前状态</div><div class="big">未出库</div><div class="hint">确认接单后进入任务页完成出库。</div></div>
+        <div class="yard-card"><button class="ghost">点呼出库</button><button class="ghost">点呼入库</button></div>
+        <div class="recommend">推荐：视觉独立，但仍靠近状态。</div>
+        <div class="panel"><div class="panel-head"><div><h3>今日订单</h3><p>今天的订单集中显示在这里。</p></div><div class="count">0条</div></div><div class="empty">暂无内容</div></div>
+        <div class="tabs"><div class="tab active">首页</div><div class="tab">任务</div><div class="tab">地图</div><div class="tab">费用</div><div class="tab">我的</div></div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

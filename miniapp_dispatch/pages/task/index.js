@@ -26,14 +26,18 @@ Page({
     driverId: 0,
     allAssignments: [],
     assignments: [],
+    readyAssignments: [],
     departAssignment: null,
     returnAssignment: null,
     today: '',
     selectedDate: '',
     selectedLabel: '',
+    monthLabel: '',
+    selectedDayAnchor: '',
     weekDays: [],
     monthDays: [],
     showMonth: false,
+    yardFocus: '',
     vehicleStatusText: '未出库',
     preflightItems: PREFLIGHT_ITEMS,
     returnItems: RETURN_ITEMS,
@@ -62,10 +66,13 @@ Page({
     }
     this.refreshTabBar();
     const today = this.today();
+    const yardFocus = wx.getStorageSync('driver_task_yard_focus') || '';
+    if (yardFocus) wx.removeStorageSync('driver_task_yard_focus');
     const driverId = Number(session.user && session.user.profile_id || 0);
     this.setData({
       session,
       driverId,
+      yardFocus,
       today,
       selectedDate: today,
       selectedLabel: this.formatDayLabel(today),
@@ -93,19 +100,23 @@ Page({
     ])
       .then(([res, workbench]) => {
         const allRows = (res.assignments || []).map((item) => this.decorateAssignment(item));
-        const todayRows = allRows.filter((item) => this.isOnDate(item, this.data.today));
-        const departed = todayRows.some((item) => ACTIVE_STATUSES.indexOf(item.rawStatus) >= 0)
+        const selectedDate = this.data.selectedDate || this.data.today;
+        const selectedRows = allRows.filter((item) => this.isOnDate(item, selectedDate));
+        const departed = selectedRows.some((item) => ACTIVE_STATUSES.indexOf(item.rawStatus) >= 0)
           || String((workbench || {}).vehicle_status || '').indexOf('已出库') >= 0;
-        const returned = todayRows.some((item) => item.rawStatus === 'returned')
+        const returned = selectedRows.some((item) => item.rawStatus === 'returned')
           || String((workbench || {}).vehicle_status || '').indexOf('已入库') >= 0;
         const vehicleStatusText = returned ? '已入库' : (departed ? '已出库' : '未出库');
         this.setData({
           allAssignments: allRows,
-          weekDays: this.buildWeekDays(allRows, this.data.today),
-          monthDays: this.buildMonthDays(allRows, this.data.today),
+          selectedDate,
+          weekDays: this.buildWeekDays(allRows, selectedDate, this.data.today, selectedDate),
+          monthDays: this.buildMonthDays(allRows, selectedDate, this.data.today, selectedDate),
+          monthLabel: this.formatMonthLabel(selectedDate),
+          selectedDayAnchor: this.dayAnchor(selectedDate),
           vehicleStatusText,
-          departAssignment: !departed && !returned ? this.pickDepartAssignment(todayRows) : null,
-          returnAssignment: !returned ? this.pickReturnAssignment(todayRows) : null,
+          departAssignment: !departed && !returned ? this.pickDepartAssignment(allRows) : null,
+          returnAssignment: !returned ? this.pickReturnAssignment(selectedRows) : null,
           loading: false
         });
         this.applySelectedDate();
@@ -129,31 +140,54 @@ Page({
 
   applySelectedDate() {
     const selectedDate = this.data.selectedDate || this.data.today;
+    const readyRows = this.data.allAssignments
+      .filter((item) => item.rawStatus === 'confirmed')
+      .sort((a, b) => `${a.order_date || ''} ${a.start_time || ''}`.localeCompare(`${b.order_date || ''} ${b.start_time || ''}`));
     const rows = this.data.allAssignments
       .filter((item) => this.isOnDate(item, selectedDate))
       .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')))
       .map((item, index) => ({
         ...item,
         isExpanded: ACTIVE_STATUSES.indexOf(item.rawStatus) >= 0 || (index === 0 && ACTIVE_STATUSES.indexOf(item.rawStatus) >= 0)
-      }));
+    }));
     this.setData({
       assignments: rows,
-      selectedLabel: this.formatDayLabel(selectedDate)
+      readyAssignments: readyRows,
+      selectedLabel: this.formatDayLabel(selectedDate),
+      monthLabel: this.formatMonthLabel(selectedDate)
     });
   },
 
   onSelectDate(e) {
     const date = e.currentTarget.dataset.date;
+    if (!date) return;
     this.setData({
       selectedDate: date,
-      weekDays: this.markSelected(this.data.weekDays, date),
-      monthDays: this.markSelected(this.data.monthDays, date)
+      weekDays: this.buildWeekDays(this.data.allAssignments, date, this.data.today, date),
+      monthDays: this.buildMonthDays(this.data.allAssignments, date, this.data.today, date),
+      monthLabel: this.formatMonthLabel(date),
+      selectedDayAnchor: this.dayAnchor(date)
     });
     this.applySelectedDate();
   },
 
   toggleMonth() {
     this.setData({ showMonth: !this.data.showMonth });
+  },
+
+  onPickMonth(e) {
+    const value = e.detail && e.detail.value;
+    if (!value) return;
+    const date = `${value}-01`;
+    this.setData({
+      selectedDate: date,
+      weekDays: this.buildWeekDays(this.data.allAssignments, date, this.data.today, date),
+      monthDays: this.buildMonthDays(this.data.allAssignments, date, this.data.today, date),
+      monthLabel: this.formatMonthLabel(date),
+      selectedDayAnchor: this.dayAnchor(date),
+      showMonth: true
+    });
+    this.applySelectedDate();
   },
 
   toggleTask(e) {
@@ -252,7 +286,7 @@ Page({
         sleep_hours: sleepHours,
         checks: this.checkedKeys(this.data.preflightChecked)
       })
-    }, '已出库');
+    }, '已出库', () => this.enterFirstTaskAfterDepart(item));
   },
 
   submitReturn() {
@@ -289,7 +323,7 @@ Page({
     }, '已入库，今日工作结束');
   },
 
-  submitReport(item, reportType, extra, successTitle) {
+  submitReport(item, reportType, extra, successTitle, afterSuccess) {
     if (this.data.submitting) return;
     this.setData({ submitting: true, message: '' });
     api.submitDriverReport({
@@ -304,11 +338,54 @@ Page({
         return;
       }
       wx.showToast({ title: successTitle, icon: 'success' });
+      if (typeof afterSuccess === 'function') {
+        afterSuccess(result);
+        return;
+      }
       this.loadTasks();
     }).catch(() => {
       this.setData({ submitting: false });
       wx.showToast({ title: '提交失败', icon: 'none' });
     });
+  },
+
+  enterFirstTaskAfterDepart(item) {
+    const assignmentId = Number(item.assignment_id || item.id || 0);
+    const targetDate = item.order_date || this.data.selectedDate || this.data.today;
+    const updatedRows = (this.data.allAssignments || []).map((row) => {
+      if (Number(row.assignment_id || row.id || 0) !== assignmentId) return row;
+      return this.decorateAssignment({
+        ...row,
+        execution_status: 'departed',
+        status: row.status || 'active'
+      });
+    });
+    const selectedRows = updatedRows
+      .filter((row) => this.isOnDate(row, targetDate))
+      .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')))
+      .map((row, index) => ({
+        ...row,
+        isExpanded: Number(row.assignment_id || row.id || 0) === assignmentId || (index === 0 && ACTIVE_STATUSES.indexOf(row.rawStatus) >= 0)
+      }));
+    const readyRows = updatedRows
+      .filter((row) => row.rawStatus === 'confirmed')
+      .sort((a, b) => `${a.order_date || ''} ${a.start_time || ''}`.localeCompare(`${b.order_date || ''} ${b.start_time || ''}`));
+    this.setData({
+      allAssignments: updatedRows,
+      assignments: selectedRows,
+      readyAssignments: readyRows,
+      departAssignment: null,
+      returnAssignment: null,
+      selectedDate: targetDate,
+      selectedLabel: this.formatDayLabel(targetDate),
+      monthLabel: this.formatMonthLabel(targetDate),
+      selectedDayAnchor: this.dayAnchor(targetDate),
+      weekDays: this.buildWeekDays(updatedRows, targetDate, this.data.today, targetDate),
+      monthDays: this.buildMonthDays(updatedRows, targetDate, this.data.today, targetDate),
+      vehicleStatusText: '已出库',
+      message: ''
+    });
+    setTimeout(() => this.loadTasks(), 350);
   },
 
   reportError(result) {
@@ -319,39 +396,87 @@ Page({
     }[result && result.error] || '提交失败';
   },
 
-  buildWeekDays(rows, today) {
-    const base = this.parseDate(today);
-    return Array.from({ length: 7 }).map((_, index) => {
-      const date = this.addDays(base, index);
-      return this.decorateCalendarDay(rows, date, today);
+  buildWeekDays(rows, baseDate, today, selectedDate) {
+    const base = this.parseDate(baseDate || today);
+    return Array.from({ length: 15 }).map((_, index) => {
+      const date = this.addDays(base, index - 7);
+      return this.decorateCalendarDay(rows, date, today, selectedDate || baseDate || today);
     });
   },
 
-  buildMonthDays(rows, today) {
-    const base = this.parseDate(today);
+  buildMonthDays(rows, baseDate, today, selectedDate) {
+    const base = this.parseDate(baseDate || today);
     const first = new Date(base.getFullYear(), base.getMonth(), 1);
     const total = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-    return Array.from({ length: total }).map((_, index) => {
+    const days = [];
+    const prefix = first.getDay();
+    for (let index = 0; index < prefix; index += 1) {
+      days.push({ date: '', day: '', week: '', count: 0, selected: false, today: false, holiday: false, empty: true });
+    }
+    Array.from({ length: total }).forEach((_, index) => {
       const date = this.addDays(first, index);
-      return this.decorateCalendarDay(rows, date, today);
+      days.push(this.decorateCalendarDay(rows, date, today, selectedDate || baseDate || today));
     });
+    while (days.length % 7 !== 0) {
+      days.push({ date: '', day: '', week: '', count: 0, selected: false, today: false, holiday: false, empty: true });
+    }
+    return days;
   },
 
-  decorateCalendarDay(rows, date, today) {
+  decorateCalendarDay(rows, date, today, selectedDate) {
     const dateText = this.formatDate(date);
     const count = rows.filter((item) => this.isOnDate(item, dateText)).length;
+    const weekIndex = date.getDay();
+    const holiday = weekIndex === 0 || weekIndex === 6 || this.isJapanHoliday(dateText);
     return {
       date: dateText,
       day: String(date.getDate()),
-      week: ['日', '一', '二', '三', '四', '五', '六'][date.getDay()],
+      week: ['日', '一', '二', '三', '四', '五', '六'][weekIndex],
       count,
-      selected: dateText === (this.data.selectedDate || today),
-      today: dateText === today
+      selected: dateText === (selectedDate || today),
+      today: dateText === today,
+      holiday,
+      anchor: this.dayAnchor(dateText)
     };
+  },
+
+  isJapanHoliday(dateText) {
+    return [
+      '2026-01-01',
+      '2026-01-12',
+      '2026-02-11',
+      '2026-02-23',
+      '2026-03-20',
+      '2026-04-29',
+      '2026-05-03',
+      '2026-05-04',
+      '2026-05-05',
+      '2026-05-06',
+      '2026-07-20',
+      '2026-08-11',
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-10-12',
+      '2026-11-03',
+      '2026-11-23'
+    ].indexOf(dateText) >= 0;
   },
 
   markSelected(days, date) {
     return (days || []).map((item) => ({ ...item, selected: item.date === date }));
+  },
+
+  resolveSelectedDate(rows, currentDate) {
+    if ((rows || []).some((item) => this.isOnDate(item, currentDate))) return currentDate;
+    const active = (rows || [])
+      .filter((item) => OPEN_STATUSES.indexOf(item.rawStatus) >= 0)
+      .sort((a, b) => `${a.order_date || ''} ${a.start_time || ''}`.localeCompare(`${b.order_date || ''} ${b.start_time || ''}`))[0];
+    if (active && active.order_date) return active.order_date;
+    const first = (rows || [])
+      .slice()
+      .sort((a, b) => `${a.order_date || ''} ${a.start_time || ''}`.localeCompare(`${b.order_date || ''} ${b.start_time || ''}`))[0];
+    return (first && first.order_date) || currentDate;
   },
 
   allChecked(items, values) {
@@ -400,8 +525,17 @@ Page({
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   },
 
+  dayAnchor(dateText) {
+    return `day${String(dateText || '').replace(/-/g, '')}`;
+  },
+
   formatDayLabel(dateText) {
     const date = this.parseDate(dateText);
     return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+  },
+
+  formatMonthLabel(dateText) {
+    const date = this.parseDate(dateText);
+    return `${date.getFullYear()}年${String(date.getMonth() + 1).padStart(2, '0')}月`;
   }
 });

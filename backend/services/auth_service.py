@@ -404,9 +404,11 @@ def get_user_by_token(token: str) -> Optional[dict]:
                 u.wx_bind_status,
                 u.must_change_password,
                 u.is_active,
+                p.operator_code,
                 t.name AS tenant_name,
                 t.slug AS tenant_slug
             FROM users u
+            LEFT JOIN operator_profiles p ON p.user_id = u.id AND p.tenant_id = u.tenant_id
             LEFT JOIN tenants t ON t.id = u.tenant_id
             WHERE u.id = ? AND u.tenant_id = ?
             """,
@@ -524,8 +526,9 @@ def _load_user_public(user_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT u.*, t.name AS tenant_name, t.slug AS tenant_slug
+            SELECT u.*, p.operator_code, t.name AS tenant_name, t.slug AS tenant_slug
             FROM users u
+            LEFT JOIN operator_profiles p ON p.user_id = u.id AND p.tenant_id = u.tenant_id
             LEFT JOIN tenants t ON t.id = u.tenant_id
             WHERE u.id = ?
             """,

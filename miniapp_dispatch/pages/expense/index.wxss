@@ -5,7 +5,7 @@
 }
 
 .driver-theme .expense-hero {
-  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #155e75 0%, #0f766e 100%);
 }
 
 .expense-form {
@@ -48,6 +48,46 @@
   font-weight: 900;
 }
 
+.receipt-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 18rpx;
+  border: 1rpx solid var(--c-border);
+  border-radius: 22rpx;
+  background: #f8fafc;
+}
+
+.receipt-title {
+  color: var(--c-text);
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.receipt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  flex: 0 0 180rpx;
+}
+
+.compact-button {
+  width: 100%;
+  min-height: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  padding: 0 16rpx;
+  border-radius: 16rpx;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.button-ghost {
+  color: #64748b;
+  background: #eef2f7;
+}
+
 .submit-button {
   margin-top: 8rpx;
 }
@@ -60,20 +100,36 @@
 }
 
 .expense-row {
-  min-height: 88rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18rpx;
-  padding: 16rpx;
+  min-height: 104rpx;
+  padding: 18rpx;
   border-radius: 24rpx;
   background: #f8fafc;
   border: 1rpx solid var(--c-border);
 }
 
-.amount {
-  flex: 0 0 auto;
-  color: var(--c-text);
-  font-size: 28rpx;
-  font-weight: 950;
+.expense-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.expense-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.expense-tags text {
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  color: #0f766e;
+  background: #e6fffb;
+  font-size: 20rpx;
+  font-weight: 850;
+}
+
+.message-line {
+  color: #0f766e;
+  font-size: 24rpx;
+  font-weight: 850;
 }

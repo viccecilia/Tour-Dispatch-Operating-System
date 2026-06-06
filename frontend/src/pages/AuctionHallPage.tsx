@@ -57,8 +57,8 @@ export function AuctionHallPage() {
         setDraft(parsed);
         const total = (parsed.orders || []).reduce((sum, order) => sum + Number(order.price || 0), 0);
         if (total > 0) {
-          setStartPrice(String(Math.round(total * 0.8)));
-          setBuyoutPrice(String(Math.round(total)));
+          setStartPrice(String(Math.round(total)));
+          setBuyoutPrice(String(Math.round(total * 0.8)));
         }
       }
     } catch {
@@ -72,7 +72,7 @@ export function AuctionHallPage() {
       const start = Number(startPrice);
       const buyout = Number(buyoutPrice);
       if (!start || !buyout) throw new Error("请填写起拍价和一口价。");
-      if (buyout < start) throw new Error("一口价不能低于起拍价。");
+      if (buyout > start) throw new Error("倒拍订单的一口价不能高于起拍价。");
       return api.createAuctionListing({
         order_ids: draft.order_ids,
         start_price_jpy: start,

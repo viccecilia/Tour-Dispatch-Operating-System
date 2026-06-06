@@ -164,7 +164,7 @@ def get_dispatcher_notifications(params: dict[str, str]) -> dict[str, Any]:
                 SELECT *
                 FROM notifications
                 WHERE tenant_id = ?
-                  AND target_role IN ('dispatcher', 'finance', 'driver')
+                  AND target_role IN ('admin', 'dispatcher', 'finance', 'operations_manager')
                 ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
                          created_at DESC, id DESC
                 LIMIT 100

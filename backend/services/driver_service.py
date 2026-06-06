@@ -480,7 +480,11 @@ def submit_driver_expense(payload: dict[str, Any]) -> dict[str, Any]:
     expense_kind = str(payload.get("expense_kind") or "advance").strip()
     category = str(payload.get("category") or "").strip()
     amount = _optional_float(payload.get("amount")) or 0.0
-    if not driver_id or not category:
+    if expense_kind == "advance" and not category:
+        category = "司机垫付"
+    if expense_kind == "collect" and not category:
+        category = "司机代收"
+    if not driver_id or not category or amount <= 0:
         return {"success": False, "error": "invalid_expense_request"}
     if expense_kind not in {"advance", "collect"}:
         return {"success": False, "error": "invalid_expense_kind"}
@@ -490,6 +494,19 @@ def submit_driver_expense(payload: dict[str, Any]) -> dict[str, Any]:
         assignment = get_driver_assignment(driver_id, assignment_id)
         if not assignment:
             return {"success": False, "error": "assignment_not_found_for_driver"}
+
+    receipt_photo_url = str(payload.get("receipt_photo_url") or "").strip()
+    image_data = str(payload.get("receipt_image_base64") or payload.get("image_base64") or "").strip()
+    if image_data:
+        try:
+            suffix, raw = _decode_image_payload(image_data)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+        file_name = f"driver{driver_id}_expense_{uuid.uuid4().hex[:10]}.{suffix}"
+        file_path = UPLOAD_ROOT / file_name
+        file_path.write_bytes(raw)
+        receipt_photo_url = f"/uploads/driver_evidence/{file_name}"
 
     with get_connection() as conn:
         cursor = conn.execute(
@@ -510,7 +527,7 @@ def submit_driver_expense(payload: dict[str, Any]) -> dict[str, Any]:
                 amount,
                 payload.get("currency") or "JPY",
                 payload.get("submit_status") or ("in_hand" if expense_kind == "collect" else "submitted"),
-                payload.get("receipt_photo_url"),
+                receipt_photo_url or None,
                 payload.get("note"),
             ),
         )
@@ -602,6 +619,7 @@ def get_driver_workbench(driver_id: Any) -> dict[str, Any]:
     today = date.today().isoformat()
     assignments = list_driver_assignments(driver_id_int)
     today_assignments = [item for item in assignments if item.get("order_date") == today]
+    pending_assignments = [item for item in assignments if (item.get("execution_status") or "assigned") == "assigned"]
     completed_today = [item for item in today_assignments if item.get("execution_status") in {"completed", "returned"}]
     active_today = [item for item in today_assignments if item.get("execution_status") not in {"completed", "returned"}]
     current_assignment = _pick_current_assignment(today_assignments) or _pick_current_assignment(assignments)
@@ -618,6 +636,8 @@ def get_driver_workbench(driver_id: Any) -> dict[str, Any]:
         "driver_id": driver_id_int,
         "date": today,
         "today_order_count": len(today_assignments),
+        "pending_count": len(pending_assignments),
+        "pending_assignments": pending_assignments[:20],
         "next_start_time": current_assignment.get("start_time") if current_assignment else None,
         "month_completed_count": month_stats["completed_count"],
         "month_airport_count": month_stats["airport_count"],

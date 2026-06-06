@@ -46,13 +46,17 @@ Page({
     panelTitle: '今日订单',
     panelHint: '点击订单进入任务页处理。',
     panelRows: [],
+    driverOrderChipLabel: '今日订单',
+    driverOrderChipCount: 0,
+    driverOrderChipAlert: false,
     driverStats: [],
     visibleDriverStats: [],
     pressureExpanded: false,
     notifications: [],
     error: '',
     loading: false,
-    autoLoginTried: false
+    autoLoginTried: false,
+    pendingPromptKey: ''
   },
 
   onShow() {
@@ -181,8 +185,9 @@ Page({
         const allVehicles = vehicles.vehicles || [];
         const driverStats = canViewDriverWorkload ? this.buildDriverStats(allAssignments, allDrivers) : [];
         const driverRows = (driverAssignments.assignments || []).map((item) => this.decorateAssignment(item));
+        const today = this.formatDate(new Date());
         const pendingRows = driverRows.filter((item) => item.rawStatus === 'assigned');
-        const homeOrderRows = role === 'driver' ? pendingRows : driverRows;
+        const todayRows = driverRows.filter((item) => this.isAssignmentOnDate(item, today));
         const exceptionRows = driverRows.filter((item) => ['incident', 'exception', 'delayed'].indexOf(String(item.order_status || item.status || '')) >= 0);
         const dueRows = this.buildDueRows(profile.driver);
         const unreadRows = [
@@ -197,7 +202,7 @@ Page({
             ...dashboard,
             counts: {
               ...(dashboard.counts || {}),
-              today_orders: homeOrderRows.length,
+              today_orders: todayRows.length,
               pending_confirmations: pendingRows.length,
               exception_orders: exceptionRows.length,
               notifications_unread: unreadRows.length
@@ -223,13 +228,16 @@ Page({
               this.data.operationsAttendanceRows
             )
           };
-        const panel = this.buildPanel(this.data.panelMode, homeOrderRows, pendingRows, exceptionRows, unreadRows);
+        const panel = this.buildPanel(this.data.panelMode, todayRows, driverRows, pendingRows, exceptionRows, unreadRows);
         const operationsDetail = role === 'operations_manager' && this.data.operationsSection === 'notifications'
           ? this.buildOperationsNotificationDetail(unreadRows)
           : operations.detail;
         this.setData({
           dashboard: nextDashboard,
           driverAssignments: driverRows,
+          driverOrderChipLabel: '今日订单',
+          driverOrderChipCount: todayRows.length,
+          driverOrderChipAlert: false,
           notifications: unreadRows,
           statusLabel: status.label,
           statusHint: status.hint,
@@ -251,8 +259,25 @@ Page({
           visibleDriverStats: this.visibleDriverStats(driverStats, this.data.pressureExpanded),
           loading: false
         });
+        this.promptPendingAssignments(role, pendingRows);
       })
       .catch(() => this.setData({ loading: false, error: '无法加载移动首页。' }));
+  },
+
+  promptPendingAssignments(role, pendingRows) {
+    if (role !== 'driver') return;
+    if (!pendingRows.length) {
+      if (this.data.pendingPromptKey) this.setData({ pendingPromptKey: '' });
+      return;
+    }
+    if (this.data.pendingPromptKey === 'active') return;
+    this.setData({ pendingPromptKey: 'active' });
+    wx.showModal({
+      title: '待确认派单',
+      content: `你有 ${pendingRows.length} 个待确认派单，请在首页列表中逐单确认。`,
+      showCancel: false,
+      confirmText: '知道了'
+    });
   },
 
   buildOperationsDashboard(dashboard, assignments, drivers, vehicles) {
@@ -546,9 +571,10 @@ Page({
     };
   },
 
-  buildPanel(mode, orders, pending, exceptions, unread) {
+  buildPanel(mode, todayOrders, allOrders, pending, exceptions, unread) {
     const config = {
-      orders: { title: '待确认派单', hint: '确认后首页不再显示，调度端会收到司机已接单回执。', rows: orders },
+      orders: { title: '今日订单', hint: '今天的订单集中显示在这里，点击订单进入任务处理。', rows: todayOrders },
+      all: { title: '全部订单', hint: '已分配给你的订单全部显示在这里，点击订单进入任务处理。', rows: allOrders },
       pending: { title: '待确认派单', hint: '确认后订单状态会变为已接单。', rows: pending },
       exceptions: { title: '异常订单', hint: '只显示需要司机关注的异常。', rows: exceptions },
       unread: { title: '未读通知', hint: '体检、驾照和需要司机处理的通知显示在这里。', rows: unread }
@@ -576,7 +602,7 @@ Page({
     if (vehicleStatus.indexOf('已入库') >= 0 || statuses.indexOf('returned') >= 0) return { label: '已入库', hint: '今天工作已结束。' };
     if (statuses.indexOf('in_service') >= 0 || statuses.indexOf('arrived') >= 0) return { label: '行驶中', hint: '正在执行当前任务。' };
     if (vehicleStatus.indexOf('已出库') >= 0 || statuses.indexOf('departed') >= 0) return { label: '已经出库', hint: '车辆已出库，可以执行任务。' };
-    return { label: '未出库', hint: '确认接单后进入任务页完成出库。' };
+    return { label: '未出库', hint: '点击这里进入任务页，进行车辆出库操作。' };
   },
 
   statusText(status) {
@@ -606,12 +632,20 @@ Page({
   switchPanel(e) {
     const mode = e.currentTarget.dataset.mode || 'orders';
     const allOrders = this.data.driverAssignments || [];
+    const today = this.formatDate(new Date());
+    const todayOrders = allOrders.filter((item) => this.isAssignmentOnDate(item, today));
     const pending = allOrders.filter((item) => item.rawStatus === 'assigned');
-    const orders = this.data.canDriverTasks ? pending : allOrders;
     const exceptions = allOrders.filter((item) => ['incident', 'exception', 'delayed'].indexOf(String(item.order_status || item.status || '')) >= 0);
     const unread = this.data.notifications || [];
-    const panel = this.buildPanel(mode, orders, pending, exceptions, unread);
+    const panel = this.buildPanel(mode, todayOrders, allOrders, pending, exceptions, unread);
     this.setData({ panelMode: mode, panelTitle: panel.title, panelHint: panel.hint, panelRows: panel.rows });
+  },
+
+  isAssignmentOnDate(item, date) {
+    if (!date) return false;
+    const start = item.order_date || item.start_date || date;
+    const end = item.end_date || start;
+    return start <= date && end >= date;
   },
 
   onPanelRowTap(e) {

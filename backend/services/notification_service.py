@@ -65,6 +65,7 @@ def create_notification(payload: dict[str, Any]) -> dict[str, Any]:
 def list_notifications(params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     params = params or {}
     sync_operation_notifications()
+    target_role = str(params.get("target_role") or "").strip()
     sql = [
         """
         SELECT *
@@ -79,6 +80,12 @@ def list_notifications(params: dict[str, Any] | None = None) -> list[dict[str, A
     if params.get("notification_type"):
         sql.append("AND notification_type = ?")
         values.append(params["notification_type"])
+    if target_role:
+        sql.append("AND target_role = ?")
+        values.append(target_role)
+    else:
+        sql.append("AND COALESCE(target_role, '') != 'driver'")
+        sql.append("AND notification_type != 'dispatch_assigned'")
     sql.append("ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at DESC, id DESC LIMIT ?")
     values.append(_limit(params.get("limit")))
     with get_connection() as conn:
@@ -124,7 +131,9 @@ def mark_all_notifications_read() -> dict[str, Any]:
             SET status = 'read',
                 read_at = COALESCE(read_at, CURRENT_TIMESTAMP),
                 updated_at = CURRENT_TIMESTAMP
-            WHERE tenant_id = ? AND status = 'unread'
+            WHERE tenant_id = ?
+              AND status = 'unread'
+              AND COALESCE(target_role, '') != 'driver'
             """,
             (get_current_tenant_id(),),
         )
@@ -155,7 +164,17 @@ def list_driver_notifications(driver_id: Any, params: dict[str, Any] | None = No
     sql.append("ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at DESC, id DESC LIMIT ?")
     values.append(_limit(params.get("limit")))
     with get_connection() as conn:
-        return [dict(row) for row in conn.execute(" ".join(sql), values).fetchall()]
+        return [_normalize_driver_notification(dict(row)) for row in conn.execute(" ".join(sql), values).fetchall()]
+
+
+def _normalize_driver_notification(row: dict[str, Any]) -> dict[str, Any]:
+    if row.get("notification_type") == "new_order" and row.get("source_type") == "driver_assignment":
+        source_id = str(row.get("source_id") or "")
+        assignment_part = source_id.rsplit(":", 1)[-1] if ":" in source_id else ""
+        count = len([item for item in assignment_part.split(",") if item.strip()]) or 1
+        row["title"] = f"你有 {count} 个待确认派单"
+        row["body"] = row.get("body") or "请在司机首页确认接单。"
+    return row
 
 
 def mark_driver_notification_read(driver_id: Any, notification_id: Any) -> dict[str, Any] | None:
@@ -260,6 +279,7 @@ def get_notification_summary() -> dict[str, Any]:
                    SUM(CASE WHEN status = 'unread' AND priority IN ('high', 'critical') THEN 1 ELSE 0 END) AS urgent
             FROM notifications
             WHERE tenant_id = ?
+              AND COALESCE(target_role, '') != 'driver'
             """,
             (tenant_id,),
         ).fetchone()
@@ -460,24 +480,12 @@ def _create_runtime_pair(driver_id: int, notification_type: str, title: str, bod
 def notify_dispatch_assigned(assignment_ids: list[int], order_ids: list[int], driver_id: int | None = None, driver_name: str | None = None, plate_number: str | None = None) -> None:
     if not assignment_ids:
         return
-    create_notification(
-        {
-            "notification_type": "dispatch_assigned",
-            "title": f"已派车 {len(order_ids)} 单",
-            "body": f"司机 {driver_name or '-'} / 车辆 {plate_number or '-'}",
-            "priority": "normal",
-            "target_role": "dispatcher",
-            "link": "#dispatch",
-            "source_type": "assignment_batch",
-            "source_id": ",".join(str(item) for item in assignment_ids),
-        }
-    )
     if driver_id:
         create_notification(
             {
                 "notification_type": "new_order",
-                "title": f"你有 {len(order_ids)} 个新任务",
-                "body": f"车辆 {plate_number or '-'}，请打开今日任务确认接单。",
+                "title": f"你有 {len(order_ids)} 个待确认派单",
+                "body": f"车辆 {plate_number or '-'}，请在今日任务中确认接单。",
                 "priority": "high",
                 "target_role": "driver",
                 "link": "#driver",
@@ -485,6 +493,92 @@ def notify_dispatch_assigned(assignment_ids: list[int], order_ids: list[int], dr
                 "source_id": f"{driver_id}:assigned:{','.join(str(item) for item in assignment_ids)}",
             }
         )
+
+
+def notify_order_changed_for_driver(before: dict[str, Any], after: dict[str, Any], actor: str | None = None) -> None:
+    """Notify the assigned driver when an already assigned/running order is edited."""
+    order_id = _to_int(after.get("id") or before.get("id"))
+    if order_id <= 0:
+        return
+    changed = _describe_order_changes(before, after)
+    if not changed:
+        return
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT a.id AS assignment_id,
+                   a.driver_id,
+                   a.execution_status,
+                   d.name AS driver_name,
+                   v.plate_number
+            FROM assignments a
+            LEFT JOIN drivers d ON d.id = a.driver_id AND d.tenant_id = a.tenant_id
+            LEFT JOIN vehicles v ON v.id = a.vehicle_id AND v.tenant_id = a.tenant_id
+            WHERE a.tenant_id = ?
+              AND a.order_id = ?
+              AND a.status = 'active'
+              AND COALESCE(a.driver_id, 0) > 0
+            ORDER BY a.id DESC
+            LIMIT 1
+            """,
+            (tenant_id, order_id),
+        ).fetchone()
+    if not row:
+        return
+    driver_id = _to_int(row["driver_id"])
+    if driver_id <= 0:
+        return
+    order_label = after.get("oid") or before.get("oid") or f"#{order_id}"
+    body = "；".join(changed[:6])
+    if len(changed) > 6:
+        body = f"{body}；另有 {len(changed) - 6} 项变更"
+    if actor:
+        body = f"{body}。操作人：{actor}"
+    create_notification(
+        {
+            "notification_type": "order_changed",
+            "title": f"订单内容已变更：{order_label}",
+            "body": body,
+            "priority": "high" if row["execution_status"] in {"confirmed", "departed", "arrived", "in_service"} else "normal",
+            "target_role": "driver",
+            "link": "#driver",
+            "source_type": "driver_order_changed",
+            "source_id": f"{driver_id}:order_changed:{order_id}:{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+        }
+    )
+
+
+def _describe_order_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    labels = {
+        "order_date": "日期",
+        "start_time": "开始时间",
+        "end_time": "结束时间",
+        "pickup_location": "起点",
+        "dropoff_location": "终点",
+        "order_type": "类型",
+        "vehicle_type": "车型",
+        "passenger_count": "人数",
+        "luggage_count": "行李数",
+        "guest_name": "客人姓名",
+        "guest_contact": "客人联系方式",
+        "guide_name": "导游姓名",
+        "guide_phone": "导游电话",
+        "remark": "备注",
+        "fee_remark": "费用/路线备注",
+    }
+    changes: list[str] = []
+    for field, label in labels.items():
+        old = _display_change_value(before.get(field))
+        new = _display_change_value(after.get(field))
+        if old != new:
+            changes.append(f"{label}：{old} -> {new}")
+    return changes
+
+
+def _display_change_value(value: Any) -> str:
+    text = str(value or "").strip()
+    return text if text else "-"
 
 
 def notify_driver_report(report_id: int, report_type: str, assignment_id: int, driver_id: int) -> None:

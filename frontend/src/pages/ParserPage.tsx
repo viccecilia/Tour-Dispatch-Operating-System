@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, RotateCcw, Save, Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -32,6 +32,12 @@ type DraftEdit = Partial<
   >
 >;
 
+type DraftEditState = DraftEdit & {
+  start_datetime?: string;
+  end_datetime?: string;
+  route_text?: string;
+};
+
 const sampleText = `Ashwin Arora
 5.09 11:00 大阪往返天桥立美山 包车 3代 绿 1900
 5.10 11:00 大阪-奈良-宇治-京都 包车 3代 绿 1500
@@ -64,13 +70,58 @@ function shortOid(draft: Draft) {
 }
 
 function routeText(draft: Draft) {
+  const fullRoute = fullRouteText(draft);
+  if (fullRoute) return fullRoute;
   const pickup = draft.pickup_location || "-";
   const dropoff = draft.dropoff_location || "-";
   return `${pickup} -> ${dropoff}`;
 }
 
+function dateTimeText(date?: string | null, time?: string | null) {
+  return [date, time].filter(Boolean).join(" ").trim();
+}
+
+function parseDateTimeText(value: string) {
+  const text = String(value || "").trim();
+  const dateMatch = text.match(/(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})/);
+  const timeMatch = text.match(/(\d{1,2}:\d{2})/);
+  return {
+    date: dateMatch ? dateMatch[1].replace(/\//g, "-") : undefined,
+    time: timeMatch ? timeMatch[1] : undefined,
+  };
+}
+
+function splitRouteText(value: string) {
+  const parts = String(value || "")
+    .split(/\s*(?:->|→|>|-|－|—)\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!parts.length) return { pickup: "", dropoff: "" };
+  return { pickup: parts[0], dropoff: parts[parts.length - 1] };
+}
+
+function fullRouteText(draft: Draft) {
+  const source = `${draft.remark || ""} ${draft.fee_remark || ""}`;
+  const match = source.match(/完整路线[:：]\s*([^；;\n]+)/);
+  return match?.[1]?.trim() || "";
+}
+
 function compactText(value?: string | number | null) {
   return String(value ?? "-").replace(/\s+/g, " ").trim();
+}
+
+function unparsedRemarkText(draft: Draft) {
+  const source = String(draft.fee_remark || draft.remark || "");
+  const hidden = [
+    /完整路线[:：][^；;\n]+[；;]?/g,
+    /路线链[:：][^；;\n]+[；;]?/g,
+    /原始(?:解析)?文本[:：].*/g,
+    /备注标签[:：]?/g,
+    /绿牌/g,
+    /白牌/g,
+  ];
+  const cleaned = hidden.reduce((value, pattern) => value.replace(pattern, " "), source).replace(/[；;\s]+/g, " ").trim();
+  return cleaned || "-";
 }
 
 function parseMeta(draft: Draft) {
@@ -103,7 +154,7 @@ function ConfidenceBadge({ draft }: { draft: Draft }) {
   );
 }
 
-function toDraftEdit(draft: Draft): DraftEdit {
+function toDraftEdit(draft: Draft): DraftEditState {
   return {
     oid: draft.oid,
     order_date: draft.order_date,
@@ -122,6 +173,9 @@ function toDraftEdit(draft: Draft): DraftEdit {
     luggage_count: draft.luggage_count,
     fee_remark: draft.fee_remark,
     remark: draft.remark,
+    start_datetime: dateTimeText(draft.order_date, draft.start_time),
+    end_datetime: dateTimeText(draft.end_date || draft.order_date, draft.end_time),
+    route_text: routeText(draft),
   };
 }
 
@@ -136,12 +190,13 @@ export function ParserPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<DraftEdit>({});
+  const [editDraft, setEditDraft] = useState<DraftEditState>({});
   const [currentBatchIds, setCurrentBatchIds] = useState<Set<number>>(new Set());
   const [message, setMessage] = useState("");
+  const editingRowRef = useRef<HTMLTableRowElement | null>(null);
 
   const draftRows = useMemo(() => {
-    const rows = (draftsQuery.data || []).filter((draft) => draft.parse_status !== "confirmed");
+    const rows = (draftsQuery.data || []).filter((draft) => !["confirmed", "discarded"].includes(draft.parse_status || ""));
     return rows.filter((draft) => {
       const searchable = [
         draft.oid,
@@ -166,7 +221,28 @@ export function ParserPage() {
   }, [draftsQuery.data, endDate, keyword, startDate, status]);
 
   const selectedDrafts = draftRows.filter((draft) => selectedIds.has(draft.id));
+  const selectedCount = selectedIds.size;
   const lowConfidenceCount = draftRows.filter((draft) => parseMeta(draft).lowConfidence).length;
+
+  useEffect(() => {
+    const visibleIds = new Set(draftRows.map((draft) => draft.id));
+    setSelectedIds((previous) => {
+      const next = new Set([...previous].filter((id) => visibleIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [draftRows]);
+
+  useEffect(() => {
+    if (!editingId) return;
+    const activeEditingId = editingId;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+      if (target && editingRowRef.current?.contains(target)) return;
+      saveEdit(activeEditingId);
+    }
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [editingId, editDraft]);
 
   const parseMutation = useMutation({
     mutationFn: api.parseBatchText,
@@ -187,6 +263,27 @@ export function ParserPage() {
       setEditingId(null);
       setMessage("草稿已保存。");
       await queryClient.invalidateQueries({ queryKey: ["drafts"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteDraft(id),
+    onSuccess: async (_data, id) => {
+      setEditingId((previous) => (previous === id ? null : previous));
+      setSelectedIds((previous) => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+      setCurrentBatchIds((previous) => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+      queryClient.setQueryData<Draft[]>(["drafts"], (old) => old?.filter((draft) => draft.id !== id) || old);
+      setMessage("草稿已删除。");
+      await queryClient.invalidateQueries({ queryKey: ["drafts"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
   });
 
@@ -227,10 +324,48 @@ export function ParserPage() {
     setEditDraft(toDraftEdit(draft));
   }
 
+  function saveEdit(id: number) {
+    if (editingId !== id || updateMutation.isPending) return;
+    const { start_datetime, end_datetime, route_text, ...payload } = editDraft;
+    updateMutation.mutate({ id, payload });
+  }
+
   function setEditValue(key: keyof DraftEdit, value: string) {
     setEditDraft((previous) => ({
       ...previous,
       [key]: key === "price" || key === "passenger_count" || key === "luggage_count" ? (value === "" ? undefined : Number(value)) : value,
+    }));
+  }
+
+  function setStartDateTime(value: string) {
+    const parsed = parseDateTimeText(value);
+    setEditDraft((previous) => ({
+      ...previous,
+      start_datetime: value,
+      ...(parsed.date ? { order_date: parsed.date } : {}),
+      ...(parsed.time ? { start_time: parsed.time } : {}),
+    }));
+  }
+
+  function setEndDateTime(value: string) {
+    const parsed = parseDateTimeText(value);
+    setEditDraft((previous) => ({
+      ...previous,
+      end_datetime: value,
+      ...(parsed.date ? { end_date: parsed.date } : {}),
+      ...(parsed.time ? { end_time: parsed.time } : {}),
+    }));
+  }
+
+  function setRouteValue(value: string) {
+    const route = splitRouteText(value);
+    const previousFeeRemark = String(editDraft.fee_remark || "").replace(/完整路线[:：][^；;\n]+[；;]?/g, "").trim();
+    setEditDraft((previous) => ({
+      ...previous,
+      route_text: value,
+      pickup_location: route.pickup || previous.pickup_location,
+      dropoff_location: route.dropoff || previous.dropoff_location,
+      fee_remark: value ? [`完整路线：${value}`, previousFeeRemark].filter(Boolean).join("；") : previous.fee_remark,
     }));
   }
 
@@ -262,6 +397,21 @@ export function ParserPage() {
       return next;
     });
     setMessage("草稿已确认入库。");
+  }
+
+  async function deleteSelected() {
+    const visibleIds = new Set(draftRows.map((draft) => draft.id));
+    const ids = Array.from(selectedIds).filter((id) => visibleIds.has(id));
+    if (!ids.length) {
+      setMessage("请先选择要删除的解析草稿。");
+      return;
+    }
+    if (!window.confirm(`确认删除 ${ids.length} 条解析草稿？删除后不会进入订单。`)) return;
+    for (const id of ids) {
+      await deleteMutation.mutateAsync(id);
+    }
+    setSelectedIds(new Set());
+    setMessage(`已删除 ${ids.length} 条解析草稿。`);
   }
 
   function clearCurrentBatch() {
@@ -311,7 +461,7 @@ export function ParserPage() {
           />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-500">
-              当前批次：{currentBatchIds.size ? `${currentBatchIds.size} 条` : "未导入"} · 已选择：{selectedDrafts.length} 条 · 低置信度：{lowConfidenceCount} 条
+              当前批次：{currentBatchIds.size ? `${currentBatchIds.size} 条` : "未导入"} · 已选择：{selectedCount} 条 · 低置信度：{lowConfidenceCount} 条
             </p>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setText("")}>
@@ -336,7 +486,7 @@ export function ParserPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold text-slate-950">待确认订单表</h2>
-              <p className="mt-1 text-sm text-slate-500">默认只显示确认表；点击编辑在本行修改字段，解析过程收进详情。</p>
+              <p className="mt-1 text-sm text-slate-500">默认只显示确认表；双击行可直接编辑字段，点击行外自动保存。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <input className="h-9 rounded-md border border-border px-3 text-sm" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
@@ -368,13 +518,21 @@ export function ParserPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Button variant="secondary" onClick={() => setSelectedIds(new Set(draftRows.map((draft) => draft.id)))}>
+            <Button className="min-w-20" variant="secondary" onClick={() => setSelectedIds(new Set(draftRows.map((draft) => draft.id)))}>
               全选
             </Button>
-            <Button variant="secondary" onClick={() => setSelectedIds(new Set())}>
+            <Button className="min-w-20" variant="secondary" onClick={() => setSelectedIds(new Set())}>
               清空选择
             </Button>
-            <span className="text-sm text-slate-500">显示 {draftRows.length} 条，已选择 {selectedDrafts.length} 条</span>
+            <Button
+              className="min-w-20"
+              variant="secondary"
+              disabled={!selectedCount || deleteMutation.isPending}
+              onClick={deleteSelected}
+            >
+              删除
+            </Button>
+            <span className="text-sm text-slate-500">显示 {draftRows.length} 条，已选择 {selectedCount} 条</span>
           </div>
 
           {draftsQuery.isLoading ? (
@@ -385,7 +543,7 @@ export function ParserPage() {
                 <table className="min-w-[1180px] w-full border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="w-12 px-3 py-3">选择</th>
+                      <th className="w-16 px-3 py-3">选择</th>
                       <th className="w-32 px-3 py-3">编号</th>
                       <th className="w-36 px-3 py-3">开始日期/时间</th>
                       <th className="w-36 px-3 py-3">结束日期/时间</th>
@@ -395,7 +553,6 @@ export function ParserPage() {
                       <th className="w-24 px-3 py-3">价格</th>
                       <th className="px-3 py-3">备注</th>
                       <th className="w-24 px-3 py-3">置信度</th>
-                      <th className="w-36 px-3 py-3">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -408,6 +565,8 @@ export function ParserPage() {
                           <tr
                             data-testid="parser-draft-row"
                             data-draft-id={draft.id}
+                            ref={isEditing ? editingRowRef : undefined}
+                            onDoubleClick={() => startEdit(draft)}
                             className={`h-12 border-t border-border bg-white align-middle hover:bg-slate-50 ${isCurrentBatch ? "bg-blue-50/40" : ""}`}
                           >
                             <td className="px-3 py-2">
@@ -415,47 +574,59 @@ export function ParserPage() {
                                 type="checkbox"
                                 checked={selectedIds.has(draft.id)}
                                 onChange={() => toggleSelected(draft.id)}
+                                onDoubleClick={(event) => event.stopPropagation()}
                                 className="h-4 w-4 rounded border-slate-300"
                               />
                             </td>
-                            <td className="px-3 py-2 font-semibold text-slate-950">{shortOid(draft)}</td>
-                            <td className="px-3 py-2 text-slate-700">
-                              {compactText(draft.order_date)}
-                              <span className="ml-1 text-slate-500">{compactText(draft.start_time)}</span>
+                            <td className="px-3 py-2 font-semibold text-slate-950">
+                              {isEditing ? (
+                                <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.oid ?? "")} onChange={(event) => setEditValue("oid", event.target.value)} />
+                              ) : shortOid(draft)}
                             </td>
                             <td className="px-3 py-2 text-slate-700">
-                              {compactText(draft.end_date || draft.order_date)}
-                              <span className="ml-1 text-slate-500">{compactText(draft.end_time)}</span>
+                              {isEditing ? (
+                                <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.start_datetime ?? "")} onChange={(event) => setStartDateTime(event.target.value)} />
+                              ) : (
+                                dateTimeText(draft.order_date, draft.start_time) || "-"
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {isEditing ? (
+                                <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.end_datetime ?? "")} onChange={(event) => setEndDateTime(event.target.value)} />
+                              ) : (
+                                dateTimeText(draft.end_date || draft.order_date, draft.end_time) || "-"
+                              )}
                             </td>
                             <td className="max-w-[260px] px-3 py-2 font-medium text-slate-900">
-                              <span className="block truncate">{routeText(draft)}</span>
+                              {isEditing ? (
+                                <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.route_text ?? "")} onChange={(event) => setRouteValue(event.target.value)} />
+                              ) : (
+                                <span className="block truncate">{routeText(draft)}</span>
+                              )}
                             </td>
-                            <td className="px-3 py-2 text-slate-700">{compactText(draft.order_type)}</td>
-                            <td className="px-3 py-2 text-slate-700">{compactText(draft.vehicle_type)}</td>
-                            <td className="px-3 py-2 font-semibold text-slate-900">{draft.price ? `¥${draft.price}` : "-"}</td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {isEditing ? <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.order_type ?? "")} onChange={(event) => setEditValue("order_type", event.target.value)} /> : compactText(draft.order_type)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {isEditing ? <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.vehicle_type ?? "")} onChange={(event) => setEditValue("vehicle_type", event.target.value)} /> : compactText(draft.vehicle_type)}
+                            </td>
+                            <td className="px-3 py-2 font-semibold text-slate-900">
+                              {isEditing ? <input className="h-8 w-full rounded-md border border-border px-2 text-sm" type="number" value={String(editDraft.price ?? "")} onChange={(event) => setEditValue("price", event.target.value)} /> : draft.price ? `¥${draft.price}` : "-"}
+                            </td>
                             <td className="max-w-[260px] px-3 py-2 text-slate-600">
-                              <span className="block truncate">{compactText(draft.fee_remark || draft.remark || draft.raw_text)}</span>
+                              {isEditing ? (
+                                <input className="h-8 w-full rounded-md border border-border px-2 text-sm" value={String(editDraft.remark ?? "")} onChange={(event) => setEditValue("remark", event.target.value)} />
+                              ) : (
+                                <span className="block truncate">{unparsedRemarkText(draft)}</span>
+                              )}
                             </td>
                             <td className="px-3 py-2">
                               <ConfidenceBadge draft={draft} />
                             </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1">
-                                <button className="text-sm font-semibold text-blue-700 hover:text-blue-900" onClick={() => toggleExpanded(draft.id)}>
-                                  {isExpanded ? "收起" : "详情"}
-                                </button>
-                                <button className="text-sm font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => confirmOne(draft.id)}>
-                                  确认
-                                </button>
-                                <button data-testid="parser-edit-draft-button" className="text-sm font-semibold text-slate-700 hover:text-slate-950" onClick={() => startEdit(draft)}>
-                                  编辑
-                                </button>
-                              </div>
-                            </td>
                           </tr>
-                          {(isEditing || isExpanded) && (
+                          {isExpanded && (
                             <tr key={`${draft.id}-detail`} className="border-t border-border bg-slate-50/70">
-                              <td colSpan={11} className="px-4 py-4">
+                              <td colSpan={10} className="px-4 py-4">
                                 {isEditing ? (
                                   <div className="grid gap-3 md:grid-cols-4">
                                     {editFields.map((field) => (

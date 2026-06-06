@@ -150,6 +150,7 @@ from backend.services.notification_service import (
     mark_all_notifications_read,
     mark_driver_notification_read,
     mark_notification_read,
+    notify_order_changed_for_driver,
 )
 from backend.services.org_service import (
     create_department,
@@ -229,6 +230,39 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
 UPLOAD_DIR = ROOT_DIR / "runtime" / "uploads"
 
+CORE_ORDER_UPDATE_FIELDS = {
+    "order_date",
+    "end_date",
+    "start_time",
+    "end_time",
+    "pickup_location",
+    "dropoff_location",
+    "order_type",
+    "vehicle_type",
+    "passenger_count",
+    "luggage_count",
+    "guest_name",
+    "guest_contact",
+    "guide_name",
+    "guide_phone",
+    "guide_wechat",
+    "guide_line",
+    "guide_whatsapp",
+    "price",
+    "price_rmb",
+    "price_jpy",
+    "fee_remark",
+    "remark",
+}
+
+
+def _is_agency_hall_order(order: dict) -> bool:
+    return str(order.get("source_channel") or "").lower() == "agency_portal" or str(order.get("order_source") or "").lower() == "agency_portal"
+
+
+def _touches_core_order_fields(payload: dict) -> bool:
+    return any(field in payload for field in CORE_ORDER_UPDATE_FIELDS)
+
 
 class ApiHandler(BaseHTTPRequestHandler):
     server_version = "WXDispatchAPI/0.6"
@@ -290,7 +324,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/agency-portal/auction-listings":
             self.safe_agency(lambda: {"listings": list_agency_auction_hall(self.agency_token(), params.get("status", "listed"))})
             return
-        if path.startswith("/api/dispatch-mobile/"):
+        if path.startswith("/api/dispatch-mobile/") or path.startswith("/api/driver/"):
             if not self.require_api_user():
                 return
         if path.startswith("/api/") and path != "/api/auth/me" and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
@@ -824,7 +858,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/register"}
         public_dispatch_mobile_paths = {"/api/dispatch-mobile/login", "/api/dispatch-mobile/wechat-login"}
-        if path.startswith("/api/dispatch-mobile/") and path not in public_dispatch_mobile_paths:
+        if (path.startswith("/api/dispatch-mobile/") and path not in public_dispatch_mobile_paths) or path.startswith("/api/driver/"):
             if not self.require_api_user():
                 return
         if path.startswith("/api/") and path not in public_auth_paths and not path.startswith("/api/driver/") and not path.startswith("/api/dispatch-mobile/"):
@@ -1575,6 +1609,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not before:
             self.send_json({"error": "order_not_found"}, HTTPStatus.NOT_FOUND)
             return
+        if _is_agency_hall_order(before) and _touches_core_order_fields(payload):
+            self.send_json({"error": "agency_hall_order_requires_change_request"}, HTTPStatus.FORBIDDEN)
+            return
         try:
             order = update_order(order_id, payload)
         except ValueError as exc:
@@ -1591,6 +1628,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 source_path=path,
                 summary=f"Updated order {order.get('oid') or order_id}",
             )
+            notify_order_changed_for_driver(before, order, self.actor_label())
         self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
 
     def update_finance_with_audit(self, order_id: str, payload: dict, path: str) -> None:
@@ -1642,7 +1680,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def dispatch_assign_with_audit(self, payload: dict, path: str) -> None:
         try:
-            result = assign_orders(payload.get("order_ids", []), payload.get("driver_id"), payload.get("vehicle_id"))
+            result = assign_orders(payload.get("order_ids", []), payload.get("driver_id"), payload.get("vehicle_id"), actor=self.current_user())
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -1683,7 +1721,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def dispatch_reassign_with_audit(self, payload: dict, path: str) -> None:
         try:
-            result = reassign_orders(payload.get("order_ids", []), payload.get("new_driver_id"), payload.get("new_vehicle_id"))
+            result = reassign_orders(payload.get("order_ids", []), payload.get("new_driver_id"), payload.get("new_vehicle_id"), actor=self.current_user())
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.db.database import get_connection
+from backend.services.order_number_service import normalize_vehicle_type_label
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -243,6 +244,11 @@ def identify_vehicle_type(text: str) -> str | None:
     if any(token in raw for token in ["白牌", "白色"]):
         parts.append("白牌")
     return " ".join(dict.fromkeys(parts)) or None
+
+
+def identify_vehicle_type(text: str) -> str | None:
+    label = normalize_vehicle_type_label(text)
+    return label or None
 
 
 def extract_note_tokens(raw_text: str) -> tuple[list[str], str]:

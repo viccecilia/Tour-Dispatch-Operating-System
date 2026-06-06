@@ -78,18 +78,40 @@ REQUIRED_FIELDS = ["order_date", "pickup_location", "dropoff_location"]
 
 
 def list_orders(filters: dict[str, str]) -> list[dict[str, Any]]:
-    sql = ["SELECT * FROM orders WHERE tenant_id = ? AND COALESCE(is_deleted, 0) = 0"]
+    sql = [
+        """
+        SELECT o.*,
+               a.vehicle_id,
+               v.plate_number,
+               v.plate_no,
+               d.driver_code AS assigned_driver_code,
+               d.name AS assigned_driver_name
+        FROM orders o
+        LEFT JOIN assignments a
+          ON a.id = (
+            SELECT a2.id
+            FROM assignments a2
+            WHERE a2.tenant_id = o.tenant_id
+              AND a2.order_id = o.id
+            ORDER BY a2.id DESC
+            LIMIT 1
+          )
+        LEFT JOIN vehicles v ON v.id = a.vehicle_id AND v.tenant_id = o.tenant_id
+        LEFT JOIN drivers d ON d.id = a.driver_id AND d.tenant_id = o.tenant_id
+        WHERE o.tenant_id = ? AND COALESCE(o.is_deleted, 0) = 0
+        """
+    ]
     params: list[Any] = [get_current_tenant_id()]
 
     for field in ("order_date", "agency_id", "dispatch_status", "settlement_status"):
         value = filters.get(field)
         if value:
-            sql.append(f"AND {field} = ?")
+            sql.append(f"AND o.{field} = ?")
             params.append(value)
 
     agency_name = filters.get("agency_name")
     if agency_name:
-        sql.append("AND agency_name LIKE ?")
+        sql.append("AND o.agency_name LIKE ?")
         params.append(f"%{agency_name}%")
 
     keyword = filters.get("keyword")
@@ -98,21 +120,21 @@ def list_orders(filters: dict[str, str]) -> list[dict[str, Any]]:
         sql.append(
             """
             AND (
-                oid LIKE ?
-                OR pickup_location LIKE ?
-                OR dropoff_location LIKE ?
-                OR guest_name LIKE ?
-                OR guest_contact LIKE ?
-                OR agency_name LIKE ?
-                OR order_source LIKE ?
-                OR order_note_code LIKE ?
-                OR remark LIKE ?
+                o.oid LIKE ?
+                OR o.pickup_location LIKE ?
+                OR o.dropoff_location LIKE ?
+                OR o.guest_name LIKE ?
+                OR o.guest_contact LIKE ?
+                OR o.agency_name LIKE ?
+                OR o.order_source LIKE ?
+                OR o.order_note_code LIKE ?
+                OR o.remark LIKE ?
             )
             """
         )
         params.extend([like, like, like, like, like, like, like, like, like])
 
-    sql.append("ORDER BY order_date DESC, start_time DESC, id DESC")
+    sql.append("ORDER BY o.order_date DESC, o.start_time DESC, o.id DESC")
     with get_connection() as conn:
         return [dict(row) for row in conn.execute(" ".join(sql), params).fetchall()]
 
@@ -253,32 +275,59 @@ def _numeric_id(order_id: str) -> int:
 def _build_order_oid(conn, order_id: int, order_date: Any) -> str:
     row_data = conn.execute(
         """
-        SELECT order_note_code, order_source, vehicle_type, vehicle_type_code
-        FROM orders
-        WHERE id = ?
+        SELECT o.order_note_code,
+               o.order_source,
+               o.vehicle_type,
+               o.vehicle_type_code,
+               o.created_by_dispatcher_code,
+               o.agency_id,
+               ag.agency_code,
+               t.slug AS tenant_slug
+        FROM orders o
+        LEFT JOIN agencies ag ON ag.id = o.agency_id AND ag.tenant_id = o.tenant_id
+        LEFT JOIN tenants t ON t.id = o.tenant_id
+        WHERE o.id = ?
         """,
         (order_id,),
     ).fetchone()
     date_text = str(order_date or "").replace("-", "")
     if len(date_text) != 8 or not date_text.isdigit():
-        return f"D000000-{order_id:04d}-TMP"
-    row = conn.execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM orders
-        WHERE order_date = ?
-          AND id <= ?
-          AND tenant_id = ?
-        """,
-        (str(order_date), order_id, get_current_tenant_id()),
-    ).fetchone()
+        return build_order_oid(order_note_code="D", order_date=None, serial=order_id, account_code="A1", temporary=True)
+    if row_data and row_data["agency_id"]:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM orders
+            WHERE order_date = ?
+              AND id <= ?
+              AND tenant_id = ?
+              AND agency_id = ?
+            """,
+            (str(order_date), order_id, get_current_tenant_id(), row_data["agency_id"]),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM orders
+            WHERE order_date = ?
+              AND id <= ?
+              AND tenant_id = ?
+              AND COALESCE(agency_id, 0) = 0
+            """,
+            (str(order_date), order_id, get_current_tenant_id()),
+        ).fetchone()
     serial = int(row["count"] if row else 0) or order_id
+    source_code = None
+    if row_data:
+        source_code = row_data["agency_code"] or row_data["order_note_code"] or row_data["tenant_slug"] or row_data["order_source"]
     while True:
         oid = build_order_oid(
-            order_note_code=row_data["order_note_code"] if row_data else None,
+            order_note_code=source_code,
             order_source=row_data["order_source"] if row_data else None,
             order_date=order_date,
             serial=serial,
+            account_code=row_data["created_by_dispatcher_code"] if row_data else None,
             vehicle_type_code=row_data["vehicle_type_code"] if row_data else None,
             vehicle_type=row_data["vehicle_type"] if row_data else None,
             temporary=True,

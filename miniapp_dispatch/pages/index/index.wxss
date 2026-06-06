@@ -102,6 +102,14 @@
   gap: 16rpx;
 }
 
+.driver-summary-side {
+  grid-template-columns: 1fr 1fr;
+}
+
+.driver-summary-side .summary-wide {
+  grid-column: 1 / -1;
+}
+
 .summary-chip,
 .status-card {
   border-radius: 28rpx;
@@ -121,6 +129,21 @@
 .driver-theme .status-card.active {
   border-color: #14b8a6;
   box-shadow: 0 12rpx 26rpx rgba(20, 184, 166, 0.14);
+}
+
+.summary-chip.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.summary-chip.danger text,
+.summary-chip.danger strong {
+  color: #dc2626;
+}
+
+.driver-theme .summary-chip.danger.active {
+  border-color: #ef4444;
+  box-shadow: 0 12rpx 26rpx rgba(239, 68, 68, 0.14);
 }
 
 .summary-chip text,

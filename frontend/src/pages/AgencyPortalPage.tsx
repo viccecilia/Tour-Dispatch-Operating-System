@@ -2973,13 +2973,31 @@ function extractInlineRoute(line: string) {
   return afterTime
     .split(/\s+\d+\s*(?:人|名|pax)/i)[0]
     .split(/\s+\d+\s*(?:件|个行李|行李|bags?)/i)[0]
-    .split(/\s+(?:Hiace|Alphard|Vellfire|Toyota|Benz|Mercedes|ハイエース|アルファード)\b/i)[0]
+    .split(/\s+(?:Hiace|Haice|Hice|Alphard|Vellfire|Toyota|Benz|Mercedes|ハイエース|アルファード|ヴェルファイア|Grandace|Coaster)\b/i)[0]
+    .split(/\s*(?:[234２３４]\s*代|[七十十八二三四\d]+\s*座|海狮|海獅|阿尔法|埃尔法|威尔法)/i)[0]
     .split(/\s+(?:客人|游客|guest|customer)\b/i)[0]
     .trim();
 }
 
 function extractAgencyVehicle(value: string) {
-  return /(Hiace|Alphard|Vellfire|Toyota\s*\w*|Benz|Mercedes|ハイエース|アルファード|\d+\s*座|[23３２]\s*代)/i.exec(value)?.[1]?.replace(/\s+/g, " ").trim() || "";
+  const normalized = normalizeAgencyVehicleType(value);
+  if (normalized) return normalized;
+  const match = /(Hiace|Haice|Hice|Alphard|Vellfire|Toyota\s*\w*|Benz|Mercedes|Grandace|Coaster|ハイエース|アルファード|ヴェルファイア|海狮|海獅|阿尔法|埃尔法|威尔法|[七十十八二三四\d]+\s*座|[234２３４]\s*代)/i.exec(value)?.[1]?.replace(/\s+/g, " ").trim() || "";
+  return normalizeAgencyVehicleType(match) || match;
+}
+
+function normalizeAgencyVehicleType(value: string) {
+  const compact = String(value || "").replace(/\s+/g, "");
+  const lower = compact.toLowerCase();
+  if (/(4代|四代|４代)/.test(compact)) return "四代";
+  if (/(3代|三代|３代|7座|七座|７座|阿尔法|埃尔法|威尔法|アルファード|ヴェルファイア)/.test(compact)) return "A";
+  if (/(alphard|vellfire)/i.test(lower)) return "A";
+  if (/(10座|十座|１０座|海狮|海獅|ハイエース|グランエース)/.test(compact)) return "海狮";
+  if (/(hiace|haice|hice|grandace)/i.test(lower)) return "海狮";
+  if (/(18座|十八座|１８座|中巴|マイクロバス)/.test(compact)) return "18座";
+  if (/(23座|二十三座|２３座|coaster)/i.test(lower)) return "Coaster";
+  if (/(巴士|バス|bus)/i.test(lower)) return "巴士";
+  return "";
 }
 
 function splitAgencyNamePhone(value: string) {
@@ -3016,7 +3034,7 @@ function toAgencyOrderKind(value: unknown, fallback: AgencyOrderKind = "包车")
 function compactRouteSegment(text: string) {
   const afterTime = text.replace(/^.*?\d{1,2}:\d{2}\s*/, "");
   return afterTime
-    .split(/\s*(?:Hiace|Alphard|Vellfire|Toyota|Benz|Mercedes|ハイエース|アルファード|\d+\s*座|\d+\s*代)/i)[0]
+    .split(/\s*(?:Hiace|Haice|Hice|Alphard|Vellfire|Toyota|Benz|Mercedes|Grandace|Coaster|ハイエース|アルファード|ヴェルファイア|海狮|海獅|阿尔法|埃尔法|威尔法|[七十十八二三四\d]+\s*座|[234２３４]\s*代)/i)[0]
     .split(/\s*绿\s*\d+/)[0]
     .split(/\s+\d{3,7}(?:\+\d{3,7})?\b/)[0]
     .trim();

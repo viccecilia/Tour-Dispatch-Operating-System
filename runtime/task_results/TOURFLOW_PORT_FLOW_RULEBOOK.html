@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TourFlow 多端业务脉络准则</title>
+  <style>
+    :root {
+      --bg: #eef3f8;
+      --panel: #ffffff;
+      --line: #d7e1ec;
+      --text: #10233f;
+      --muted: #64758b;
+      --blue: #2563eb;
+      --green: #0f9f7a;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --purple: #7c3aed;
+      --soft-blue: #eaf2ff;
+      --soft-green: #e8fbf4;
+      --soft-orange: #fff6e5;
+      --soft-red: #fff0f0;
+      --soft-purple: #f4efff;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+    header {
+      padding: 28px 36px 20px;
+      background: linear-gradient(135deg, #0f2748, #135f6a);
+      color: white;
+    }
+    header h1 { margin: 0 0 8px; font-size: 30px; }
+    header p { margin: 0; max-width: 1180px; color: #dbeafe; }
+    main { padding: 24px 32px 48px; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      margin: 0 0 22px;
+      overflow: hidden;
+      box-shadow: 0 10px 28px rgba(15, 35, 65, .06);
+    }
+    .section-head {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    h2 { margin: 0; font-size: 22px; }
+    h3 { margin: 18px 0 10px; font-size: 17px; }
+    .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .body { padding: 20px 22px 24px; }
+    .grid { display: grid; gap: 14px; }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: #fbfdff;
+    }
+    .card strong { display: block; margin-bottom: 5px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      margin: 2px 4px 2px 0;
+      background: var(--soft-blue);
+      color: var(--blue);
+      white-space: nowrap;
+    }
+    .pill.green { background: var(--soft-green); color: var(--green); }
+    .pill.orange { background: var(--soft-orange); color: #a55a00; }
+    .pill.red { background: var(--soft-red); color: var(--red); }
+    .pill.purple { background: var(--soft-purple); color: var(--purple); }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+      min-width: 980px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #f6f9fc;
+      font-weight: 800;
+      color: #34465f;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .note {
+      border-left: 4px solid var(--blue);
+      background: var(--soft-blue);
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin: 12px 0;
+    }
+    .warning {
+      border-left-color: var(--orange);
+      background: var(--soft-orange);
+    }
+    .danger {
+      border-left-color: var(--red);
+      background: var(--soft-red);
+    }
+    .mindmap {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 16px;
+      align-items: stretch;
+    }
+    .node {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fff;
+      min-height: 110px;
+    }
+    .node.core {
+      grid-column: span 2;
+      background: linear-gradient(135deg, #12325c, #0f766e);
+      color: white;
+      border: 0;
+    }
+    .node h3 { margin-top: 0; }
+    .flow {
+      counter-reset: step;
+      display: grid;
+      gap: 12px;
+    }
+    .flow-step {
+      position: relative;
+      padding: 13px 14px 13px 48px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+    .flow-step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 13px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    code {
+      background: #eef2f7;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #fbfdff;
+      margin: 10px 0;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 800;
+    }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+    li { margin: 4px 0; }
+    .small { font-size: 12px; color: var(--muted); }
+    @media print {
+      body { background: white; }
+      main { padding: 12px; }
+      section { break-inside: avoid; box-shadow: none; }
+      .table-wrap { overflow: visible; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TourFlow 多端业务脉络准则</h1>
+    <p>用于旅行社端、车公司端、司机端、平台总控的功能权限、数据库落点、动作联动和异常场景回归验证。每次 Web / 小程序变更、上传或服务器同步后，都按本准则检查主链路是否仍然通顺。</p>
+  </header>
+
+  <main>
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>一、核心准则</h2>
+          <div class="hint">任何端口的功能修改，都不能破坏这些主约束。</div>
+        </div>
+        <span class="pill green">发布基线</span>
+      </div>
+      <div class="body grid cols-3">
+        <div class="card">
+          <strong>单一订单主线</strong>
+          <p>所有业务最终落到 <code>orders</code>。入单、订单大厅、派车、司机执行、结算都围绕同一个订单状态推进。</p>
+        </div>
+        <div class="card">
+          <strong>订单大厅只负责市场动作</strong>
+          <p><code>auction_listings</code> 只记录发布、竞价、一口价、流拍、撤回。被接单后才暴露双方联系人。</p>
+        </div>
+        <div class="card">
+          <strong>派车只负责执行动作</strong>
+          <p><code>assignments</code> 记录司机和车辆；司机端只看自己的任务，旅行社只能看跟踪状态和必要执行信息。</p>
+        </div>
+        <div class="card">
+          <strong>租户隔离优先</strong>
+          <p>旅行社按 <code>agency_id</code> 隔离；车公司按 <code>tenant_id</code> 隔离。公开大厅展示脱敏信息，不能越权读取。</p>
+        </div>
+        <div class="card">
+          <strong>倒拍规则</strong>
+          <p>起拍价是放出价格，车公司每次竞拍向下减价；一口价是快速成交价，允许低于起拍价。</p>
+        </div>
+        <div class="card">
+          <strong>变更必须通知</strong>
+          <p>已接单、已派车或执行中的订单变更后，必须写入记录，并通知车公司、司机、旅行社相关角色。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>二、端口 / Tab / 权限 / 数据库映射</h2>
+          <div class="hint">此表是每次权限和页面改动的第一检查表。</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>端口</th>
+                <th>角色</th>
+                <th>Tab / 页面</th>
+                <th>可做动作</th>
+                <th>不可做动作</th>
+                <th>主要数据库</th>
+                <th>联动对象</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>平台总控 Web</td>
+                <td>admin</td>
+                <td>总览、公司注册、账号租户、订单监管、异常、审计、财务总览</td>
+                <td>审核公司、查看跨租户统计、处理异常、查看全局订单链路和审计</td>
+                <td>不代替车公司派车；不代替旅行社发布真实订单，除测试模式</td>
+                <td><code>orders</code>, <code>auction_listings</code>, <code>assignments</code>, <code>notifications</code>, companies/accounts/audit</td>
+                <td>所有端口，只读监管为主</td>
+              </tr>
+              <tr>
+                <td>车公司 Web</td>
+                <td>管理</td>
+                <td>总览、订单解析、订单、派车、订单大厅、日历、司机监控、出勤台账、车辆地图、车辆/司机、财务、设置</td>
+                <td>接单/一口价、修改本公司订单、派车、管理司机车辆、处理结算、查看公司全量数据</td>
+                <td>不能查看其他车公司内部派车细节；不能修改旅行社未授权信息</td>
+                <td><code>orders</code>, <code>auction_listings</code>, <code>assignments</code>, <code>drivers</code>, <code>vehicles</code>, <code>driver_reports</code>, <code>driver_expense_reports</code></td>
+                <td>旅行社管理/客服/财务、司机端、平台总控</td>
+              </tr>
+              <tr>
+                <td>车公司 Web</td>
+                <td>调度</td>
+                <td>订单、派车、日历、司机监控、车辆地图</td>
+                <td>派车、调整本公司可调订单、查看司机车辆状态</td>
+                <td>默认不进入订单大厅竞价；不看财务总账；不做公司注册审核</td>
+                <td><code>orders</code>, <code>assignments</code>, <code>drivers</code>, <code>vehicles</code>, <code>notifications</code></td>
+                <td>司机端、管理端、旅行社跟踪页</td>
+              </tr>
+              <tr>
+                <td>车公司 Web</td>
+                <td>运行管理</td>
+                <td>司机/车辆、车辆地图、维护、出勤台账</td>
+                <td>维护司机车辆资料、车辆状态、出入库和运行异常</td>
+                <td>不进入订单大厅；不操作竞价和财务</td>
+                <td><code>drivers</code>, <code>vehicles</code>, <code>driver_workflow_events</code>, <code>location_logs</code></td>
+                <td>调度端、司机端、管理端</td>
+              </tr>
+              <tr>
+                <td>车公司小程序</td>
+                <td>司机</td>
+                <td>首页、任务、地图、费用、我的</td>
+                <td>确认派单、点呼出库/入库、执行任务节点、上传位置、提交垫付/代收和领收书</td>
+                <td>不能看订单大厅；不能看其他司机任务；不能看旅行社完整财务</td>
+                <td><code>assignments</code>, <code>driver_reports</code>, <code>location_logs</code>, <code>driver_workflow_events</code>, <code>driver_expense_reports</code>, <code>driver_evidence_uploads</code></td>
+                <td>车公司调度/运行/财务、旅行社跟踪页</td>
+              </tr>
+              <tr>
+                <td>旅行社 Web</td>
+                <td>管理</td>
+                <td>单条入单、批量入单、订单列表、订单大厅、我的订单、跟踪、日历、设置</td>
+                <td>入单、上传包车 PDF、发布大厅、撤回/变更申请、查看司机车辆和结算状态、维护藤本和打款账号</td>
+                <td>不能看其他旅行社内部订单；未接单前不能看车公司联系人</td>
+                <td><code>orders</code>, <code>auction_listings</code>, agency profile/payment/change request tables</td>
+                <td>车公司管理/调度/财务、平台总控、旅行社小程序</td>
+              </tr>
+              <tr>
+                <td>旅行社小程序</td>
+                <td>管理</td>
+                <td>首页、入单、大厅、跟踪、日历、设置</td>
+                <td>移动端查看/录入/发布/跟踪/维护资料；看到本社全量订单</td>
+                <td>不能越权看其他旅行社；不能直接修改已接单关键字段</td>
+                <td><code>orders</code>, <code>auction_listings</code>, agency profile tables</td>
+                <td>旅行社 Web、车公司端、平台</td>
+              </tr>
+              <tr>
+                <td>旅行社小程序</td>
+                <td>客服</td>
+                <td>入单、跟踪、日历、我的</td>
+                <td>关注配单和订单跟踪，维护客户沟通字段</td>
+                <td>不看财务；不做公司资料审核；是否能发布由管理端配置</td>
+                <td><code>orders</code>, <code>auction_listings</code>, <code>notifications</code></td>
+                <td>管理端、车公司调度、导游</td>
+              </tr>
+              <tr>
+                <td>旅行社小程序</td>
+                <td>导游</td>
+                <td>当前订单、未开始订单、历史订单、跟踪、我的</td>
+                <td>只看分配给自己的订单，查看客人联系方式、集合/过程/到达地点，做导游侧汇报</td>
+                <td>不入单；不看订单大厅；不看其他导游或财务</td>
+                <td><code>orders</code>, guide assignment fields, <code>notifications</code>, guide reports if added</td>
+                <td>旅行社管理/客服、车公司司机位置</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>三、数据库关系示意图</h2>
+          <div class="hint">订单是中心，其他表只记录某一类动作或证据。</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="mindmap">
+          <div class="node core">
+            <h3>orders</h3>
+            <p>订单主表：订单号、来源、旅行社、车公司、时间、路线、车型、价格、派车状态、结算状态。</p>
+          </div>
+          <div class="node">
+            <h3>auction_listings</h3>
+            <p>订单大厅发布、起拍价、当前价、一口价、拍卖时长、竞价/接单状态。</p>
+          </div>
+          <div class="node">
+            <h3>assignments</h3>
+            <p>派车结果：司机、车辆、确认、执行、取消、回执。</p>
+          </div>
+          <div class="node">
+            <h3>drivers / vehicles</h3>
+            <p>司机和车辆资源池。车型必须和订单需求匹配：<code>A-3</code>, <code>A-4</code>, <code>H</code>。</p>
+          </div>
+          <div class="node">
+            <h3>notifications</h3>
+            <p>新订单、司机派单、订单变更、取消、结算、异常提醒。</p>
+          </div>
+          <div class="node">
+            <h3>driver_reports</h3>
+            <p>司机确认、出发、到达、完成、异常节点汇报。</p>
+          </div>
+          <div class="node">
+            <h3>location_logs</h3>
+            <p>司机/车辆位置点，支撑旅行社和车公司地图跟踪。</p>
+          </div>
+          <div class="node">
+            <h3>driver_expense_reports</h3>
+            <p>垫付报销、代收上交、金额、备注、状态。</p>
+          </div>
+          <div class="node">
+            <h3>driver_evidence_uploads</h3>
+            <p>领收书、回执、照片证据。</p>
+          </div>
+          <div class="node">
+            <h3>agency profile / payment</h3>
+            <p>旅行社藤本 PDF、担当、电话、打款账号、付款回执。</p>
+          </div>
+          <div class="node">
+            <h3>audit / change logs</h3>
+            <p>谁改了什么、改前改后、通知是否发出、是否需要确认。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>四、订单号与可见范围</h2>
+          <div class="hint">订单号要能追责，但不能把内部信息随便暴露给大厅。</div>
+        </div>
+      </div>
+      <div class="body grid cols-2">
+        <div class="card">
+          <strong>内部订单号规则</strong>
+          <p><code>AGA260615A1-0002</code>：AGA 旅行社，2026-06-15，A1 账号发布，当日第 2 单。</p>
+          <p><code>AGA260615A1-0002-SKR260615B1-0003</code>：被 SKR 车公司 B1 账号在 2026-06-15 接单，是 SKR 当日第 3 单。</p>
+          <p><code>AGA260615A1-0002-SKR260615B1-0003-KEN6637H</code>：派给 Ken，车辆 6637，车型 H。</p>
+        </div>
+        <div class="card">
+          <strong>不同端口如何暴露</strong>
+          <p><span class="pill">公开订单大厅</span> 不显示完整订单号、不显示旅行社、不显示联系人；可使用短流水或不显示编号。</p>
+          <p><span class="pill green">旅行社/车公司接单后</span> 双方可见完整业务号、担当联系方式和执行信息。</p>
+          <p><span class="pill orange">司机端</span> 显示执行号和必要客户/导游信息，不展示竞价来源和车公司利润。</p>
+          <p><span class="pill purple">平台端</span> 可查看完整链路号用于审计。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>五、动作线 A：旅行社发布，车公司一口价接单</h2>
+          <div class="hint">这是订单大厅最关键的联动链路。</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="flow">
+          <div class="flow-step">
+            <strong>旅行社录入订单</strong>
+            <p>旅行社 Web / 小程序录入接机、送机、包车。系统写入 <code>orders</code>，状态为未发布；包车可上传 PDF，机场接送默认不强制 PDF。</p>
+            <span class="pill">旅行社订单列表</span><span class="pill">旅行社日历</span><span class="pill">平台可审计</span>
+          </div>
+          <div class="flow-step">
+            <strong>旅行社发布到订单大厅</strong>
+            <p>写入或更新 <code>auction_listings</code>，订单状态变为发布中。公开大厅只显示日期时间、起终点/主要行程、车型、人数/行李数、起拍价、一口价、剩余时间。</p>
+            <span class="pill orange">不显示订单号</span><span class="pill orange">不显示旅行社</span><span class="pill orange">不显示联系人</span>
+          </div>
+          <div class="flow-step">
+            <strong>车公司管理端一口价接单</strong>
+            <p>车公司管理账号点击一口价，<code>auction_listings.status</code> 变为已接单，<code>orders.dispatch_status</code> 变为已接单/待派车。订单号追加车公司接单段。</p>
+            <span class="pill green">旅行社看到车公司担当</span><span class="pill green">车公司看到旅行社担当</span><span class="pill green">双方可见完整订单内容</span>
+          </div>
+          <div class="flow-step">
+            <strong>联动通知</strong>
+            <p>生成通知：旅行社管理/客服、车公司管理/调度、平台记录。财务端出现待结算占位，但未完成前不请求付款。</p>
+            <span class="pill">notifications</span><span class="pill">agency settlement pending</span><span class="pill">carrier upstream receivable pending</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>六、动作线 B：车公司派车，司机确认并执行</h2>
+          <div class="hint">派车后，司机端、旅行社跟踪和车公司调度必须同步。</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="flow">
+          <div class="flow-step">
+            <strong>调度选择司机和车辆</strong>
+            <p>车公司调度/管理端选择司机和车辆。系统必须校验车型：订单要求 <code>A-3</code> 只能配 A-3，<code>A-4</code> 只能配 A-4，<code>H</code> 只能配 H。强制例外必须由管理账号写原因。</p>
+            <span class="pill">assignments</span><span class="pill">drivers</span><span class="pill">vehicles</span>
+          </div>
+          <div class="flow-step">
+            <strong>写入派车记录并追加订单号</strong>
+            <p>创建或更新 <code>assignments</code>；订单状态变为已派车/待司机确认；订单号追加司机和车辆段，例如 <code>-KEN6637H</code>。</p>
+            <span class="pill green">车公司派车池更新</span><span class="pill green">旅行社跟踪可见司机车辆</span><span class="pill green">司机首页出现待确认</span>
+          </div>
+          <div class="flow-step">
+            <strong>司机确认派单</strong>
+            <p>司机小程序首页显示待确认派单。司机确认后，任务进入任务页；首页待确认数减少。通知应该发给司机本人，不应该只出现在调度平台。</p>
+            <span class="pill">assignment confirmed</span><span class="pill">driver notification read/unread</span>
+          </div>
+          <div class="flow-step">
+            <strong>司机出库与执行</strong>
+            <p>司机未出库时，任务页顶部始终显示点呼出库项。完成车辆、证件、睡眠、酒精等确认后点击出库，开始按顺序执行今日任务。</p>
+            <span class="pill green">driver_workflow_events</span><span class="pill green">driver_reports</span>
+          </div>
+          <div class="flow-step">
+            <strong>位置与节点同步</strong>
+            <p>司机上报当前位置、出发、到达、完成、异常。旅行社跟踪、车公司地图、平台审计同步显示。</p>
+            <span class="pill">location_logs</span><span class="pill">agency tracking</span><span class="pill">carrier map</span>
+          </div>
+          <div class="flow-step">
+            <strong>全部任务完成后入库</strong>
+            <p>无后续任务时进入入库流程：入库时间、休息时间、车辆状态、遗失物、异常申告。提交后今天工作结束。</p>
+            <span class="pill green">returned</span><span class="pill green">workday closed</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>七、动作线 C：订单完成与上下游财务</h2>
+          <div class="hint">财务不是一个状态，而是旅行社付款、车公司确认、司机工资/报销/代收三条线。</div>
+        </div>
+      </div>
+      <div class="body grid cols-3">
+        <div class="card">
+          <strong>旅行社 -> 车公司</strong>
+          <p>订单完成后，车公司发起付款请求；旅行社打款并上传回执；车公司确认收款；订单结算完成。</p>
+          <span class="pill">agency_payment_requested</span>
+          <span class="pill">receipt_uploaded</span>
+          <span class="pill green">paid_confirmed</span>
+        </div>
+        <div class="card">
+          <strong>车公司 -> 司机工资</strong>
+          <p>财务按月统计司机接送机数量、包车数量，乘以对应单价，生成司机工资单。</p>
+          <span class="pill">transfer_count</span>
+          <span class="pill">charter_count</span>
+          <span class="pill">unit_price</span>
+        </div>
+        <div class="card">
+          <strong>司机垫付 / 代收</strong>
+          <p>司机提交金额、备注、领收书照片。垫付是公司报销给司机；代收是司机上交给公司。填错可退回修改。</p>
+          <span class="pill orange">submitted</span>
+          <span class="pill red">needs_correction</span>
+          <span class="pill green">approved</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>八、异常和特殊情况准则</h2>
+          <div class="hint">这些分支要写进回归测试，不然主流程通了也会出运营事故。</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>场景</th>
+                <th>允许动作</th>
+                <th>数据库变化</th>
+                <th>端口反应</th>
+                <th>验证重点</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>大厅发布后无人接单超时</td>
+                <td>系统自动流拍/超时退回；旅行社可重新发布，重新走新发布逻辑</td>
+                <td><code>auction_listings.status=expired</code>; <code>orders.dispatch_status=auction_expired</code></td>
+                <td>旅行社我的订单显示超时退回；历史默认折叠；日历保留状态</td>
+                <td>不能仍被车公司看到可接单；重新发布不能复用旧大厅状态</td>
+              </tr>
+              <tr>
+                <td>未被接单前旅行社撤回</td>
+                <td>旅行社可直接撤回</td>
+                <td>listing cancelled; order cancelled/unpublished</td>
+                <td>车公司大厅消失；旅行社显示已撤回</td>
+                <td>撤回后不能一口价或竞拍</td>
+              </tr>
+              <tr>
+                <td>已接单后修改时间</td>
+                <td>非关键小改可申请；临近订单不能改日期；24 小时以上可申请改日期</td>
+                <td>change request + order version/change log</td>
+                <td>车公司确认；司机收到变更通知；旅行社跟踪显示新时间</td>
+                <td>司机端必须显示修改后的时间和“变更哪里”</td>
+              </tr>
+              <tr>
+                <td>已接单后取消</td>
+                <td>必须申请车公司确认；强制取消按规则计费</td>
+                <td>cancel request; fee rule; settlement adjustment</td>
+                <td>旅行社显示取消费用；车公司确认/拒绝；平台可审计</td>
+                <td>大于 24 小时免费取消月限 10 单；临近强制取消需计费</td>
+              </tr>
+              <tr>
+                <td>车公司接单后迟迟未派车</td>
+                <td>管理/调度提醒；必要时平台异常</td>
+                <td>order accepted but no assignment</td>
+                <td>旅行社看到已接单待派车；车公司通知中心提醒</td>
+                <td>不要误显示司机车辆</td>
+              </tr>
+              <tr>
+                <td>车型不匹配</td>
+                <td>默认禁止派车；管理强制例外需原因</td>
+                <td>assignment blocked or override_reason logged</td>
+                <td>调度界面提示不匹配；司机端不应收到错误车型任务</td>
+                <td>A-3 / A-4 / H 的统一映射必须生效</td>
+              </tr>
+              <tr>
+                <td>司机确认后订单再次变更</td>
+                <td>发司机变更通知，任务页更新</td>
+                <td>notification + assignment/order version</td>
+                <td>司机端展示变更摘要；旅行社和车公司看到同一版本</td>
+                <td>不能只改 Web 不改小程序</td>
+              </tr>
+              <tr>
+                <td>司机垫付填错</td>
+                <td>财务退回，司机修改金额/备注/领收书后再提交</td>
+                <td><code>driver_expense_reports.status=needs_correction</code></td>
+                <td>司机费用页显示退回原因；财务端可看历史版本</td>
+                <td>不能直接删除证据；必须留痕</td>
+              </tr>
+              <tr>
+                <td>订单完成但旅行社未付款</td>
+                <td>车公司发起收款请求，逾期提醒</td>
+                <td>settlement status payment_requested/overdue</td>
+                <td>旅行社管理端提示待付款；车公司财务应收表显示未收</td>
+                <td>完成状态和结算状态必须分开</td>
+              </tr>
+              <tr>
+                <td>跨租户数据泄漏</td>
+                <td>必须阻断并记录异常</td>
+                <td>无业务写入；可写 audit/incident</td>
+                <td>其他旅行社不能看到本社订单；其他车公司不能看内部派车</td>
+                <td>每次上传后必须用 3 个旅行社、3 个车公司交叉登录验证</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>九、状态字典</h2>
+          <div class="hint">页面中文可以变，但底层状态必须一致。</div>
+        </div>
+      </div>
+      <div class="body grid cols-3">
+        <div class="card">
+          <strong>订单状态</strong>
+          <p><span class="pill">未发布</span><span class="pill orange">发布中/竞拍中</span><span class="pill green">已接单</span><span class="pill green">已派车</span><span class="pill purple">进行中</span><span class="pill green">已完成</span><span class="pill red">已取消</span><span class="pill orange">超时退回</span></p>
+        </div>
+        <div class="card">
+          <strong>大厅状态</strong>
+          <p><span class="pill">draft</span><span class="pill orange">listed</span><span class="pill orange">bidding</span><span class="pill green">claimed</span><span class="pill red">expired</span><span class="pill red">cancelled</span></p>
+        </div>
+        <div class="card">
+          <strong>派车 / 司机状态</strong>
+          <p><span class="pill">待司机确认</span><span class="pill green">已确认</span><span class="pill">未出库</span><span class="pill purple">执行中</span><span class="pill green">已完成</span><span class="pill green">已入库</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>十、每次上传 / 小程序发布后的回归清单</h2>
+          <div class="hint">这部分是发布后的硬检查，避免云端又指向本地 API 或本地数据库。</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>检查项</th>
+                <th>方法</th>
+                <th>必须通过的结果</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>云端 API 存活</td>
+                <td>访问 <code>https://api-trial.taxi-airport.jp/api/ping</code></td>
+                <td>返回正常，不能 405/401/500</td>
+              </tr>
+              <tr>
+                <td>Web / 小程序 API 地址</td>
+                <td>检查打包产物和小程序配置</td>
+                <td>云端不能出现 <code>127.0.0.1</code> 或本地数据库路径</td>
+              </tr>
+              <tr>
+                <td>云端数据库</td>
+                <td>服务端环境检查</td>
+                <td>指向 trial 数据库，不指向本地 <code>wx_dispatch.sqlite3</code></td>
+              </tr>
+              <tr>
+                <td>测试账号</td>
+                <td>平台 admin、3 个车公司、3 个旅行社、司机、导游登录</td>
+                <td>Web 和小程序同一账号密码可用；角色权限不同但租户一致</td>
+              </tr>
+              <tr>
+                <td>司机车辆种子</td>
+                <td>每个车公司查看司机池、车辆池</td>
+                <td>每家公司至少 3 个司机，车辆足够且车型 A-3/A-4/H 可测</td>
+              </tr>
+              <tr>
+                <td>订单大厅倒拍</td>
+                <td>发布起拍价 450，一口价 360，车公司竞拍/一口价</td>
+                <td>一口价允许低于起拍价；竞拍每次降 20；当前最高者按钮置灰</td>
+              </tr>
+              <tr>
+                <td>旅行社隔离</td>
+                <td>AGA/AGB/AGC 交叉登录</td>
+                <td>旅行社只能在“我的订单”看到自己的订单；公开大厅不暴露身份</td>
+              </tr>
+              <tr>
+                <td>车公司隔离</td>
+                <td>SKR/KEX/TYO 交叉登录接单和派车</td>
+                <td>接单后只在本车公司订单/派车/财务出现；其他公司不可见内部派车</td>
+              </tr>
+              <tr>
+                <td>司机端通知</td>
+                <td>调度派给 Ken Sato 后登录司机小程序</td>
+                <td>司机首页出现待确认；调度端不应替司机吞掉通知</td>
+              </tr>
+              <tr>
+                <td>变更同步</td>
+                <td>已派车订单修改时间或路线</td>
+                <td>司机端、旅行社跟踪、车公司订单表同时显示新内容和变更通知</td>
+              </tr>
+              <tr>
+                <td>财务闭环</td>
+                <td>订单完成、车公司请求付款、旅行社上传回执、车公司确认</td>
+                <td>双方财务状态一致；平台总控可审计</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note warning">
+          <strong>发布前阻断规则：</strong>如果发现云端 API 指向本地、本地数据库被打包到云端、测试账号不能登录、订单大厅接单失败、司机端收不到派车确认，不能继续上传小程序正式版本。
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>十一、建议补充的自动化检查</h2>
+          <div class="hint">后续可以把这部分做成一键验收脚本。</div>
+        </div>
+      </div>
+      <div class="body">
+        <details open>
+          <summary>1. 订单大厅全链路脚本</summary>
+          <ul>
+            <li>AGA 发布接机订单，SKR 一口价接单，SKR 派 Ken + H 车，司机确认，司机出库，完成，车公司发起收款，AGA 上传回执，SKR 确认收款。</li>
+            <li>断言 <code>orders</code>, <code>auction_listings</code>, <code>assignments</code>, <code>notifications</code>, <code>driver_reports</code>, <code>agency_settlement_status</code> 全部一致。</li>
+          </ul>
+        </details>
+        <details>
+          <summary>2. 多租户边界脚本</summary>
+          <ul>
+            <li>AGA/AGB/AGC 各发 1 单；SKR/KEX/TYO 各接 1 单；检查互相不可见的字段。</li>
+            <li>公开大厅可以看基础行程和价格，但不能看旅行社、联系人、完整订单号。</li>
+          </ul>
+        </details>
+        <details>
+          <summary>3. 异常场景脚本</summary>
+          <ul>
+            <li>发布后撤回、超时流拍、已接单后变更、已接单后强制取消、司机费用退回修改、完成未支付逾期。</li>
+            <li>每个异常都要检查状态、通知、财务、历史记录。</li>
+          </ul>
+        </details>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
