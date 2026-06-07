@@ -68,6 +68,8 @@ def normalize_vehicle_type_label(*values: Any) -> str:
     text = " ".join(raw_values)
     lower = text.lower()
     compact = re.sub(r"\s+", "", text).upper()
+    if any(value.upper() == "H" for value in raw_values):
+        return "H"
 
     if any(token in compact for token in ("A-4", "A4", "4代", "四代", "四代阿尔法", "4代阿尔法")):
         return "A-4"
@@ -75,7 +77,7 @@ def normalize_vehicle_type_label(*values: Any) -> str:
         return "A-3"
     if any(token in lower for token in ("alphard", "vellfire")):
         return "A-3"
-    if any(token in compact for token in ("H", "10座", "十座", "海狮", "海獅", "ハイエース", "グランエース")):
+    if any(token in compact for token in ("10座", "十座", "海狮", "海獅", "ハイエース", "グランエース")):
         return "H"
     if any(token in lower for token in ("hiace", "haice", "hice", "grandace")):
         return "H"

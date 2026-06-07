@@ -2,7 +2,7 @@ import csv
 import io
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from backend.db.database import get_connection
@@ -206,10 +206,10 @@ def analyze_parse_quality(raw_text: str, parsed: dict[str, Any]) -> dict[str, An
 
 
 def split_batch_order_text(raw_text: str) -> list[str]:
-    text = normalize_parser_input(raw_text).replace("。", "。\n")
-    real_order_lines = _split_real_order_text(text)
+    real_order_lines = _split_real_order_text(str(raw_text or ""))
     if real_order_lines:
         return real_order_lines
+    text = normalize_parser_input(raw_text).replace("。", "。\n")
     text = re.sub(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\b\d{1,2}[./-]\d{1,2}\s)", "\n", text)
     text = re.sub(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\d{1,2}月\d{1,2}日?\s)", "\n", text)
     order_lines: list[str] = []
@@ -467,6 +467,10 @@ REAL_LOCATION_ALIASES = {
     "环球": "USJ",
     "环球影城": "USJ",
     "USJ": "USJ",
+    "临空城": "临空城",
+    "りんくう": "临空城",
+    "Rinku": "临空城",
+    "岸和田": "岸和田",
     "心斋桥": "心斋桥",
     "心斋桥微笑酒店": "心斋桥微笑酒店",
     "门真": "门真",
@@ -490,7 +494,7 @@ REAL_NOTE_PATTERNS = [
 
 def _split_real_order_text(text: str) -> list[str]:
     """Split high-volume WeChat/LINE pasted real orders without dropping raw content."""
-    if not text or not re.search(r"\d{1,2}[./-]\d{1,2}\s+\d{1,2}[:：]\d{2}", text):
+    if not text or not re.search(r"(?:\d{1,2}[./-]\d{1,2}\s+)?(?:[01]?\d|2[0-3])[:：]\d{2}", text):
         return []
     normalized = text.replace("\u3000", " ").replace("；", "\n")
     normalized = re.sub(r"^[\s\-=—_]+$", "", normalized, flags=re.MULTILINE)
@@ -501,13 +505,21 @@ def _split_real_order_text(text: str) -> list[str]:
     )
     lines: list[str] = []
     customer_context: str | None = None
+    current_date: str | None = None
     for raw_line in normalized.splitlines():
         line = re.sub(r"\s+", " ", raw_line).strip(" -—_")
         if not line:
             continue
         if re.fullmatch(r"[-—_=]{2,}", line):
             continue
+        date_only = re.fullmatch(r"(\d{1,2}[./-]\d{1,2}|\d{1,2}月\d{1,2}日?)", line)
+        if date_only:
+            current_date = date_only.group(1)
+            continue
+        line = _strip_real_order_number_prefix(line)
         if _looks_like_real_order_line(line):
+            if current_date and not _real_extract_date(line):
+                line = f"{current_date} {line}"
             lines.append(_attach_real_customer_context(line, customer_context))
             continue
         if _looks_like_real_customer_context(line):
@@ -519,7 +531,16 @@ def _split_real_order_text(text: str) -> list[str]:
 
 
 def _looks_like_real_order_line(text: str) -> bool:
-    return bool(re.search(r"\b\d{1,2}[./-]\d{1,2}\s+\d{1,2}[:：]\d{2}", text))
+    return bool(
+        re.search(r"\b\d{1,2}[./-]\d{1,2}\s+(?:[01]?\d|2[0-3])[:：]\d{2}(?=\b|[^\d])", text)
+        or re.match(r"^\s*(?:[01]?\d|2[0-3])[:：]\d{2}(?=\b|[^\d])", text)
+    )
+
+
+def _strip_real_order_number_prefix(text: str) -> str:
+    work = text.strip()
+    work = re.sub(r"^\s*(?:[①-⑳]|\d+\ufe0f?\u20e3|\d+[.)、])\s*", "", work)
+    return work.strip()
 
 
 def _looks_like_real_customer_context(text: str) -> bool:
@@ -540,8 +561,7 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
     """Overlay clean real-order rules from the legacy parser onto the current parser output."""
     if not raw:
         return
-    if _apply_agency_parser_overlay(raw, parsed):
-        return
+    _apply_agency_parser_overlay(raw, parsed)
     date_value = _real_extract_date(raw)
     start_time, end_time = _real_extract_times(raw)
     if date_value:
@@ -551,6 +571,10 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
         parsed["start_time"] = start_time
     if end_time:
         parsed["end_time"] = end_time
+    elif start_time:
+        duration_match = re.search(r"(?<!\d)(\d+)\s*[Hh](?![A-Za-z0-9])", raw)
+        if duration_match:
+            parsed["end_time"] = _real_add_hours(start_time, int(duration_match.group(1)))
 
     order_type = _real_extract_order_type(raw)
     pickup, dropoff, route_chain = _real_extract_route(raw, order_type)
@@ -571,9 +595,14 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
     if color:
         parsed["vehicle_color"] = color
     price, fee_remark = _real_extract_price_and_fee(raw)
+    has_collection_amount = bool(re.search(r"代收\s*[0-9,]+", raw))
     if price is not None:
         parsed["price"] = price
         parsed["price_rmb"] = price
+    elif has_collection_amount:
+        parsed["price"] = None
+        parsed["price_rmb"] = None
+        parsed["price_jpy"] = None
     if parsed.get("price_jpy") is None:
         parsed["price_jpy"] = _real_extract_explicit_jpy(raw)
     if parsed.get("other_fee_jpy") is None:
@@ -642,12 +671,17 @@ def _shared_parser_route_note(value: Any) -> str:
 
 def _real_extract_date(text: str) -> str | None:
     match = re.search(r"\b(\d{1,2}[./-]\d{1,2}|\d{6}|\d{8})\b", text)
-    return normalize_date_token(match.group(1)) if match else None
+    if match:
+        return normalize_date_token(match.group(1))
+    match = re.search(r"\b(\d{1,2})月(\d{1,2})日?\b", text)
+    if match:
+        return normalize_date_token(f"{match.group(1)}.{match.group(2)}")
+    return None
 
 
 def _real_extract_times(text: str) -> tuple[str | None, str | None]:
     work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
-    values = re.findall(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", work)
+    values = re.findall(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d(?=\b|[^\d])", work)
     if not values:
         return None, None
     normalized = [normalize_time_token(item.replace("：", ":")) for item in values]
@@ -663,9 +697,9 @@ def _real_extract_order_type(text: str) -> str | None:
     if "送机" in text:
         return "送机"
     if "接站" in text:
-        return "接站"
+        return "接机"
     if "单送" in text:
-        return "单送"
+        return "送机"
     return None
 
 
@@ -678,10 +712,14 @@ def _real_extract_route(text: str, order_type: str | None) -> tuple[str | None, 
 
     if "接机" in route_text:
         left, right = route_text.split("接机", 1)
-        return _real_endpoint(left, "KIX"), _real_endpoint(right, "待确认"), [_real_endpoint(left, "KIX"), _real_endpoint(right, "待确认")]
+        pickup = _real_endpoint(left, "KIX")
+        dropoff = _real_endpoint(right, "待确认")
+        return pickup, dropoff, [pickup, dropoff]
     if "送机" in route_text:
         left, right = route_text.split("送机", 1)
-        return _real_endpoint(left, "待确认"), _real_endpoint(right, "KIX"), [_real_endpoint(left, "待确认"), _real_endpoint(right, "KIX")]
+        pickup = _real_endpoint(left, "待确认")
+        dropoff = _real_endpoint(right, "KIX") if _real_known_locations(right) else "KIX"
+        return pickup, dropoff, [pickup, dropoff]
     for keyword in ["单送", "送到", "到"]:
         if keyword in route_text:
             left, right = route_text.split(keyword, 1)
@@ -696,7 +734,7 @@ def _real_extract_route(text: str, order_type: str | None) -> tuple[str | None, 
 
     known = _real_known_locations(route_text)
     if order_type == "包车" and "往返" in text and len(known) == 1:
-        return known[0], known[0], known
+        return "大阪市内", known[0], ["大阪市内", known[0], "大阪市内"]
     if len(known) >= 2:
         return known[0], known[-1], known
     if len(known) == 1:
@@ -706,7 +744,11 @@ def _real_extract_route(text: str, order_type: str | None) -> tuple[str | None, 
 
 def _real_strip_noise(text: str) -> str:
     work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b\d{1,2}月\d{1,2}日?\b", " ", work)
     work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d(?:/(?:[01]?\d|2[0-3])[:：][0-5]\d)?\b", " ", work)
+    work = re.sub(r"(?<!\d)\d+\s*[Hh](?![A-Za-z0-9])", " ", work)
+    work = re.sub(r"微信|WeChat|WhatsApp|LINE|Line|Kakao|KAKAO|\*", " ", work, flags=re.I)
+    work = re.sub(r"代收\s*[0-9,]+\s*(?:日元|円|jpy)?", " ", work, flags=re.I)
     work = re.sub(r"\b(?:2代|3代|10座|十座|7座|18座|23座|海狮|GL8|グランエース)(?:[×xX]\d+)?\b", " ", work, flags=re.I)
     work = re.sub(r"儿童[座坐]椅\s*[*xX×]?\s*\d*|儿童坐垫", " ", work)
     work = re.sub(r"绿牌|绿|白牌|雪胎|举牌|接机牌", " ", work)
@@ -721,6 +763,14 @@ def _real_endpoint(value: str, fallback: str) -> str:
         if key and key.lower() in cleaned.lower():
             return REAL_LOCATION_ALIASES[key]
     return cleaned or fallback
+
+
+def _real_add_hours(start_time: str, hours: int) -> str | None:
+    try:
+        base = datetime.strptime(start_time, "%H:%M")
+    except ValueError:
+        return None
+    return (base + timedelta(hours=hours)).strftime("%H:%M")
 
 
 def _real_known_locations(value: str) -> list[str]:
@@ -765,7 +815,9 @@ def _real_extract_vehicle_color(text: str) -> str | None:
 
 def _real_extract_price_and_fee(text: str) -> tuple[float | None, str | None]:
     work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b\d{1,2}月\d{1,2}日?\b", " ", work)
     work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", " ", work)
+    work = re.sub(r"代收\s*[0-9,]+\s*(?:日元|円|jpy)?", " ", work, flags=re.I)
     fee_parts = []
     for fee in re.findall(r"[+＋]\s*(\d{3,6})\s*(?:日元|円|jpy)?", work, re.I):
         fee_parts.append(f"追加费用{fee}")
@@ -786,7 +838,8 @@ def _real_extract_price_and_fee(text: str) -> tuple[float | None, str | None]:
 
 
 def _real_extract_explicit_jpy(text: str) -> float | None:
-    match = re.search(r"([0-9,]{3,})\s*(?:日元|円|JPY)", text, re.I)
+    work = re.sub(r"代收\s*[0-9,]+\s*(?:日元|円|jpy)?", " ", text, flags=re.I)
+    match = re.search(r"([0-9,]{3,})\s*(?:日元|円|JPY)", work, re.I)
     return float(match.group(1).replace(",", "")) if match else None
 
 
