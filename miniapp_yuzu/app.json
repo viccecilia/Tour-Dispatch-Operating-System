@@ -1,0 +1,55 @@
+{
+  "pages": [
+    "pages/entry/index",
+    "pages/login/index"
+  ],
+  "subPackages": [
+    {
+      "root": "package_dispatch",
+      "name": "dispatch",
+      "pages": [
+        "pages/home/index",
+        "pages/dispatch/index",
+        "pages/import/index",
+        "pages/search/index",
+        "pages/auction/index",
+        "pages/map/index",
+        "pages/info/index",
+        "pages/calendar/index",
+        "pages/finance/index",
+        "pages/task/index",
+        "pages/expense/index",
+        "pages/profile/index"
+      ]
+    },
+    {
+      "root": "package_agency",
+      "name": "agency",
+      "pages": [
+        "pages/home/index",
+        "pages/orders/index",
+        "pages/hall/index",
+        "pages/tracking/index",
+        "pages/calendar/index",
+        "pages/profile/index",
+        "pages/settings/index"
+      ]
+    }
+  ],
+  "window": {
+    "navigationBarTitleText": "柚子调度",
+    "navigationBarBackgroundColor": "#10233f",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f4f7fb"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于司机执行订单时上报当前位置"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ]
+}

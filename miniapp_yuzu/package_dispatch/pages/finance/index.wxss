@@ -1,0 +1,139 @@
+@import "../../app.wxss";
+
+.finance-page {
+  padding-bottom: 150rpx;
+}
+
+.finance-hero {
+  background: linear-gradient(135deg, #1748c7 0%, #246bfe 100%);
+}
+
+.finance-overview {
+  margin-top: 18rpx;
+}
+
+.finance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.finance-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.finance-focus {
+  min-height: 116rpx;
+  box-sizing: border-box;
+  padding: 20rpx;
+  border-radius: 26rpx;
+  border: 1rpx solid #bfdbfe;
+  background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+}
+
+.finance-focus.active {
+  border-color: #2563eb;
+  box-shadow: 0 10rpx 24rpx rgba(37, 99, 235, 0.14);
+}
+
+.finance-focus.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.finance-focus.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.finance-focus text {
+  display: block;
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.finance-focus strong {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--c-text);
+  font-size: 38rpx;
+  font-weight: 950;
+}
+
+.finance-sub-grid {
+  margin-top: 14rpx;
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.mini-btn {
+  width: 132rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 999rpx;
+  background: #eef6ff;
+  color: #2563eb;
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 58rpx;
+}
+
+.mini-btn::after {
+  border: 0;
+}
+
+.finance-row {
+  min-height: 84rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 16rpx;
+  border-radius: 24rpx;
+  background: #f8fafc;
+  border: 1rpx solid var(--c-border);
+}
+
+.finance-row-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.row-route {
+  margin-top: 6rpx;
+  color: var(--c-text);
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.row-note {
+  margin-top: 8rpx;
+  max-height: 72rpx;
+  overflow: hidden;
+  color: var(--c-muted);
+  font-size: 21rpx;
+  line-height: 1.5;
+}
+
+.amount {
+  flex: 0 0 auto;
+  color: var(--c-text);
+  font-size: 28rpx;
+  font-weight: 950;
+}
+
+.message {
+  color: #b91c1c;
+  font-weight: 800;
+}

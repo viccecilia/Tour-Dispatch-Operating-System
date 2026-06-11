@@ -1,0 +1,207 @@
+<view class="page dispatch-page">
+  <view class="hero quick-hero">
+    <view class="preview-copy">
+      <view class="hero-eyebrow">DISPATCH WORKBENCH</view>
+      <view class="title-with-help">
+        <view class="hero-title">导入与派车</view>
+        <view class="help-dot hero-help" data-type="hero" bindtap="showHelp">?</view>
+      </view>
+    </view>
+    <view class="hero-count">
+      <text>已选</text>
+      <strong>{{selectedKeys.length}}</strong>
+    </view>
+  </view>
+
+  <view class="toolbar">
+    <button class="tool-button primary" bindtap="toggleImport">{{importOpen ? '收起导入' : '批量导入'}}</button>
+    <button wx:if="{{canAuction}}" class="tool-button auction-top {{selectedKeys.length ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
+  </view>
+
+  <view wx:if="{{importOpen}}" class="panel import-panel">
+    <view class="title-with-help">
+      <view class="panel-title">微信 / LINE 订单文本</view>
+      <view class="help-dot" data-type="import" bindtap="showHelp">?</view>
+    </view>
+    <textarea class="textarea" value="{{importText}}" bindinput="onImportText" placeholder="粘贴订单文本，一次可导入 50-80 单" />
+    <button class="button-primary" loading="{{loading}}" bindtap="parseOrders">解析并分类</button>
+  </view>
+
+  <view wx:if="{{conflictText}}" class="conflict">{{conflictText}}</view>
+  <view wx:elif="{{message}}" class="success-text">{{message}}</view>
+
+  <view class="panel charter-panel">
+    <view class="section-head" bindtap="toggleCharter">
+      <view>
+        <view class="title-with-help">
+          <view class="panel-title">包车</view>
+          <view class="help-dot" data-type="charter" bindtap="showHelp">?</view>
+        </view>
+      </view>
+      <view class="count-pill">{{charterRows.length}} 单 · {{charterCollapsed ? '展开' : '收起'}}</view>
+    </view>
+    <scroll-view wx:if="{{!charterCollapsed}}" scroll-y class="charter-scroll">
+      <view wx:for="{{charterRows}}" wx:key="key" class="row-shell">
+        <view class="compact-row charter-row {{item.selected ? 'selected' : ''}}" data-key="{{item.key}}" bindtap="handleRowTap">
+          <view class="status-dot {{item.kind === 'draft' ? 'warn' : 'ok'}}"></view>
+          <view class="compact-main">
+            <view class="compact-top">
+              <text class="type-chip">{{item.sourceText}}</text>
+              <text class="compact-no">{{item.oid}}</text>
+              <text class="compact-price">{{item.priceText}}</text>
+            </view>
+            <view class="compact-line">{{item.timeText}} · {{item.routeText}}</view>
+            <view class="compact-meta">{{item.vehicle_type || '车型待确认'}} · {{item.charterDetailText}}</view>
+          </view>
+        </view>
+        <view wx:if="{{editingKey === item.key}}" class="inline-edit" catchtap="noop">
+          <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期" />
+          <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="开始" />
+          <input class="input" data-field="end_time" value="{{editing.end_time}}" bindinput="onEditField" placeholder="结束" />
+          <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
+          <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
+          <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
+          <input class="input" data-field="guest_name" value="{{editing.guest_name}}" bindinput="onEditField" placeholder="客人" />
+          <input class="input" data-field="guest_contact" value="{{editing.guest_contact}}" bindinput="onEditField" placeholder="联系方式" />
+          <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
+          <input class="input" data-field="agency_name" value="{{editing.agency_name}}" bindinput="onEditField" placeholder="旅行社" />
+          <input class="input full" data-field="remark" value="{{editing.remark}}" bindinput="onEditField" placeholder="备注 / 行程点" />
+          <view class="edit-actions">
+            <button class="small-button" bindtap="cancelEdit">取消</button>
+            <button class="small-button primary" bindtap="saveEdit">保存</button>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{!charterRows.length}}" class="empty-line">暂无包车订单</view>
+    </scroll-view>
+  </view>
+
+  <view class="airport-grid">
+    <view class="panel list-panel">
+      <view class="section-head small">
+        <view class="title-with-help">
+          <view class="panel-title">接机</view>
+          <view class="help-dot" data-type="pickup" bindtap="showHelp">?</view>
+        </view>
+        <view class="count-pill">{{pickupRows.length}}</view>
+      </view>
+      <scroll-view scroll-y class="airport-scroll">
+        <view wx:for="{{pickupRows}}" wx:key="key" class="row-shell">
+          <view class="compact-row airport-row {{item.selected ? 'selected' : ''}}" data-key="{{item.key}}" bindtap="handleRowTap">
+            <view class="status-dot {{item.kind === 'draft' ? 'warn' : 'ok'}}"></view>
+            <view class="compact-main">
+              <view class="compact-top">
+                <text class="compact-no">{{item.oid}}</text>
+              </view>
+              <view class="compact-line">{{item.compactTimeText}}</view>
+              <view class="compact-meta">{{item.routeText}}</view>
+            </view>
+          </view>
+          <view wx:if="{{editingKey === item.key}}" class="inline-edit compact-edit" catchtap="noop">
+            <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期" />
+            <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="时间" />
+            <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
+            <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
+            <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
+            <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
+            <view class="edit-actions">
+              <button class="small-button" bindtap="cancelEdit">取消</button>
+              <button class="small-button primary" bindtap="saveEdit">保存</button>
+            </view>
+          </view>
+        </view>
+        <view wx:if="{{!pickupRows.length}}" class="empty-line">暂无接机</view>
+      </scroll-view>
+    </view>
+
+    <view class="panel list-panel">
+      <view class="section-head small">
+        <view class="title-with-help">
+          <view class="panel-title">送机</view>
+          <view class="help-dot" data-type="dropoff" bindtap="showHelp">?</view>
+        </view>
+        <view class="count-pill">{{dropoffRows.length}}</view>
+      </view>
+      <scroll-view scroll-y class="airport-scroll">
+        <view wx:for="{{dropoffRows}}" wx:key="key" class="row-shell">
+          <view class="compact-row airport-row {{item.selected ? 'selected' : ''}}" data-key="{{item.key}}" bindtap="handleRowTap">
+            <view class="status-dot {{item.kind === 'draft' ? 'warn' : 'ok'}}"></view>
+            <view class="compact-main">
+              <view class="compact-top">
+                <text class="compact-no">{{item.oid}}</text>
+              </view>
+              <view class="compact-line">{{item.compactTimeText}}</view>
+              <view class="compact-meta">{{item.routeText}}</view>
+            </view>
+          </view>
+          <view wx:if="{{editingKey === item.key}}" class="inline-edit compact-edit" catchtap="noop">
+            <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期" />
+            <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="时间" />
+            <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
+            <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
+            <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
+            <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
+            <view class="edit-actions">
+              <button class="small-button" bindtap="cancelEdit">取消</button>
+              <button class="small-button primary" bindtap="saveEdit">保存</button>
+            </view>
+          </view>
+        </view>
+        <view wx:if="{{!dropoffRows.length}}" class="empty-line">暂无送机</view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <view class="resource-grid">
+    <view class="panel resource-box">
+      <view class="section-head small">
+        <view class="title-with-help">
+          <view class="panel-title">司机</view>
+          <view class="help-dot" data-type="drivers" bindtap="showHelp">?</view>
+        </view>
+      </view>
+      <scroll-view scroll-y class="resource-scroll">
+        <view wx:for="{{drivers}}" wx:key="id" data-id="{{item.id}}" bindtap="selectDriver" class="resource-row driver-row {{item.selected ? 'selected' : ''}} {{item.disabled ? 'disabled' : ''}}">
+          <view class="status-dot {{item.statusClass}}"></view>
+          <text class="resource-name">{{item.displayName || item.name}}</text>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view class="panel resource-box">
+      <view class="section-head small">
+        <view class="title-with-help">
+          <view class="panel-title">车辆</view>
+          <view class="help-dot" data-type="vehicles" bindtap="showHelp">?</view>
+        </view>
+      </view>
+      <scroll-view scroll-y class="resource-scroll">
+        <view wx:for="{{vehicles}}" wx:key="id" data-id="{{item.id}}" bindtap="selectVehicle" class="resource-row {{item.selected ? 'selected' : ''}} {{item.disabled ? 'disabled' : ''}}">
+          <view class="status-dot {{item.statusClass}}"></view>
+          <text class="resource-name">{{item.shortPlate || item.plate_number}}</text>
+          <text class="resource-sub">{{item.vehicle_type || '-'}}/{{item.seat_count || '-'}}座</text>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <view wx:if="{{selectedKeys.length > 0}}" class="dispatch-preview">
+    <view>
+      <view class="preview-title">{{preview.orderCount}} 单 → {{preview.driverName}} → {{preview.vehicleName}}</view>
+      <view class="preview-sub">{{canAssign ? '司机和车辆已选，可以派单。' : '请在下方选择司机和车辆。'}}</view>
+    </view>
+    <view class="preview-actions">
+      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">派单</button>
+    </view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,107 @@
+<view class="page">
+  <view class="hero">
+    <view class="hero-eyebrow">ORDER INPUT</view>
+    <view class="hero-title">旅行社入单</view>
+    <view class="hero-meta">一个文本框统一解析接机、送机和包车；确认字段后保存或发布到订单大厅。</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">统一文本解析</view>
+    <view class="muted">机场接送适合批量粘贴，包车可混在同一批文本中。系统会自动分类。</view>
+    <textarea class="textarea" value="{{rawText}}" bindinput="onTextInput" placeholder="每行一单：接机 / 送机 / 包车都可以粘贴到这里" />
+    <view class="button-row">
+      <button class="button-secondary" bindtap="clearParsed">清空预览</button>
+      <button class="button-primary" loading="{{parseLoading}}" bindtap="parseOrders">解析订单</button>
+    </view>
+    <button class="sample-button" bindtap="fillSample">填入混合示例</button>
+  </view>
+
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+
+  <view class="summary-grid" wx:if="{{parsedOrders.length}}">
+    <view class="summary-card"><text>接机</text><strong>{{pickupRows.length}}</strong></view>
+    <view class="summary-card"><text>送机</text><strong>{{dropoffRows.length}}</strong></view>
+    <view class="summary-card"><text>包车</text><strong>{{charterRows.length}}</strong></view>
+    <view class="summary-card"><text>已选</text><strong>{{selectedParsedCount}}</strong></view>
+  </view>
+
+  <view wx:if="{{parsedOrders.length}}" class="action-panel">
+    <view class="preview-summary">
+      选中要保存或发布的订单。机场接送不需要 PDF；包车可在行内上传 PDF。
+    </view>
+    <view class="preview-action-row">
+      <button class="button-secondary" loading="{{createLoading}}" bindtap="createParsedOrders">保存订单</button>
+      <button class="button-primary" loading="{{createLoading}}" bindtap="createAndPublishOrders">保存并发布</button>
+    </view>
+  </view>
+
+  <template name="orderRows">
+    <scroll-view class="parsed-order-scroll" scroll-x="true">
+      <view class="parsed-order-table">
+        <view class="parsed-order-row parsed-order-header">
+          <view>选择</view>
+          <view>日期</view>
+          <view>开始</view>
+          <view>结束</view>
+          <view>类型</view>
+          <view>起点</view>
+          <view>终点</view>
+          <view>车型</view>
+          <view>人数</view>
+          <view>行李</view>
+          <view>报价</view>
+          <view>客人</view>
+          <view>电话</view>
+          <view>PDF</view>
+        </view>
+        <view wx:for="{{rows}}" wx:key="key" class="parsed-order-row parsed-order-line {{item.selected ? 'parsed-card-selected' : ''}}">
+          <button class="select-button {{item.selected ? 'select-button-active' : ''}}" data-key="{{item.key}}" catchtap="toggleParsedSelection">
+            {{item.selected ? '已选' : '选择'}}
+          </button>
+          <input class="input compact-input" data-key="{{item.key}}" data-field="order_date" value="{{item.order_date}}" bindinput="onParsedFieldInput" placeholder="日期" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="start_time" value="{{item.start_time}}" bindinput="onParsedFieldInput" placeholder="开始" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="end_time" value="{{item.end_time}}" bindinput="onParsedFieldInput" placeholder="结束" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="order_type" value="{{item.order_type}}" bindinput="onParsedFieldInput" placeholder="类型" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="pickup_location" value="{{item.pickup_location}}" bindinput="onParsedFieldInput" placeholder="起点" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="dropoff_location" value="{{item.dropoff_location}}" bindinput="onParsedFieldInput" placeholder="终点" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="vehicle_type" value="{{item.vehicle_type}}" bindinput="onParsedFieldInput" placeholder="车型" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="passenger_count" value="{{item.passenger_count}}" type="number" bindinput="onParsedFieldInput" placeholder="人数" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="luggage_count" value="{{item.luggage_count}}" type="number" bindinput="onParsedFieldInput" placeholder="行李" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="price" value="{{item.price}}" type="number" bindinput="onParsedFieldInput" placeholder="报价" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="guest_name" value="{{item.guest_name}}" bindinput="onParsedFieldInput" placeholder="客人" />
+          <input class="input compact-input" data-key="{{item.key}}" data-field="guest_contact" value="{{item.guest_contact}}" bindinput="onParsedFieldInput" placeholder="电话" />
+          <view class="pdf-cell">
+            <button wx:if="{{item.needsPdf}}" class="mini-button pdf-button" data-key="{{item.key}}" catchtap="choosePdf">{{item.itinerary_pdf_name || '上传PDF'}}</button>
+            <text wx:else class="muted">无</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </template>
+
+  <view wx:if="{{pickupRows.length}}" class="panel result-panel">
+    <view class="section-head">
+      <view class="panel-title">接机</view>
+      <view class="count-pill">{{pickupRows.length}}</view>
+    </view>
+    <template is="orderRows" data="{{rows: pickupRows}}" />
+  </view>
+
+  <view wx:if="{{dropoffRows.length}}" class="panel result-panel">
+    <view class="section-head">
+      <view class="panel-title">送机</view>
+      <view class="count-pill">{{dropoffRows.length}}</view>
+    </view>
+    <template is="orderRows" data="{{rows: dropoffRows}}" />
+  </view>
+
+  <view wx:if="{{charterRows.length}}" class="panel result-panel">
+    <view class="section-head">
+      <view class="panel-title">包车</view>
+      <view class="count-pill">{{charterRows.length}}</view>
+    </view>
+    <template is="orderRows" data="{{rows: charterRows}}" />
+  </view>
+
+  <view wx:if="{{!parsedOrders.length}}" class="empty">暂无解析预览</view>
+</view>

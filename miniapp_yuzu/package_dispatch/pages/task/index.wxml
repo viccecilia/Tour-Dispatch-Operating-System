@@ -1,0 +1,185 @@
+<view class="page task-page driver-theme">
+  <view wx:if="{{departAssignment}}" class="panel yard-panel preflight-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">车辆出库</view>
+        <view class="muted">确认接单后，第一单开始前录入睡眠时间和车辆出库时间。</view>
+      </view>
+      <view class="soft-count">待出库</view>
+    </view>
+
+    <view class="form-grid">
+      <view class="form-field">
+        <text>睡眠时间</text>
+        <input value="{{departForm.sleep_hours}}" data-key="sleep_hours" type="digit" bindinput="onDepartInput" placeholder="如 7.0" />
+      </view>
+      <view class="form-field">
+        <text>车辆出库时间</text>
+        <input value="{{departForm.depart_time}}" data-key="depart_time" bindinput="onDepartInput" placeholder="HH:mm" />
+      </view>
+    </view>
+
+    <view class="check-list">
+      <view wx:for="{{preflightItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onTogglePreflight">
+        <view class="check-dot {{preflightChecked[item.key] ? 'checked' : ''}}"></view>
+        <view>{{item.label}}</view>
+      </view>
+    </view>
+
+    <button class="task-primary" loading="{{submitting}}" bindtap="submitDepart">点呼出库</button>
+  </view>
+
+  <view wx:if="{{!departAssignment}}" class="panel yard-mini-panel">
+    <view class="yard-mini-title">点呼出库</view>
+    <view class="muted">当前无需展开出库点呼。未出库且有已确认任务时会自动展开。</view>
+  </view>
+
+  <view class="panel calendar-panel">
+    <view class="calendar-head">
+      <view>
+        <view class="panel-title">任务日历</view>
+        <view class="muted">当前车辆状态：{{vehicleStatusText}}</view>
+      </view>
+      <view class="calendar-actions">
+        <picker mode="date" fields="month" value="{{selectedDate}}" bindchange="onPickMonth">
+          <view class="calendar-month-title">{{monthLabel}} <text class="month-pick-hint">选择</text></view>
+        </picker>
+      </view>
+      <button class="month-toggle" bindtap="toggleMonth">{{showMonth ? '收起' : '月历'}}</button>
+    </view>
+
+    <scroll-view scroll-x class="week-strip" enable-flex enhanced show-scrollbar="{{false}}" scroll-into-view="{{selectedDayAnchor}}" scroll-with-animation>
+      <view class="week-row">
+        <view
+          wx:for="{{weekDays}}"
+          wx:key="date"
+          id="{{item.anchor}}"
+          class="day-pill {{item.selected ? 'active' : ''}} {{item.today ? 'today' : ''}} {{item.holiday ? 'holiday' : ''}}"
+          data-date="{{item.date}}"
+          bindtap="onSelectDate"
+        >
+          <view class="day-week">周{{item.week}}</view>
+          <view class="day-num">{{item.day}}</view>
+          <view class="day-count">{{item.count}} 单</view>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view wx:if="{{showMonth}}" class="month-grid">
+      <view wx:for="{{['日','一','二','三','四','五','六']}}" wx:key="*this" class="month-week-label {{item === '日' || item === '六' ? 'holiday' : ''}}">周{{item}}</view>
+      <view
+        wx:for="{{monthDays}}"
+        wx:key="date"
+        class="month-day {{item.empty ? 'empty' : ''}} {{item.selected ? 'active' : ''}} {{item.count ? 'has-task' : ''}} {{item.holiday ? 'holiday' : ''}}"
+        data-date="{{item.date}}"
+        bindtap="onSelectDate"
+      >
+        <text wx:if="{{!item.empty}}">{{item.day}}</text>
+        <text wx:if="{{!item.empty && item.count}}" class="month-dot">{{item.count}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{readyAssignments.length}}" class="panel ready-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">已确认待出库任务</view>
+        <view class="muted">司机确认后的任务先留在这里，完成点呼出库后进入执行流程。</view>
+      </view>
+      <view class="soft-count">{{readyAssignments.length}} 单</view>
+    </view>
+    <view class="ready-list">
+      <view wx:for="{{readyAssignments}}" wx:key="assignment_id" class="ready-card">
+        <view class="row-title">{{item.oid || item.order_id || '任务'}}</view>
+        <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">{{selectedLabel}} 任务</view>
+        <view class="muted">正在执行的订单展开，待执行任务折叠显示。</view>
+      </view>
+      <view class="soft-count">{{assignments.length}} 单</view>
+    </view>
+
+    <view class="task-list">
+      <view wx:for="{{assignments}}" wx:key="assignment_id" class="task-card {{item.isExpanded ? 'expanded' : 'collapsed'}}">
+        <view class="task-card-head" data-id="{{item.assignment_id || item.id}}" bindtap="toggleTask">
+          <view class="task-main">
+            <view class="row-title">{{item.oid || item.order_id || '任务'}}</view>
+            <view class="muted">{{item.timeText}}</view>
+          </view>
+          <view class="task-status {{item.orderStatusClass}}">{{item.orderStatusText}}</view>
+        </view>
+
+        <view wx:if="{{item.isExpanded}}" class="task-detail">
+          <view class="task-route">{{item.routeText}}</view>
+          <view class="detail-row">
+            <text>司机</text>
+            <text>{{item.driver_name || '-'}}</text>
+          </view>
+          <view class="detail-row">
+            <text>车辆</text>
+            <text>{{item.plate_number || item.vehicle_plate || '-'}}</text>
+          </view>
+        </view>
+
+        <view wx:else class="task-collapsed-route">{{item.routeText}}</view>
+
+        <button
+          wx:if="{{item.canConfirm}}"
+          class="task-confirm"
+          data-id="{{item.assignment_id || item.id}}"
+          loading="{{submitting}}"
+          bindtap="confirmTask"
+        >确认接单</button>
+      </view>
+
+      <view wx:if="{{!assignments.length && !loading}}" class="empty-state">
+        <view class="empty-title">当天没有任务</view>
+        <view class="muted">调度派车后，这里会显示司机自己的任务。</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{returnAssignment}}" class="panel yard-panel return-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">车辆入库</view>
+        <view class="muted">今日订单完成后，填写休息时间和车辆入库时间，确认收工。</view>
+      </view>
+      <view class="soft-count">收工前</view>
+    </view>
+
+    <view class="form-grid">
+      <view class="form-field">
+        <text>今日休息时间</text>
+        <input value="{{returnForm.rest_hours}}" data-key="rest_hours" type="digit" bindinput="onReturnInput" placeholder="如 1.5" />
+      </view>
+      <view class="form-field">
+        <text>车辆入库时间</text>
+        <input value="{{returnForm.return_time}}" data-key="return_time" bindinput="onReturnInput" placeholder="HH:mm" />
+      </view>
+    </view>
+
+    <view class="check-list">
+      <view wx:for="{{returnItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onToggleReturn">
+        <view class="check-dot {{returnChecked[item.key] ? 'checked' : ''}}"></view>
+        <view>{{item.label}}</view>
+      </view>
+    </view>
+
+    <button class="task-primary return" loading="{{submitting}}" bindtap="submitReturn">确认入库，今日收工</button>
+  </view>
+
+  <view wx:if="{{!returnAssignment}}" class="panel yard-mini-panel return-mini">
+    <view class="yard-mini-title">点呼入库</view>
+    <view class="muted">全部任务完成后会自动展开入库点呼。</view>
+  </view>
+
+  <view wx:if="{{message}}" class="panel muted">{{message}}</view>
+  <custom-tab-bar />
+</view>

@@ -1,0 +1,179 @@
+﻿<view class="page home-page {{isGuide ? 'guide-page' : ''}}">
+  <view class="hero {{isGuide ? 'guide-hero' : ''}}">
+    <view class="hero-topline">
+      <view>
+        <view class="hero-eyebrow">{{isGuide ? 'GUIDE WORKBENCH' : (isService ? 'SERVICE WORKBENCH' : 'AGENCY MINIAPP')}}</view>
+        <view class="hero-title">{{session && session.agency && session.agency.name ? session.agency.name : '旅行社登录'}}</view>
+      </view>
+      <view wx:if="{{session}}" class="role-badge">{{roleLabel}}</view>
+    </view>
+    <view class="hero-meta">{{isGuide ? '只显示自己的订单、客人联系、过程节点和位置跟踪。' : (isService ? '专注订单跟进、配单状态和订单跟踪。' : '订单录入、订单大厅、订单跟踪、日历和结算在这里处理。')}}</view>
+  </view>
+
+  <view wx:if="{{!session}}" class="panel login-panel">
+    <view class="panel-title">旅行社登录</view>
+    <view class="field">
+      <view class="field-label">登录代码</view>
+      <input class="input login-input" value="{{loginCode}}" bindinput="onLoginCodeInput" placeholder="AGA2026 / 080-7101-0101" />
+    </view>
+    <view wx:if="{{resolvedAgencyName}}" class="resolved-agency">{{resolvedAgencyName}}</view>
+    <view class="field">
+      <view class="field-label">密码</view>
+      <input class="input login-input" value="{{password}}" password bindinput="onPasswordInput" placeholder="密码" />
+    </view>
+    <button class="button-primary login-button" loading="{{loginLoading}}" bindtap="login">登录</button>
+  </view>
+
+  <block wx:elif="{{isGuide}}">
+    <view class="panel guide-panel">
+      <view class="panel-header">
+        <view>
+          <view class="panel-title">当前订单</view>
+          <view class="muted">正在服务或即将进入服务中的订单。</view>
+        </view>
+        <button class="mini-button" loading="{{loading}}" bindtap="loadDashboard">刷新</button>
+      </view>
+      <view wx:if="{{currentOrders.length}}" class="guide-list">
+        <view wx:for="{{currentOrders}}" wx:key="id" class="guide-order-card current">
+          <view class="guide-order-no">{{item.oid || item.id}}</view>
+          <view class="guide-time">{{item.timeText}}</view>
+          <view class="guide-route">{{item.routeText}}</view>
+          <view class="guest-box">
+            <view>客人：{{item.guestText}}</view>
+            <view>司机：{{item.driverText}}</view>
+            <view>车辆：{{item.vehicleText}}</view>
+          </view>
+          <view class="report-row">
+            <button class="report-button" data-label="出发" bindtap="reportNode">出发</button>
+            <button class="report-button" data-label="到达" bindtap="reportNode">到达</button>
+            <button class="report-button" data-label="途中汇报" bindtap="reportNode">途中汇报</button>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="empty">暂无当前订单</view>
+    </view>
+
+    <view class="panel guide-panel">
+      <view class="panel-title">未开始订单</view>
+      <view wx:if="{{upcomingOrders.length}}" class="guide-list">
+        <view wx:for="{{upcomingOrders}}" wx:key="id" class="guide-order-card">
+          <view class="guide-order-no">{{item.oid || item.id}}</view>
+          <view class="guide-time">{{item.timeText}}</view>
+          <view class="guide-route">{{item.routeText}}</view>
+          <view class="muted">客人：{{item.guestText}}</view>
+        </view>
+      </view>
+      <view wx:else class="empty">暂无未开始订单</view>
+    </view>
+
+    <view class="panel guide-panel">
+      <view class="panel-title">导游工具</view>
+      <view class="quick-grid">
+        <view class="quick-card" data-url="/package_agency/pages/tracking/index" bindtap="goWorkPage">
+          <view class="quick-title">订单跟踪</view>
+          <view class="muted">查看当前订单司机、车辆和位置。</view>
+        </view>
+        <view class="quick-card" data-url="/package_agency/pages/calendar/index" bindtap="goWorkPage">
+          <view class="quick-title">我的日历</view>
+          <view class="muted">按日期查看自己的订单。</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="panel guide-panel bottom-panel">
+      <view class="panel-title">我的历史</view>
+      <view wx:if="{{historyOrders.length}}" class="guide-list">
+        <view wx:for="{{historyOrders}}" wx:key="id" class="history-row">
+          <view class="guide-order-no">{{item.oid || item.id}}</view>
+          <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+        </view>
+      </view>
+      <view wx:else class="empty">暂无历史订单</view>
+      <button class="button-danger logout-button" bindtap="logout">退出登录</button>
+    </view>
+  </block>
+
+  <block wx:elif="{{isService}}">
+    <view class="panel">
+      <view class="panel-header">
+        <view>
+          <view class="panel-title">客服待跟进</view>
+          <view class="muted">关注配单状态、司机车辆和订单进展。</view>
+        </view>
+        <button class="mini-button" loading="{{loading}}" bindtap="loadDashboard">刷新</button>
+      </view>
+      <view wx:if="{{serviceOrders.length}}" class="guide-list">
+        <view wx:for="{{serviceOrders}}" wx:key="id" class="guide-order-card">
+          <view class="guide-order-no">{{item.oid || item.id}}</view>
+          <view class="guide-time">{{item.timeText}}</view>
+          <view class="guide-route">{{item.routeText}}</view>
+          <view class="tag-row">
+            <text class="tag tag-primary">{{item.driverText}}</text>
+            <text class="tag">{{item.vehicleText}}</text>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="empty">暂无待跟进订单</view>
+    </view>
+
+    <view class="panel">
+      <view class="panel-title">客服工具</view>
+      <view class="quick-grid">
+        <view class="quick-card" data-url="/package_agency/pages/tracking/index" bindtap="goWorkPage">
+          <view class="quick-title">订单跟踪</view>
+          <view class="muted">查看配单、司机、车辆和当前位置。</view>
+        </view>
+        <view class="quick-card" data-url="/package_agency/pages/calendar/index" bindtap="goWorkPage">
+          <view class="quick-title">订单日历</view>
+          <view class="muted">按日期查看需要跟进的订单。</view>
+        </view>
+      </view>
+      <button class="button-danger logout-button" bindtap="logout">退出登录</button>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="panel stats-panel">
+      <view class="grid-2 dashboard-grid">
+        <view class="metric"><text>全部订单</text><strong>{{stats.total}}</strong></view>
+        <view class="metric"><text>发布中</text><strong>{{stats.published}}</strong></view>
+        <view class="metric"><text>已接单</text><strong>{{stats.claimed}}</strong></view>
+        <view class="metric"><text>待结算</text><strong>{{stats.pendingSettlement}}</strong></view>
+      </view>
+    </view>
+
+    <view class="panel">
+      <view class="panel-title">业务入口</view>
+      <view class="quick-grid">
+        <view class="quick-card" data-url="/package_agency/pages/orders/index" bindtap="goPage">
+          <view class="quick-title">订单录入</view>
+          <view class="muted">接送机和包车统一解析。</view>
+        </view>
+        <view class="quick-card" data-url="/package_agency/pages/hall/index" bindtap="goPage">
+          <view class="quick-title">订单大厅</view>
+          <view class="muted">发布、查看大厅和我的订单。</view>
+        </view>
+        <view class="quick-card" data-url="/package_agency/pages/tracking/index" bindtap="goPage">
+          <view class="quick-title">订单跟踪</view>
+          <view class="muted">查看司机、车辆和当前位置。</view>
+        </view>
+        <view class="quick-card" data-url="/package_agency/pages/calendar/index" bindtap="goPage">
+          <view class="quick-title">日历</view>
+          <view class="muted">按时间查看订单状态。</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="panel bottom-panel">
+      <view class="panel-title">账户与资料</view>
+      <view class="quick-card settings-card" bindtap="goSettings">
+        <view class="quick-title">旅行社设置</view>
+        <view class="muted">维护藤本 PDF、打款账号、担当姓名和电话。</view>
+      </view>
+      <button class="button-danger logout-button" bindtap="logout">退出登录</button>
+    </view>
+  </block>
+
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+</view>
+

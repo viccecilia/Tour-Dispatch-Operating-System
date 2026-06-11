@@ -1,0 +1,190 @@
+@import "../../app.wxss";
+
+.panel-header-lite {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.fold-badge {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 8rpx 14rpx;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.intake-textarea {
+  min-height: 320rpx;
+}
+
+.risk-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.risk-box {
+  border-radius: 22rpx;
+  padding: 18rpx;
+  border: 1rpx solid #dbe5f0;
+  background: #f8fafc;
+}
+
+.risk-box text {
+  display: block;
+  font-size: 22rpx;
+  color: #64748b;
+}
+
+.risk-box strong {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 34rpx;
+}
+
+.risk-box.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.risk-box.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.risk-box.ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.draft-card {
+  margin-top: 16rpx;
+  border: 1rpx solid #dbe5f0;
+  border-radius: 24rpx;
+  padding: 20rpx;
+  background: #fff;
+}
+
+.draft-card.high {
+  border-color: #fecaca;
+  background: #fffafa;
+}
+
+.draft-card.medium {
+  border-color: #fed7aa;
+  background: #fffdf8;
+}
+
+.draft-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.route {
+  margin-top: 8rpx;
+  color: #0f172a;
+  font-size: 30rpx;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.risk-pill {
+  flex: 0 0 auto;
+  border-radius: 999rpx;
+  padding: 8rpx 14rpx;
+  font-size: 22rpx;
+  font-weight: 800;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.risk-pill.high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.risk-pill.medium {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.risk-pill.ok {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.risk-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 14rpx;
+}
+
+.risk-line text {
+  border-radius: 999rpx;
+  padding: 6rpx 12rpx;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.draft-actions {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.small-button {
+  flex: 1;
+  height: 64rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.small-button.primary {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.draft-detail {
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #e2e8f0;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 120rpx 1fr;
+  gap: 16rpx;
+  margin-bottom: 14rpx;
+  font-size: 24rpx;
+}
+
+.detail-row text {
+  color: #64748b;
+}
+
+.edit-grid {
+  display: grid;
+  gap: 14rpx;
+}
+
+.small-textarea {
+  min-height: 160rpx;
+}

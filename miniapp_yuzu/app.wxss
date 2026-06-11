@@ -1,0 +1,210 @@
+page {
+  min-height: 100vh;
+  color: #102033;
+  background: #f4f7fb;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 28rpx 28rpx 52rpx;
+  box-sizing: border-box;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 34rpx;
+  padding: 34rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #12324a 0%, #0f766e 100%);
+  box-shadow: 0 20rpx 48rpx rgba(16, 35, 63, 0.12);
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  top: -44rpx;
+  right: -38rpx;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.eyebrow {
+  font-size: 22rpx;
+  font-weight: 900;
+  opacity: 0.82;
+}
+
+.title {
+  margin-top: 10rpx;
+  font-size: 46rpx;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.subtitle {
+  margin-top: 14rpx;
+  max-width: 560rpx;
+  font-size: 26rpx;
+  line-height: 1.45;
+  opacity: 0.9;
+}
+
+.panel {
+  margin-top: 22rpx;
+  padding: 24rpx;
+  border: 1rpx solid #dbe6f2;
+  border-radius: 28rpx;
+  background: #fff;
+  box-shadow: 0 12rpx 30rpx rgba(30, 54, 92, 0.07);
+}
+
+.section-title {
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.section-copy {
+  margin-top: 6rpx;
+  color: #60728a;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 82rpx;
+  border-radius: 22rpx;
+  font-size: 27rpx;
+  font-weight: 850;
+}
+
+.button-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.button-green {
+  color: #fff;
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+}
+
+.button-soft {
+  color: #0f2748;
+  background: #edf4ff;
+}
+
+.field {
+  margin-top: 18rpx;
+}
+
+.label {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #334563;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.input {
+  width: 100%;
+  height: 84rpx;
+  padding: 0 22rpx;
+  border: 1rpx solid #d9e4ef;
+  border-radius: 18rpx;
+  background: #f8fbff;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.status {
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  color: #0f766e;
+  background: #e7fbf7;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.status.error {
+  color: #b91c1c;
+  background: #fff1f2;
+}
+
+.tab-spacer {
+  height: 116rpx;
+}
+
+.port-tabbar {
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 18rpx;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 8rpx;
+  min-height: 88rpx;
+  padding: 8rpx;
+  border: 1rpx solid #dce7f2;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14rpx 34rpx rgba(18, 36, 66, 0.12);
+  box-sizing: border-box;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 66rpx;
+  border-radius: 20rpx;
+  color: #52657c;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.tab-item.active {
+  color: #fff;
+  background: #2563eb;
+}
+
+.tab-item.agency-active {
+  color: #fff;
+  background: #0f766e;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.metric-card {
+  padding: 18rpx;
+  border: 1rpx solid #dbe6f2;
+  border-radius: 20rpx;
+  background: #f8fbff;
+}
+
+.metric-label {
+  color: #60728a;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.metric-value {
+  margin-top: 8rpx;
+  font-size: 36rpx;
+  font-weight: 950;
+}

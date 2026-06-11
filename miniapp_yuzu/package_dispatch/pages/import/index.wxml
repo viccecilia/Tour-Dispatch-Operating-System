@@ -1,0 +1,83 @@
+<view class="page">
+  <view class="hero import-hero">
+    <view class="hero-eyebrow">BATCH INTAKE</view>
+    <view class="hero-title">批次导入</view>
+    <view class="hero-meta">微信 / LINE 文本 -> 草稿 -> 修正 -> 待派</view>
+  </view>
+
+  <view class="panel stack">
+    <view class="panel-title">粘贴订单文本</view>
+    <view class="muted">适合一次导入 50-80 单。解析后默认只优先处理问题草稿。</view>
+    <textarea class="textarea intake-textarea" value="{{text}}" bindinput="onText" placeholder="粘贴微信或 LINE 订单文本" />
+    <button class="button-primary" loading="{{loading}}" bindtap="parse">批量解析</button>
+    <view wx:if="{{message}}" class="muted">{{message}}</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">风险草稿</view>
+    <view class="muted">默认折叠正常草稿，只展开缺时间、缺车型、地点异常、重复或价格可疑的草稿。</view>
+    <view class="risk-grid">
+      <view class="risk-box danger"><text>高风险</text><strong>{{riskSummary.high}}</strong></view>
+      <view class="risk-box warning"><text>需修正</text><strong>{{riskSummary.medium}}</strong></view>
+      <view class="risk-box ok"><text>可确认</text><strong>{{riskSummary.ok}}</strong></view>
+    </view>
+    <button class="button-primary confirm-button" loading="{{loading}}" bindtap="confirmOkDrafts">确认正常草稿</button>
+  </view>
+
+  <view class="panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">问题优先处理</view>
+        <view class="muted">正常草稿已收起，避免 50 单导入时铺满屏幕。</view>
+      </view>
+      <view wx:if="{{foldedDraftCount > 0}}" class="fold-badge">已折叠 {{foldedDraftCount}}</view>
+    </view>
+    <view class="list">
+      <view wx:for="{{visibleDrafts}}" wx:key="id" class="draft-card {{item.riskLevel}}">
+        <view class="draft-main">
+          <view>
+            <view class="row-title">{{item.oid || item.id}} · {{item.timeText}}</view>
+            <view class="route">{{item.routeText}}</view>
+            <view class="muted">{{item.vehicle_type || '待确认车型'}} · ¥{{item.price || 0}} · {{item.agency_name || '待确认旅行社'}}</view>
+          </view>
+          <view class="risk-pill {{item.riskLevel}}">{{item.riskLevel === 'ok' ? '可确认' : '需修正'}}</view>
+        </view>
+
+        <view wx:if="{{item.risks.length}}" class="risk-line">
+          <text wx:for="{{item.risks}}" wx:key="*this">{{item}}</text>
+        </view>
+
+        <view class="draft-actions">
+          <button class="small-button" data-id="{{item.id}}" bindtap="toggleExpand">{{expandedId === item.id + '' ? '收起' : '展开'}}</button>
+          <button class="small-button" data-id="{{item.id}}" bindtap="startEdit">编辑</button>
+          <button class="small-button primary" data-id="{{item.id}}" bindtap="confirmDraft">确认</button>
+        </view>
+
+        <view wx:if="{{expandedId === item.id + ''}}" class="draft-detail">
+          <view wx:if="{{editingId !== item.id + ''}}">
+            <view class="detail-row"><text>原文</text><view>{{item.raw_text || '-'}}</view></view>
+            <view class="detail-row"><text>备注</text><view>{{item.remark || '-'}}</view></view>
+          </view>
+
+          <view wx:else class="edit-grid">
+            <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期 2026-05-29" />
+            <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="开始 08:00" />
+            <input class="input" data-field="end_time" value="{{editing.end_time}}" bindinput="onEditField" placeholder="结束" />
+            <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
+            <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
+            <input class="input" data-field="order_type" value="{{editing.order_type}}" bindinput="onEditField" placeholder="类型" />
+            <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
+            <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
+            <input class="input" data-field="agency_name" value="{{editing.agency_name}}" bindinput="onEditField" placeholder="旅行社" />
+            <textarea class="textarea small-textarea" data-field="remark" value="{{editing.remark}}" bindinput="onEditField" placeholder="备注" />
+            <view class="draft-actions">
+              <button class="small-button" bindtap="cancelEdit">取消</button>
+              <button class="small-button primary" loading="{{loading}}" bindtap="saveEdit">保存</button>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{!visibleDrafts.length}}" class="muted">暂无需要优先处理的问题草稿。</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,151 @@
+<view class="page {{isDriverTheme ? 'driver-theme' : ''}}">
+  <view class="hero dashboard-hero">
+    <view class="hero-eyebrow">TOURFLOW MOBILE</view>
+    <view class="hero-title">{{session ? session.dispatcher.dispatcher_name : '统一账号登录'}}</view>
+    <view class="hero-meta">{{session ? session.dispatcher.dispatcher_code + ' - ' + session.dispatcher.dispatcher_role : '调度 / 管理 / 司机 / 运行管理统一入口'}}</view>
+  </view>
+
+  <view wx:if="{{!session}}" class="panel stack login-panel">
+    <view>
+      <view class="panel-title">账号登录</view>
+      <view class="login-help">使用后台录入的手机号登录，初始密码为手机号后 6 位。</view>
+    </view>
+    <input class="input login-input" value="{{username}}" type="text" confirm-type="next" bindinput="onUsername" placeholder-class="login-placeholder" placeholder="手机号或账号" />
+    <input class="input login-input" value="{{password}}" password confirm-type="done" bindinput="onPassword" placeholder-class="login-placeholder" placeholder="密码" />
+    <button class="button-primary" loading="{{loading}}" bindtap="login">进入系统</button>
+    <view wx:if="{{error}}" class="muted">{{error}}</view>
+  </view>
+
+  <view wx:else>
+    <view class="ops-summary">
+      <view wx:if="{{canDispatch}}" class="summary-main" bindtap="goDispatch">
+        <view class="summary-label">未派车订单</view>
+        <view class="summary-number">{{dashboard.counts.unassigned_orders || 0}}</view>
+        <view class="summary-note">点击进入派车工作台</view>
+      </view>
+      <view wx:elif="{{isOperationsManager}}" class="summary-main ops-main {{operationsStatus.tone}}">
+        <view class="summary-label">今日运力状态</view>
+        <view class="summary-number status-text">{{operationsStatus.label}}</view>
+        <view class="summary-note">{{operationsStatus.hint}}</view>
+      </view>
+      <view wx:else class="summary-main" bindtap="goTask">
+        <view class="summary-label">当前状态</view>
+        <view class="summary-number status-text">{{statusLabel}}</view>
+        <view class="summary-note">{{statusHint}}</view>
+      </view>
+
+      <view class="summary-side {{!isOperationsManager ? 'driver-summary-side' : ''}}">
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip summary-wide {{panelMode === 'orders' ? 'active' : ''}} {{driverOrderChipAlert ? 'danger' : ''}}" data-mode="orders" bindtap="switchPanel">
+          <text>{{driverOrderChipLabel}}</text>
+          <strong>{{driverOrderChipCount}}</strong>
+        </view>
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'unread' ? 'active' : ''}}" data-mode="unread" bindtap="switchPanel">
+          <text>未读通知</text>
+          <strong>{{dashboard.counts.notifications_unread || 0}}/{{dashboard.counts.notifications_total || 0}}</strong>
+        </view>
+        <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'all' ? 'active' : ''}}" data-mode="all" bindtap="switchPanel">
+          <text>全部订单</text>
+          <strong>{{driverAssignments.length || 0}}</strong>
+        </view>
+        <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'tasks' ? 'active' : ''}}" data-section="tasks" bindtap="switchOperationsSection">
+          <text>司机任务</text>
+          <strong>{{operationsOverview.taskTotal}}</strong>
+        </view>
+        <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'notifications' ? 'active' : ''}}" data-section="notifications" bindtap="switchOperationsSection">
+          <text>通知</text>
+          <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{isOperationsManager}}" class="ops-grid ops-grid-compact">
+      <view class="ops-card {{operationsSection === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="goInfo">
+        <text>司机资料</text>
+        <strong>{{operationsOverview.driverTotal}}</strong>
+        <view>联系方式、体检、驾照、在留期限</view>
+      </view>
+      <view class="ops-card {{operationsSection === 'vehicles' ? 'active' : ''}}" data-section="vehicles" bindtap="goInfo">
+        <text>车辆资料</text>
+        <strong>{{operationsOverview.vehicleTotal}}</strong>
+        <view>车型、车牌、点检、年检、维修状态</view>
+      </view>
+      <view class="ops-card ops-card-wide {{operationsSection === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="goInfo">
+        <text>出勤状态</text>
+        <strong>{{operationsOverview.attendanceWarnings}}</strong>
+        <view>出勤司机、车辆、睡眠、点呼、出入库和休息时间</view>
+      </view>
+    </view>
+
+    <view wx:if="{{isOperationsManager}}" class="panel ops-home-detail">
+      <view class="panel-header-lite">
+        <view>
+          <view class="panel-title">{{operationsDetailTitle}}</view>
+          <view class="muted">{{operationsDetailHint}}</view>
+        </view>
+        <view class="soft-count">{{operationsDetailRows.length}} {{operationsDetailUnit}}</view>
+      </view>
+      <view class="compact-list">
+        <view wx:for="{{operationsDetailRows}}" wx:key="id" class="compact-row">
+          <view class="row-title">{{item.title}}</view>
+          <view class="muted">{{item.meta}}</view>
+          <view wx:if="{{item.body}}" class="compact-body">{{item.body}}</view>
+          <view wx:if="{{item.details && item.details.length}}" class="ops-mini-fields">
+            <view wx:for="{{item.details}}" wx:for-item="field" wx:key="label" class="ops-mini-field">
+              <text>{{field.label}}</text>
+              <strong>{{field.value}}</strong>
+            </view>
+          </view>
+        </view>
+        <view wx:if="{{!operationsDetailRows.length}}" class="empty-state">暂无数据</view>
+      </view>
+    </view>
+
+    <view wx:if="{{canViewDriverWorkload}}" class="panel">
+      <view class="panel-header-lite">
+        <view>
+          <view class="panel-title">司机工作负荷</view>
+          <view class="muted">连续工作超过 13 天会标记为风险。</view>
+        </view>
+        <view class="soft-count">{{driverStats.length}} 人</view>
+      </view>
+      <view class="pressure-list">
+        <view class="pressure-row {{item.alert ? 'danger' : ''}}" wx:for="{{visibleDriverStats}}" wx:key="driver_id">
+          <view>
+            <view class="pressure-name">{{item.driver_name}}</view>
+            <view class="muted">今日 {{item.today_orders}} 单 - 本月 {{item.month_orders}} 单</view>
+          </view>
+          <view class="pressure-badge {{item.alert ? 'danger' : ''}}">连续 {{item.continuous_days}} 天</view>
+        </view>
+      </view>
+      <view wx:if="{{driverStats.length > 3}}" class="pressure-toggle" bindtap="togglePressureList">
+        {{pressureExpanded ? '收起，只看前 3 人' : '展开全部司机'}}
+      </view>
+      <view wx:if="{{!driverStats.length}}" class="empty-state">暂无司机订单统计</view>
+    </view>
+
+    <view wx:if="{{!isOperationsManager}}" class="panel notifications-panel">
+      <view class="panel-header-lite">
+        <view>
+          <view class="panel-title">{{panelTitle}}</view>
+          <view class="muted">{{panelHint}}</view>
+        </view>
+        <view class="soft-count">{{panelRows.length}} 条</view>
+      </view>
+      <view class="list">
+        <view wx:for="{{panelRows}}" wx:key="id" data-index="{{index}}" bindtap="onPanelRowTap" class="row notification-row">
+          <view class="notification-dot {{item.priority || 'normal'}}"></view>
+          <view class="notification-main">
+            <view class="row-title">{{item.title}}</view>
+            <view class="muted">{{item.meta}}</view>
+            <view wx:if="{{item.body}}" class="notification-body">{{item.body}}</view>
+          </view>
+          <view class="notification-action">{{item.actionText || '查看'}}</view>
+        </view>
+        <view wx:if="{{!panelRows.length}}" class="empty-state">暂无内容</view>
+      </view>
+    </view>
+
+  </view>
+
+  <custom-tab-bar />
+</view>

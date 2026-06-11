@@ -1,0 +1,162 @@
+<view wx:if="{{isDriver}}" class="map-page driver-map-page driver-theme">
+  <map
+    class="fleet-map"
+    latitude="{{latitude}}"
+    longitude="{{longitude}}"
+    scale="{{scale}}"
+  ></map>
+
+  <view class="map-top driver-task-panel">
+    <view class="map-title-row">
+      <view>
+        <view class="map-eyebrow">TODAY TASK</view>
+        <view class="title-with-help">
+          <view class="map-title">当前任务</view>
+          <view class="help-dot" data-type="driver" bindtap="showHelp">?</view>
+        </view>
+      </view>
+      <button class="refresh-button" bindtap="loadDriverMap">刷新</button>
+    </view>
+
+    <view wx:if="{{currentAssignment}}" class="current-task-card">
+      <view class="result-badge online">{{currentAssignment.statusLabel}}</view>
+      <view class="current-order">{{currentAssignment.oid || currentAssignment.order_id}}</view>
+      <view class="current-time">{{currentAssignment.timeText}}</view>
+      <view class="current-route">{{currentAssignment.routeText}}</view>
+      <button
+        class="node-action"
+        disabled="{{nextAction.disabled}}"
+        bindtap="submitCurrentReport"
+      >{{nextAction.label}}</button>
+    </view>
+
+    <view wx:else class="current-task-card empty-current">
+      <view class="current-order">今日暂无当前任务</view>
+      <view class="current-time">调度派车后会显示当前订单和节点汇报按钮。</view>
+    </view>
+  </view>
+
+  <view class="map-bottom driver-upcoming-panel">
+    <view class="selected-title">待执行任务</view>
+    <scroll-view scroll-y class="result-list">
+      <view wx:for="{{upcomingAssignments}}" wx:key="assignment_id" class="result-row compact-task">
+        <view>
+          <view class="result-title">{{item.oid || item.order_id}}</view>
+          <view class="result-meta">{{item.timeText}} · {{item.routeText}}</view>
+        </view>
+        <text class="result-badge">{{item.statusLabel}}</text>
+      </view>
+      <view wx:if="{{!upcomingAssignments.length}}" class="result-row">
+        <view class="result-meta">后续待执行订单会折叠显示在这里。</view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
+    </view>
+  </view>
+</view>
+
+<view wx:else class="map-page">
+  <map
+    class="fleet-map"
+    latitude="{{latitude}}"
+    longitude="{{longitude}}"
+    markers="{{markers}}"
+    scale="{{scale}}"
+    bindmarkertap="onMarkerTap"
+  ></map>
+
+  <view class="map-top">
+    <view class="map-title-row">
+      <view>
+        <view class="map-eyebrow">FLEET LIVE</view>
+        <view class="title-with-help">
+          <view class="map-title">车队地图</view>
+          <view class="help-dot" data-type="fleet" bindtap="showHelp">?</view>
+        </view>
+      </view>
+      <button class="refresh-button" bindtap="loadData">刷新</button>
+    </view>
+
+    <view class="map-alert-row">
+      <view><text>在线司机</text><strong>{{filteredDrivers.length}}</strong></view>
+      <view><text>执行订单</text><strong>{{filteredOrders.length}}</strong></view>
+      <view><text>已选目标</text><strong>{{selected ? 1 : 0}}</strong></view>
+    </view>
+
+    <view class="search-box">
+      <input
+        value="{{query}}"
+        bindinput="onSearchInput"
+        placeholder="搜索司机、车辆、订单或路线"
+        confirm-type="search"
+      />
+    </view>
+
+    <view class="mode-tabs">
+      <view data-mode="drivers" bindtap="setMode" class="mode-tab {{mode === 'drivers' ? 'active' : ''}}">
+        司机 {{filteredDrivers.length}}
+      </view>
+      <view data-mode="orders" bindtap="setMode" class="mode-tab {{mode === 'orders' ? 'active' : ''}}">
+        订单 {{filteredOrders.length}}
+      </view>
+    </view>
+  </view>
+
+  <view class="map-bottom">
+    <view wx:if="{{selected}}" class="selected-card">
+      <view class="selected-title">{{selected.title}}</view>
+      <view class="selected-meta">{{selected.meta}}</view>
+      <view wx:if="{{selected.sub}}" class="selected-sub">{{selected.sub}}</view>
+    </view>
+
+    <scroll-view wx:if="{{mode === 'drivers'}}" scroll-y class="result-list">
+      <view
+        wx:for="{{filteredDrivers}}"
+        wx:key="driver_id"
+        data-driver-id="{{item.driver_id}}"
+        bindtap="focusDriver"
+        class="result-row"
+      >
+        <view>
+          <view class="result-title">{{item.driver_name || '未命名司机'}}</view>
+          <view class="result-meta">{{item.plate_number || '未绑定车辆'}} · {{item.locationText}}</view>
+        </view>
+        <text class="result-badge {{item.hasLocation ? 'online' : ''}}">{{item.hasLocation ? '有定位' : '无定位'}}</text>
+      </view>
+    </scroll-view>
+
+    <scroll-view wx:else scroll-y class="result-list">
+      <view
+        wx:for="{{filteredOrders}}"
+        wx:key="assignment_id"
+        data-assignment-id="{{item.assignment_id}}"
+        bindtap="focusOrder"
+        class="result-row"
+      >
+        <view>
+          <view class="result-title">{{item.oid || item.order_id}} · {{item.driver_name || '未派司机'}}</view>
+          <view class="result-meta">{{item.timeText}} · {{item.routeText}}</view>
+        </view>
+        <text class="result-badge">{{item.execution_status || item.status}}</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
+    </view>
+  </view>
+</view>

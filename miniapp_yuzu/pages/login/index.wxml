@@ -1,0 +1,20 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">{{meta.eyebrow}}</view>
+    <view class="title">{{meta.title}}</view>
+    <view class="subtitle">统一入口登录，登录后根据账号角色进入对应工作台。</view>
+  </view>
+
+  <view class="panel">
+    <view class="field">
+      <text class="label">{{meta.accountLabel}}</text>
+      <input class="input" value="{{loginCode}}" placeholder="{{meta.placeholder}}" bindinput="onLoginCodeInput" />
+    </view>
+    <view class="field">
+      <text class="label">密码</text>
+      <input class="input" password value="{{password}}" placeholder="请输入密码" bindinput="onPasswordInput" />
+    </view>
+    <view class="button button-green login-button" bindtap="submit">{{loading ? '登录中...' : meta.button}}</view>
+    <view wx:if="{{message}}" class="status error">{{message}}</view>
+  </view>
+</view>

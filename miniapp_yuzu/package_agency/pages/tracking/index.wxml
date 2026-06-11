@@ -1,0 +1,55 @@
+<view class="page">
+  <view class="hero {{isGuide ? 'guide-hero' : ''}}">
+    <view class="hero-eyebrow">{{isGuide ? 'GUIDE TRACKING' : 'TRACKING'}}</view>
+    <view class="hero-title">{{isGuide ? '我的订单跟踪' : '订单跟踪'}}</view>
+    <view class="hero-meta">{{isGuide ? '围绕自己的订单查看客人联系、司机车辆和过程节点。' : '接单后可查看车公司派出的司机、车辆和当前位置。'}}</view>
+  </view>
+
+  <view wx:if="{{message}}" class="message">{{message}}</view>
+
+  <view class="panel">
+    <view class="panel-header">
+      <view>
+        <view class="panel-title">当前位置</view>
+        <view class="muted">{{selectedOrder.oid || selectedOrder.id || '-'}} · {{selectedOrder.routeText || '暂无订单'}}</view>
+      </view>
+      <button class="mini-button" loading="{{loading}}" bindtap="loadOrders">刷新</button>
+    </view>
+    <view class="map-wrap">
+      <map class="map" latitude="{{mapLatitude}}" longitude="{{mapLongitude}}" markers="{{markers}}" scale="11" />
+      <view wx:if="{{!markers.length}}" class="map-empty">暂无司机位置，上报后会显示地图点。</view>
+    </view>
+    <view wx:if="{{selectedOrder}}" class="track-detail">
+      <view class="detail-line">客人：{{selectedOrder.guestText}}</view>
+      <view class="detail-line">司机：{{selectedOrder.driverText}}</view>
+      <view class="detail-line">车辆：{{selectedOrder.vehicleText}}</view>
+      <view class="detail-line">位置：{{selectedOrder.locationText}}</view>
+      <view class="detail-line">上报：{{selectedOrder.driver_location_reported_at || '-'}}</view>
+      <view wx:if="{{isGuide}}" class="report-row">
+        <button class="report-button" data-label="出发" bindtap="reportNode">出发</button>
+        <button class="report-button" data-label="到达" bindtap="reportNode">到达</button>
+        <button class="report-button" data-label="途中汇报" bindtap="reportNode">途中汇报</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="field" style="margin-top: 0;">
+      <view class="field-label">{{isGuide ? '搜索我的订单' : '搜索订单'}}</view>
+      <input class="input tracking-search" value="{{keyword}}" bindinput="onKeywordInput" placeholder="订单号 / 日期 / 客人 / 司机 / 车辆" />
+    </view>
+    <view class="list">
+      <view wx:for="{{filteredOrders}}" wx:key="id" class="row-card" data-id="{{item.id}}" bindtap="focusOrder">
+        <view class="row-title">{{item.oid || item.id}}</view>
+        <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+        <view class="tag-row">
+          <view class="tag tag-primary">{{item.statusText}}</view>
+          <view class="tag tag-warning">{{item.settlementText}}</view>
+          <view class="tag">{{item.driverText}}</view>
+          <view class="tag">{{item.vehicleText}}</view>
+        </view>
+      </view>
+      <view wx:if="{{!filteredOrders.length}}" class="empty">暂无订单</view>
+    </view>
+  </view>
+</view>

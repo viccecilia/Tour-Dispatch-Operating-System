@@ -1,0 +1,470 @@
+@import "../../app.wxss";
+
+.task-page {
+  padding-bottom: 150rpx;
+}
+
+.calendar-panel {
+  margin-top: 20rpx;
+}
+
+.calendar-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  min-height: 88rpx;
+  padding-right: 238rpx;
+}
+
+.calendar-actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 220rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8rpx;
+}
+
+.month-toggle {
+  position: absolute;
+  right: 0;
+  top: 58rpx;
+  align-self: flex-end;
+  flex: 0 0 auto;
+  min-width: 72rpx;
+  height: 34rpx;
+  line-height: normal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12rpx;
+  border-radius: 999rpx;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 17rpx;
+  font-weight: 900;
+}
+
+.month-toggle::after {
+  border: 0;
+}
+
+.calendar-month-title {
+  width: 100%;
+  min-height: 48rpx;
+  margin-top: 0;
+  color: #0f766e;
+  font-size: 24rpx;
+  font-weight: 950;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: #ecfeff;
+  white-space: nowrap;
+}
+
+.month-pick-hint {
+  display: none;
+}
+
+.week-strip {
+  width: 100%;
+  white-space: nowrap;
+  margin-top: 18rpx;
+}
+
+.week-row {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 8rpx;
+  min-width: 100%;
+  padding-right: 8rpx;
+}
+
+.day-pill {
+  flex: 0 0 86rpx;
+  width: 86rpx;
+  min-height: 112rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 12rpx 6rpx;
+  border: 1rpx solid #dbe8f0;
+  border-radius: 18rpx;
+  background: #f8fafc;
+  color: var(--c-text);
+  text-align: center;
+}
+
+.day-pill.active {
+  border-color: #14b8a6;
+  background: linear-gradient(180deg, #ecfeff 0%, #ccfbf1 100%);
+  box-shadow: 0 12rpx 26rpx rgba(20, 184, 166, 0.16);
+}
+
+.day-pill.today {
+  border-color: #67e8f9;
+}
+
+.day-pill.holiday .day-week,
+.day-pill.holiday .day-num {
+  color: #dc2626;
+}
+
+.day-pill.holiday.active .day-week,
+.day-pill.holiday.active .day-num {
+  color: #991b1b;
+}
+
+.day-week {
+  color: var(--c-muted);
+  font-size: 18rpx;
+  font-weight: 850;
+}
+
+.day-num {
+  margin-top: 4rpx;
+  font-size: 30rpx;
+  font-weight: 950;
+}
+
+.day-count {
+  margin-top: 6rpx;
+  color: #0f766e;
+  font-size: 18rpx;
+  font-weight: 900;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.month-week-label {
+  height: 34rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-muted);
+  font-size: 19rpx;
+  font-weight: 900;
+}
+
+.month-week-label.holiday {
+  color: #dc2626;
+}
+
+.month-day {
+  min-height: 58rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+  border-radius: 16rpx;
+  background: #f8fafc;
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 850;
+}
+
+.month-day.empty {
+  background: transparent;
+  border: 0;
+}
+
+.month-day.has-task {
+  color: #0f766e;
+  background: #ecfeff;
+}
+
+.month-day.holiday {
+  color: #dc2626;
+}
+
+.month-day.active {
+  color: #ffffff;
+  background: #0f766e;
+}
+
+.month-dot {
+  min-width: 24rpx;
+  height: 24rpx;
+  line-height: 24rpx;
+  border-radius: 999rpx;
+  background: rgba(20, 184, 166, 0.18);
+  font-size: 18rpx;
+}
+
+.yard-panel {
+  border: 2rpx solid #99f6e4;
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdfa 100%);
+}
+
+.preflight-panel {
+  border-color: #5eead4;
+}
+
+.return-panel {
+  border-color: #99f6e4;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.form-field {
+  min-width: 0;
+}
+
+.form-field text {
+  display: block;
+  margin-bottom: 8rpx;
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 850;
+}
+
+.form-field input {
+  height: 78rpx;
+  box-sizing: border-box;
+  padding: 0 20rpx;
+  border: 1rpx solid #cdeee8;
+  border-radius: 22rpx;
+  background: #ffffff;
+  color: var(--c-text);
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.check-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10rpx;
+  margin-top: 20rpx;
+}
+
+.check-row {
+  min-height: 70rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  box-sizing: border-box;
+  padding: 14rpx 16rpx;
+  border: 1rpx solid #cdeee8;
+  border-radius: 20rpx;
+  background: #ffffff;
+  color: var(--c-text);
+  font-size: 25rpx;
+  font-weight: 850;
+}
+
+.check-dot {
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 999rpx;
+  border: 4rpx solid #cbd5e1;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.check-dot.checked {
+  border-color: #10b981;
+  background: #10b981;
+  box-shadow: 0 0 0 8rpx rgba(16, 185, 129, 0.12);
+}
+
+.task-primary {
+  width: 320rpx;
+  height: 86rpx;
+  line-height: normal;
+  margin: 22rpx auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 26rpx;
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  color: #ffffff;
+  font-size: 29rpx;
+  font-weight: 950;
+  box-shadow: 0 16rpx 32rpx rgba(20, 184, 166, 0.20);
+}
+
+.task-primary.return {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  box-shadow: 0 16rpx 32rpx rgba(20, 184, 166, 0.20);
+}
+
+.task-primary::after {
+  border: 0;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.ready-panel {
+  border-color: #bae6fd;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
+}
+
+.ready-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.ready-card {
+  padding: 16rpx 18rpx;
+  border: 1rpx solid #dbeafe;
+  border-radius: 20rpx;
+  background: #ffffff;
+}
+
+.task-card {
+  padding: 18rpx;
+  border: 1rpx solid var(--c-border);
+  border-radius: 24rpx;
+  background: #f8fafc;
+}
+
+.task-card.expanded {
+  border-color: #14b8a6;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 100%);
+}
+
+.task-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.task-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.task-detail {
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid #dbeafe;
+}
+
+.task-route {
+  color: var(--c-text);
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.task-collapsed-route {
+  margin-top: 8rpx;
+  color: var(--c-muted);
+  font-size: 23rpx;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-top: 8rpx;
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.task-status {
+  flex: 0 0 auto;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.task-status.active {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.task-status.pending {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.task-status.done {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.task-confirm {
+  width: 100%;
+  height: 66rpx;
+  line-height: normal;
+  margin-top: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20rpx;
+  border-radius: 20rpx;
+  background: #0f766e;
+  color: #fff;
+  font-size: 25rpx;
+  font-weight: 900;
+  box-shadow: 0 12rpx 24rpx rgba(20, 184, 166, 0.18);
+}
+
+.task-confirm::after {
+  border: 0;
+}
+
+.yard-mini-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  padding: 18rpx 22rpx;
+  border-color: #ccfbf1;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.yard-mini-title {
+  flex: 0 0 auto;
+  color: #0f766e;
+  font-size: 26rpx;
+  font-weight: 950;
+}
+
+.yard-mini-panel .muted {
+  flex: 1;
+  text-align: right;
+  font-size: 20rpx;
+  line-height: 1.35;
+}
+
+.yard-mini-panel.return-mini {
+  border-color: #bfdbfe;
+}
+
+.yard-mini-panel.return-mini .yard-mini-title {
+  color: #155e75;
+}

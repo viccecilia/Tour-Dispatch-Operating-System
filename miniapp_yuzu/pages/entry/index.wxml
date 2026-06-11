@@ -1,0 +1,36 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">YUZU DISPATCH</view>
+    <view class="title">柚子调度</view>
+    <view class="subtitle">一个小程序入口，按身份进入旅行社、车公司、司机和导游工作台。</view>
+  </view>
+
+  <view class="panel" wx:if="{{currentSession}}">
+    <view class="section-title">已登录</view>
+    <view class="section-copy">{{currentSession.display_name || currentSession.login_code || currentSession.username}}</view>
+    <view class="entry-actions">
+      <view class="button button-primary" bindtap="continueSession">进入工作台</view>
+      <view class="button button-soft" bindtap="clearSession">切换账号</view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">选择入口</view>
+    <view class="section-copy">先选端口，再登录。后续页面和权限由账号角色决定。</view>
+    <view class="port-grid">
+      <view class="port-card agency" data-port="agency" bindtap="choosePort">
+        <view class="port-title">旅行社</view>
+        <view class="port-copy">入单、订单大厅、我的订单、跟踪、日历。</view>
+      </view>
+      <view class="port-card dispatch" data-port="dispatch" bindtap="choosePort">
+        <view class="port-title">车公司</view>
+        <view class="port-copy">派车、订单大厅、司机任务、地图、费用。</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">迁移状态</view>
+    <view class="section-copy">当前为统一入口第一阶段：入口和登录骨架已接入，业务页仍保留在原小程序中，下一阶段按模块迁移。</view>
+  </view>
+</view>
