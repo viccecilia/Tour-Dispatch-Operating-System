@@ -4,7 +4,6 @@
     latitude="{{latitude}}"
     longitude="{{longitude}}"
     scale="{{scale}}"
-    show-location
   ></map>
 
   <view class="map-top driver-task-panel">
@@ -71,7 +70,6 @@
     longitude="{{longitude}}"
     markers="{{markers}}"
     scale="{{scale}}"
-    show-location
     bindmarkertap="onMarkerTap"
   ></map>
 

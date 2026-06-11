@@ -1,13 +1,14 @@
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, FileText, Loader2, RotateCcw, Save, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, Loader2, RotateCcw, Save, Search, Upload } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { PilotFeedbackNote } from "@/components/PilotFeedbackNote";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { todayIso } from "@/lib/utils";
 import { api } from "@/services/apiClient";
-import type { Draft } from "@/types/api";
+import type { Draft, Order } from "@/types/api";
 
 type DraftEdit = Partial<
   Pick<
@@ -36,6 +37,16 @@ type DraftEditState = DraftEdit & {
   start_datetime?: string;
   end_datetime?: string;
   route_text?: string;
+};
+
+type SingleOrderForm = Partial<Order> & {
+  order_date: string;
+  end_date: string;
+  start_time: string;
+  end_time: string;
+  pickup_location: string;
+  dropoff_location: string;
+  itinerary_pdf_file?: File | null;
 };
 
 const sampleText = `Ashwin Arora
@@ -110,6 +121,37 @@ function compactText(value?: string | number | null) {
   return String(value ?? "-").replace(/\s+/g, " ").trim();
 }
 
+function blankSingleOrder(): SingleOrderForm {
+  const date = todayIso();
+  return {
+    order_date: date,
+    end_date: date,
+    start_time: "09:00",
+    end_time: "19:00",
+    pickup_location: "",
+    dropoff_location: "",
+    order_type: "包车",
+    vehicle_type: "A-3",
+    agency_name: "",
+    guest_name: "",
+    guest_contact: "",
+    passenger_count: undefined,
+    luggage_count: undefined,
+    price: undefined,
+    remark: "",
+    itinerary_pdf_file: null,
+  };
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("file_read_failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function unparsedRemarkText(draft: Draft) {
   const source = String(draft.fee_remark || draft.remark || "");
   const hidden = [
@@ -182,6 +224,7 @@ function toDraftEdit(draft: Draft): DraftEditState {
 export function ParserPage() {
   const queryClient = useQueryClient();
   const draftsQuery = useQuery({ queryKey: ["drafts"], queryFn: api.drafts });
+  const [singleOrder, setSingleOrder] = useState<SingleOrderForm>(() => blankSingleOrder());
   const [text, setText] = useState("");
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState("");
@@ -292,6 +335,32 @@ export function ParserPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["drafts"] });
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+  });
+
+  const createSingleOrderMutation = useMutation({
+    mutationFn: async (form: SingleOrderForm) => {
+      const file = form.itinerary_pdf_file;
+      const itineraryPdfUrl = file ? await fileToDataUrl(file) : form.itinerary_pdf_url;
+      const { itinerary_pdf_file: _file, ...rest } = form;
+      return api.createOrder({
+        ...rest,
+        end_date: rest.end_date || rest.order_date,
+        dispatch_status: "unassigned",
+        settlement_status: "pending",
+        source_channel: "manual_single",
+        itinerary_pdf_name: file?.name || rest.itinerary_pdf_name,
+        itinerary_pdf_url: itineraryPdfUrl,
+        price: rest.price === undefined || rest.price === null || String(rest.price) === "" ? undefined : Number(rest.price),
+      });
+    },
+    onSuccess: async () => {
+      setSingleOrder(blankSingleOrder());
+      setMessage("单个订单已保存到订单池，可继续派车或放入订单大厅。");
+      await queryClient.invalidateQueries({ queryKey: ["orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["unassigned-orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["calendar"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
   });
@@ -421,6 +490,25 @@ export function ParserPage() {
     setMessage("已清空当前导入批次选择，历史草稿仍保留。");
   }
 
+  function setSingleOrderValue(key: keyof SingleOrderForm, value: string | number | File | null | undefined) {
+    setSingleOrder((previous) => ({
+      ...previous,
+      [key]: ["price", "passenger_count", "luggage_count"].includes(String(key))
+        ? value === "" || value === undefined || value === null
+          ? undefined
+          : Number(value)
+        : value,
+    }));
+  }
+
+  function submitSingleOrder() {
+    if (!singleOrder.order_date || !singleOrder.pickup_location.trim() || !singleOrder.dropoff_location.trim()) {
+      setMessage("单个订单请至少填写开始日期、起点和终点。");
+      return;
+    }
+    createSingleOrderMutation.mutate(singleOrder);
+  }
+
   return (
     <div className="space-y-5">
       <PilotFeedbackNote
@@ -428,6 +516,99 @@ export function ParserPage() {
         tone="amber"
         items={["解析失败先保留原文", "低置信度必须人工确认", "把经常改的字段记下来", "确认后再进订单池"]}
       />
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-950">单个订单详细录入</h2>
+              <p className="mt-1 text-sm text-slate-500">适合临时追加、电话确认后的订单。保存后直接进入订单池，PDF 会随订单保存。</p>
+            </div>
+            <Button variant="secondary" onClick={() => setSingleOrder(blankSingleOrder())}>
+              清空
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-6">
+            <SingleField label="开始日期" required>
+              <input type="date" value={singleOrder.order_date} onChange={(event) => setSingleOrderValue("order_date", event.target.value)} />
+            </SingleField>
+            <SingleField label="结束日期">
+              <input type="date" value={singleOrder.end_date} onChange={(event) => setSingleOrderValue("end_date", event.target.value)} />
+            </SingleField>
+            <SingleField label="开始时间">
+              <input type="time" value={singleOrder.start_time} onChange={(event) => setSingleOrderValue("start_time", event.target.value)} />
+            </SingleField>
+            <SingleField label="结束时间">
+              <input type="time" value={singleOrder.end_time} onChange={(event) => setSingleOrderValue("end_time", event.target.value)} />
+            </SingleField>
+            <SingleField label="类型">
+              <select value={singleOrder.order_type || ""} onChange={(event) => setSingleOrderValue("order_type", event.target.value)}>
+                <option value="包车">包车</option>
+                <option value="接机">接机</option>
+                <option value="送机">送机</option>
+              </select>
+            </SingleField>
+            <SingleField label="车型">
+              <select value={singleOrder.vehicle_type || ""} onChange={(event) => setSingleOrderValue("vehicle_type", event.target.value)}>
+                <option value="A-3">A-3</option>
+                <option value="A-4">A-4</option>
+                <option value="H">H</option>
+              </select>
+            </SingleField>
+            <SingleField label="起点" required wide>
+              <input value={singleOrder.pickup_location} onChange={(event) => setSingleOrderValue("pickup_location", event.target.value)} placeholder="例：大阪市内 / KIX" />
+            </SingleField>
+            <SingleField label="终点" required wide>
+              <input value={singleOrder.dropoff_location} onChange={(event) => setSingleOrderValue("dropoff_location", event.target.value)} placeholder="例：京都站 / 关西机场" />
+            </SingleField>
+            <SingleField label="旅行社">
+              <input value={singleOrder.agency_name || ""} onChange={(event) => setSingleOrderValue("agency_name", event.target.value)} />
+            </SingleField>
+            <SingleField label="客人">
+              <input value={singleOrder.guest_name || ""} onChange={(event) => setSingleOrderValue("guest_name", event.target.value)} />
+            </SingleField>
+            <SingleField label="联系方式">
+              <input value={singleOrder.guest_contact || ""} onChange={(event) => setSingleOrderValue("guest_contact", event.target.value)} />
+            </SingleField>
+            <SingleField label="人数">
+              <input type="number" value={singleOrder.passenger_count ?? ""} onChange={(event) => setSingleOrderValue("passenger_count", event.target.value)} />
+            </SingleField>
+            <SingleField label="行李">
+              <input type="number" value={singleOrder.luggage_count ?? ""} onChange={(event) => setSingleOrderValue("luggage_count", event.target.value)} />
+            </SingleField>
+            <SingleField label="价格">
+              <input type="number" value={singleOrder.price ?? ""} onChange={(event) => setSingleOrderValue("price", event.target.value)} />
+            </SingleField>
+            <SingleField label="行程 PDF" wide>
+              <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-bold text-blue-700 hover:bg-blue-100">
+                <Upload size={15} />
+                {singleOrder.itinerary_pdf_file?.name || singleOrder.itinerary_pdf_name || "上传 PDF"}
+                <input
+                  className="hidden"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={(event) => setSingleOrderValue("itinerary_pdf_file", event.target.files?.[0] || null)}
+                />
+              </label>
+            </SingleField>
+            <SingleField label="备注" wide>
+              <textarea value={singleOrder.remark || ""} onChange={(event) => setSingleOrderValue("remark", event.target.value)} placeholder="儿童座椅、举牌、费用备注等" />
+            </SingleField>
+          </div>
+          {createSingleOrderMutation.error instanceof Error ? (
+            <div className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{createSingleOrderMutation.error.message}</div>
+          ) : null}
+          <div className="mt-4 flex justify-end">
+            <Button onClick={submitSingleOrder} disabled={createSingleOrderMutation.isPending}>
+              {createSingleOrderMutation.isPending ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />}
+              保存到订单池
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -699,6 +880,20 @@ function Detail({ label, value, wide = false }: { label: string; value: ReactNod
       <div className="text-xs font-semibold text-slate-500">{label}</div>
       <div className="mt-1 whitespace-pre-wrap rounded-md border border-border bg-white px-3 py-2 text-slate-900">{value}</div>
     </div>
+  );
+}
+
+function SingleField({ label, required, wide, children }: { label: string; required?: boolean; wide?: boolean; children: ReactNode }) {
+  return (
+    <label className={`space-y-1 ${wide ? "md:col-span-2" : ""}`}>
+      <span className="text-xs font-black text-slate-500">
+        {label}
+        {required ? <span className="text-red-500"> *</span> : null}
+      </span>
+      <div className="[&>input]:h-10 [&>input]:w-full [&>input]:rounded-md [&>input]:border [&>input]:border-border [&>input]:px-3 [&>input]:text-sm [&>select]:h-10 [&>select]:w-full [&>select]:rounded-md [&>select]:border [&>select]:border-border [&>select]:px-3 [&>select]:text-sm [&>textarea]:min-h-20 [&>textarea]:w-full [&>textarea]:rounded-md [&>textarea]:border [&>textarea]:border-border [&>textarea]:px-3 [&>textarea]:py-2 [&>textarea]:text-sm">
+        {children}
+      </div>
+    </label>
   );
 }
 

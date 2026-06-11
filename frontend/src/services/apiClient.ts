@@ -38,6 +38,7 @@ import type {
   OrgMember,
   OrgOverview,
   ManagedAccount,
+  PlatformAuthSettings,
   ReminderSettings,
   ResourceAlert,
   Team,
@@ -609,6 +610,12 @@ export const api = {
   reminderSettings: async () => (await request<{ settings: ReminderSettings }>("/api/settings/reminders")).settings,
   updateReminderSettings: (payload: Partial<ReminderSettings>) =>
     request<{ settings: ReminderSettings }>("/api/settings/reminders", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  platformAuthSettings: async () => (await request<{ settings: PlatformAuthSettings }>("/api/settings/auth")).settings,
+  updatePlatformAuthSettings: (payload: Partial<PlatformAuthSettings>) =>
+    request<{ settings: PlatformAuthSettings }>("/api/settings/auth", {
       method: "PUT",
       body: JSON.stringify(payload),
     }),

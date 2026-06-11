@@ -487,6 +487,13 @@ def _mark_login(user_id: int | str) -> None:
 def _requires_wechat(client_type: str, role: str) -> bool:
     if DEMO_MODE or TRIAL_MODE:
         return False
+    try:
+        from backend.services.settings_service import is_wechat_binding_required
+
+        if not is_wechat_binding_required():
+            return False
+    except Exception:
+        return False
     return client_type in MINIAPP_CLIENTS and role in {"driver", "dispatcher", "operations_manager", "admin"}
 
 

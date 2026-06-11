@@ -41,7 +41,7 @@
         </view>
         <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'unread' ? 'active' : ''}}" data-mode="unread" bindtap="switchPanel">
           <text>未读通知</text>
-          <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
+          <strong>{{dashboard.counts.notifications_unread || 0}}/{{dashboard.counts.notifications_total || 0}}</strong>
         </view>
         <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'all' ? 'active' : ''}}" data-mode="all" bindtap="switchPanel">
           <text>全部订单</text>

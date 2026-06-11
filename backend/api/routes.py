@@ -100,6 +100,7 @@ from backend.services.dispatcher_mobile_service import (
     list_dispatcher_unassigned_orders,
     login_dispatcher,
     login_dispatcher_by_wechat,
+    login_dispatcher_dev_mock,
     mark_order_dispatcher_context,
     parse_dispatcher_text,
     update_dispatcher_draft,
@@ -191,7 +192,12 @@ from backend.services.resource_service import (
     update_vehicle_inspection_record,
 )
 from backend.services.flight_info_service import build_flight_update, query_flight_info
-from backend.services.settings_service import get_reminder_settings, update_reminder_settings
+from backend.services.settings_service import (
+    get_platform_auth_settings,
+    get_reminder_settings,
+    update_platform_auth_settings,
+    update_reminder_settings,
+)
 from backend.services.system_maintenance_service import (
     backup_database,
     get_system_status,
@@ -295,6 +301,11 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Driver-Id, X-Agency-Token")
         super().end_headers()
 
+    def is_local_request(self) -> bool:
+        host = (self.headers.get("Host") or "").split(":")[0].strip().lower()
+        client_host = (self.client_address[0] if self.client_address else "").strip().lower()
+        return host in {"127.0.0.1", "localhost", "::1"} or client_host in {"127.0.0.1", "localhost", "::1"}
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
@@ -323,6 +334,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/agency-portal/auction-listings":
             self.safe_agency(lambda: {"listings": list_agency_auction_hall(self.agency_token(), params.get("status", "listed"))})
+            return
+        if path == "/api/dispatch-mobile/app-config":
+            settings = get_platform_auth_settings()
+            self.send_json({"settings": settings, **settings})
             return
         if path.startswith("/api/dispatch-mobile/") or path.startswith("/api/driver/"):
             if not self.require_api_user():
@@ -377,6 +392,11 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin"}):
                 return
             self.send_json(get_finance_ledger(params))
+            return
+        if path == "/api/dispatch-mobile/finance/driver-expenses":
+            if not self.require_role({"admin"}):
+                return
+            self.send_json(list_finance_driver_expenses(params))
             return
         if path == "/api/dispatch-mobile/notifications":
             self.send_json(get_dispatcher_notifications(params))
@@ -632,6 +652,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/reminders":
             self.send_json({"settings": get_reminder_settings()})
             return
+        if path == "/api/settings/auth":
+            self.send_json({"settings": get_platform_auth_settings()})
+            return
         if path == "/api/orders":
             self.send_json({"orders": list_orders(params)})
             return
@@ -840,10 +863,39 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json(result if result else {"error": "invalid_dispatcher_credentials"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
         if path == "/api/dispatch-mobile/wechat-login":
+            if payload.get("code") and not payload.get("wx_code"):
+                payload["wx_code"] = payload.get("code")
+            if payload.get("openid") and not payload.get("wx_openid"):
+                payload["wx_openid"] = payload.get("openid")
+            if payload.get("unionid") and not payload.get("wx_unionid"):
+                payload["wx_unionid"] = payload.get("unionid")
+            local_request = self.is_local_request()
+            if local_request and not payload.get("wx_code") and not payload.get("wx_openid"):
+                result = login_dispatcher_dev_mock(payload)
+                ok = bool(result and not result.get("error"))
+                log_operation(
+                    "DISPATCHER_MOBILE_WECHAT_LOGIN_MOCK_OK" if ok else "DISPATCHER_MOBILE_WECHAT_LOGIN_MOCK_FAIL",
+                    path,
+                    {"mock_driver_id": payload.get("mock_driver_id"), "driver_code": payload.get("driver_code"), "error": result.get("error") if result else "mock_driver_not_found"},
+                    "wechat-dev-mock",
+                )
+                self.send_json(result if result else {"error": "mock_driver_not_found"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
+                return
             if payload.get("wx_code") and not payload.get("wx_openid"):
                 try:
                     payload.update(resolve_wechat_login_code(payload.get("wx_code")))
                 except ValueError as exc:
+                    if local_request and str(exc) == "wechat_code_exchange_unavailable":
+                        result = login_dispatcher_dev_mock(payload)
+                        ok = bool(result and not result.get("error"))
+                        log_operation(
+                            "DISPATCHER_MOBILE_WECHAT_LOGIN_MOCK_OK" if ok else "DISPATCHER_MOBILE_WECHAT_LOGIN_MOCK_FAIL",
+                            path,
+                            {"mock_driver_id": payload.get("mock_driver_id"), "driver_code": payload.get("driver_code"), "error": result.get("error") if result else "mock_driver_not_found"},
+                            "wechat-dev-mock",
+                        )
+                        self.send_json(result if result else {"error": "mock_driver_not_found"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
+                        return
                     self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                     return
             result = login_dispatcher_by_wechat(payload)
@@ -1133,6 +1185,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/reminders":
             self.safe_create(lambda: {"settings": update_reminder_settings(payload)})
             return
+        if path == "/api/settings/auth":
+            self.safe_create(lambda: {"settings": update_platform_auth_settings(payload)})
+            return
         if path == "/api/dispatch/assign":
             if not self.require_role({"admin", "dispatcher"}):
                 return
@@ -1406,6 +1461,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/reminders":
             self.send_json({"settings": update_reminder_settings(payload)})
             return
+        if path == "/api/settings/auth":
+            self.send_json({"settings": update_platform_auth_settings(payload)})
+            return
         draft_id = self.match_parser_draft_path(path)
         if draft_id:
             self.safe_update(lambda: update_draft(draft_id, payload), "draft", "draft_not_found")
@@ -1501,6 +1559,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             return f"{user.get('role')}:{user.get('username')}"
         driver_id = self.headers.get("X-Driver-Id")
         return f"driver:{driver_id}" if driver_id else "anonymous"
+
+    def current_user(self) -> dict:
+        return get_user_by_token(self.bearer_token()) or {}
 
     def require_api_user(self) -> dict | None:
         user = get_user_by_token(self.bearer_token())

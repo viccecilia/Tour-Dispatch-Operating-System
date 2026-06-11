@@ -66,13 +66,40 @@ Page({
     this.setSessionState(session);
     this.refreshTabBar();
     if (this.data.session) this.loadDashboard();
-    else this.tryWechatAutoLogin();
+    else this.loadLoginMode();
+  },
+
+  loadLoginMode() {
+    this.setData({ loading: true, error: '' });
+    api.appConfig()
+      .then((config) => {
+        const settings = (config && config.settings) || config || {};
+        console.info('[dispatch-mobile app-config]', settings);
+        if (api.isManualLogout && api.isManualLogout()) {
+          this.setData({ loading: false, autoLoginTried: true });
+          return;
+        }
+        if (settings.wechat_auto_login_enabled) {
+          this.setData({ loading: false });
+          this.tryWechatAutoLogin();
+          return;
+        }
+        this.setData({ loading: false });
+      })
+      .catch((err) => {
+        console.warn('[dispatch-mobile app-config failed]', err);
+        this.setData({ loading: false });
+      });
   },
 
   tryWechatAutoLogin() {
     if (this.data.autoLoginTried) return;
     this.setData({ autoLoginTried: true, loading: true, error: '' });
     this.getWechatLoginCode()
+      .catch((err) => {
+        if (api.isLocalBaseUrl && api.isLocalBaseUrl()) return '';
+        return Promise.reject(err);
+      })
       .then((wxCode) => api.loginWechat(wxCode))
       .then((res) => {
         api.setSession(res);
@@ -148,6 +175,7 @@ Page({
 
   loadDashboard() {
     this.setData({ loading: true, error: '' });
+    const emptyDashboard = { counts: {}, latest_orders: [], fleet_status: {} };
     const canViewDriverWorkload = this.data.canViewDriverWorkload;
     const session = this.data.session || {};
     const role = api.getRole(session);
@@ -170,7 +198,10 @@ Page({
       : Promise.resolve({ vehicles: [] });
 
     return Promise.all([
-      api.dashboard(),
+      api.dashboard().catch((err) => {
+        console.warn('[dispatch-mobile dashboard failed]', err);
+        return emptyDashboard;
+      }),
       notificationTask,
       (canViewDriverWorkload || canViewOperations) ? api.assignments().catch(() => ({ assignments: [] })) : Promise.resolve({ assignments: [] }),
       (canViewDriverWorkload || canViewOperations) ? api.drivers().catch(() => ({ drivers: [] })) : Promise.resolve({ drivers: [] }),
@@ -180,35 +211,35 @@ Page({
       vehicleTask
     ])
       .then(([dashboard, notifications, assignments, drivers, driverAssignments, workbench, profile, vehicles]) => {
-        const allAssignments = assignments.assignments || [];
-        const allDrivers = drivers.drivers || [];
-        const allVehicles = vehicles.vehicles || [];
+        const safeDashboard = dashboard || emptyDashboard;
+        const allAssignments = Array.isArray(assignments && assignments.assignments) ? assignments.assignments : [];
+        const allDrivers = Array.isArray(drivers && drivers.drivers) ? drivers.drivers : [];
+        const allVehicles = Array.isArray(vehicles && vehicles.vehicles) ? vehicles.vehicles : [];
         const driverStats = canViewDriverWorkload ? this.buildDriverStats(allAssignments, allDrivers) : [];
-        const driverRows = (driverAssignments.assignments || []).map((item) => this.decorateAssignment(item));
+        const driverRows = (Array.isArray(driverAssignments && driverAssignments.assignments) ? driverAssignments.assignments : []).map((item) => this.decorateAssignment(item));
         const today = this.formatDate(new Date());
         const pendingRows = driverRows.filter((item) => item.rawStatus === 'assigned');
         const todayRows = driverRows.filter((item) => this.isAssignmentOnDate(item, today));
         const exceptionRows = driverRows.filter((item) => ['incident', 'exception', 'delayed'].indexOf(String(item.order_status || item.status || '')) >= 0);
         const dueRows = this.buildDueRows(profile.driver);
-        const unreadRows = [
-          ...dueRows,
-          ...(notifications.notifications || [])
-            .filter((item) => item.status !== 'read')
-            .filter((item) => !this.isSuppressedDriverNotification(item))
-            .map((item) => this.decorateNotification(item))
-        ];
+        const notificationRows = (Array.isArray(notifications && notifications.notifications) ? notifications.notifications : [])
+          .filter((item) => !this.isSuppressedDriverNotification(item))
+          .slice(0, 30)
+          .map((item) => this.decorateNotification(item));
+        const unreadRows = notificationRows.filter((item) => item.rawStatus !== 'read');
         const nextDashboard = role === 'driver'
           ? {
-            ...dashboard,
+            ...safeDashboard,
             counts: {
-              ...(dashboard.counts || {}),
+              ...(safeDashboard.counts || {}),
               today_orders: todayRows.length,
               pending_confirmations: pendingRows.length,
               exception_orders: exceptionRows.length,
-              notifications_unread: unreadRows.length
+              notifications_unread: unreadRows.length,
+              notifications_total: notificationRows.length
             }
           }
-          : dashboard;
+          : safeDashboard;
         const status = this.computeDriverStatus(driverRows, workbench);
         const operations = role === 'operations_manager'
           ? this.buildOperationsDashboard(nextDashboard, allAssignments, allDrivers, allVehicles)
@@ -228,9 +259,9 @@ Page({
               this.data.operationsAttendanceRows
             )
           };
-        const panel = this.buildPanel(this.data.panelMode, todayRows, driverRows, pendingRows, exceptionRows, unreadRows);
+        const panel = this.buildPanel(this.data.panelMode, todayRows, driverRows, pendingRows, exceptionRows, notificationRows);
         const operationsDetail = role === 'operations_manager' && this.data.operationsSection === 'notifications'
-          ? this.buildOperationsNotificationDetail(unreadRows)
+          ? this.buildOperationsNotificationDetail(notificationRows)
           : operations.detail;
         this.setData({
           dashboard: nextDashboard,
@@ -238,7 +269,7 @@ Page({
           driverOrderChipLabel: '今日订单',
           driverOrderChipCount: todayRows.length,
           driverOrderChipAlert: false,
-          notifications: unreadRows,
+          notifications: notificationRows,
           statusLabel: status.label,
           statusHint: status.hint,
           operationsStatus: operations.status,
@@ -561,10 +592,13 @@ Page({
   decorateNotification(item) {
     return {
       id: item.id,
+      notificationId: item.id,
+      kind: 'notification',
       title: item.title || this.notificationTypeText(item.notification_type),
       meta: `${this.notificationTypeText(item.notification_type)} · ${this.priorityText(item.priority)}`,
       body: item.body || '',
       priority: item.priority || 'normal',
+      rawStatus: item.status || 'unread',
       action: 'detail',
       actionText: '详情',
       raw: item
@@ -668,11 +702,36 @@ Page({
       this.goMap();
       return;
     }
+    if (item.kind === 'notification') {
+      this.markNotificationRead(item);
+      return;
+    }
     wx.showModal({
       title: item.title || '通知详情',
       content: [item.meta, item.body].filter(Boolean).join('\n'),
       showCancel: false,
       confirmText: '知道了'
+    });
+  },
+
+  markNotificationRead(item) {
+    wx.showModal({
+      title: item.title || '通知详情',
+      content: [item.meta, item.body].filter(Boolean).join('\n') || '无内容',
+      showCancel: false,
+      confirmText: item.rawStatus === 'read' ? '关闭' : '标为已读',
+      success: () => {
+        if (item.rawStatus === 'read' || !item.notificationId) return;
+        const session = this.data.session || {};
+        const driverId = session.user && session.user.profile_id ? session.user.profile_id : 0;
+        if (!driverId) return;
+        api.markDriverNotificationRead(driverId, item.notificationId)
+          .then(() => this.loadDashboard())
+          .catch((err) => {
+            console.error('[driver notification read failed]', err);
+            wx.showToast({ title: '已读同步失败', icon: 'none' });
+          });
+      }
     });
   },
 
@@ -719,11 +778,35 @@ Page({
             return;
           }
           wx.showToast({ title: '已确认接单', icon: 'success' });
-          this.loadDashboard();
+          this.markRelatedAssignmentNotificationsRead(item).then(() => this.loadDashboard());
         }).catch(() => {
           wx.showToast({ title: '确认失败', icon: 'none' });
         });
       }
+    });
+  },
+
+  markRelatedAssignmentNotificationsRead(assignment) {
+    const session = this.data.session || {};
+    const driverId = session.user && session.user.profile_id ? session.user.profile_id : 0;
+    if (!driverId || !assignment) return Promise.resolve();
+    const assignmentId = String(assignment.id || assignment.assignment_id || '');
+    const orderId = String(assignment.oid || assignment.order_id || assignment.title || '');
+    const targets = (this.data.notifications || []).filter((item) => {
+      if (item.rawStatus === 'read' || !item.notificationId) return false;
+      const raw = item.raw || {};
+      const haystack = [
+        raw.source_id,
+        raw.title,
+        raw.body,
+        item.title,
+        item.body
+      ].filter(Boolean).join(' ');
+      return (assignmentId && haystack.indexOf(assignmentId) >= 0) || (orderId && haystack.indexOf(orderId) >= 0);
+    });
+    if (!targets.length) return Promise.resolve();
+    return Promise.all(targets.map((item) => api.markDriverNotificationRead(driverId, item.notificationId))).catch((err) => {
+      console.warn('[related notification read failed]', err);
     });
   },
 

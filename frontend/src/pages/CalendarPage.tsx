@@ -15,6 +15,7 @@ type View = "day" | "week" | "month";
 type CalendarOrderForm = Partial<Order> & {
   id?: number;
   order_date: string;
+  end_date: string;
   start_time: string;
   end_time: string;
   pickup_location: string;
@@ -29,6 +30,7 @@ const viewMeta: Record<View, { label: string; title: string; stepDays: number }>
 
 const blankForm: CalendarOrderForm = {
   order_date: todayIso(),
+  end_date: todayIso(),
   start_time: "09:00",
   end_time: "10:00",
   pickup_location: "",
@@ -54,7 +56,7 @@ function itemToForm(item: CalendarItem): CalendarOrderForm {
     ...blankForm,
     id: Number(item.order_id || item.id || 0) || undefined,
     order_date: item.order_date || todayIso(),
-    end_date: item.end_date,
+    end_date: item.end_date || item.order_date || todayIso(),
     start_time: item.start_time || "09:00",
     end_time: item.end_time || "10:00",
     pickup_location: item.pickup_location || "",
@@ -72,6 +74,7 @@ function slotToForm(slot: { vehicle: Vehicle; order_date: string; start_time: st
   return {
     ...blankForm,
     order_date: slot.order_date,
+    end_date: slot.order_date,
     start_time: slot.start_time,
     end_time: slot.end_time,
     vehicle_type: slot.vehicle.vehicle_type || "",
@@ -292,7 +295,8 @@ function CalendarOrderEditor({
           <button className="rounded-md px-3 py-1 text-sm font-bold text-slate-500 hover:bg-slate-100" type="button" onClick={onClose}>关闭</button>
         </div>
         <div className="grid gap-4 px-6 py-5 md:grid-cols-4">
-          <Field label="日期" required><input type="date" value={form.order_date} onChange={(e) => update("order_date", e.target.value)} /></Field>
+          <Field label="开始日期" required><input type="date" value={form.order_date} onChange={(e) => onChange({ ...form, order_date: e.target.value, end_date: form.end_date || e.target.value })} /></Field>
+          <Field label="结束日期"><input type="date" value={form.end_date || form.order_date} onChange={(e) => update("end_date", e.target.value)} /></Field>
           <Field label="开始时间"><input type="time" value={form.start_time} onChange={(e) => update("start_time", e.target.value)} /></Field>
           <Field label="结束时间"><input type="time" value={form.end_time} onChange={(e) => update("end_time", e.target.value)} /></Field>
           <Field label="类型"><input value={form.order_type || ""} onChange={(e) => update("order_type", e.target.value)} placeholder="接机 / 送机 / 包车" /></Field>

@@ -493,6 +493,11 @@ export type ReminderSettings = {
   driver_license_days: number;
 };
 
+export type PlatformAuthSettings = {
+  wechat_auto_login_enabled: boolean;
+  wechat_binding_required: boolean;
+};
+
 export type DispatchRecommendation = {
   driver: Driver;
   vehicle: Vehicle;

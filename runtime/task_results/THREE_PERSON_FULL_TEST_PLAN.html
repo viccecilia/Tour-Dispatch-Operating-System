@@ -3,675 +3,718 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>旅行社版本三人全流程测试确认表</title>
+  <title>TourFlow 0607 三人实测方案</title>
   <style>
     :root {
-      --bg:#f5f7fa; --panel:#fff; --text:#20242a; --muted:#667085; --line:#d8dee8;
-      --blue:#1f5f86; --green:#16794c; --red:#b42318; --amber:#9a5b00; --head:#eef3f8;
+      --bg: #eef3f8;
+      --card: #ffffff;
+      --line: #d8e2ef;
+      --ink: #0f1f35;
+      --muted: #60728c;
+      --blue: #2563eb;
+      --green: #059669;
+      --orange: #d97706;
+      --red: #dc2626;
+      --soft-blue: #eff6ff;
+      --soft-green: #ecfdf5;
+      --soft-orange: #fff7ed;
+      --soft-red: #fef2f2;
+      --shadow: 0 18px 45px rgba(15, 31, 53, .08);
     }
-    * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--text); font-family:"Microsoft YaHei", Arial, sans-serif; }
-    header { position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line); padding:20px 28px; }
-    h1 { margin:0 0 8px; font-size:24px; letter-spacing:0; }
-    .meta { display:flex; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:13px; }
-    .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:16px; }
-    button, select, input, textarea { font:inherit; }
-    button { border:1px solid var(--line); background:#fff; border-radius:6px; height:36px; padding:0 12px; font-weight:700; cursor:pointer; }
-    button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
-    .toolbar select, .toolbar input { height:36px; border:1px solid var(--line); border-radius:6px; padding:0 10px; background:#fff; }
-    main { padding:22px 28px 48px; }
-    .summary { display:grid; grid-template-columns:repeat(5,minmax(140px,1fr)); gap:12px; margin-bottom:18px; }
-    .metric { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; color:var(--muted); font-size:13px; }
-    .metric b { display:block; margin-top:5px; font-size:22px; color:var(--blue); }
-    .phase-card { background:var(--panel); border:1px solid var(--line); border-radius:8px; margin:16px 0; overflow:hidden; }
-    .phase-head { display:flex; justify-content:space-between; gap:16px; padding:16px; background:var(--head); border-bottom:1px solid var(--line); }
-    h2 { margin:0; font-size:18px; }
-    h3 { margin:0 0 10px; font-size:14px; color:#334155; }
-    .phase-head p { margin:6px 0 0; color:var(--muted); font-size:13px; }
-    .phase-meta { display:grid; gap:6px; min-width:260px; text-align:right; color:var(--muted); font-size:12px; }
-    .phase-body { display:grid; grid-template-columns:1fr 1.15fr; gap:18px; padding:16px; }
-    ol { margin:0; padding-left:22px; line-height:1.7; }
-    .expected { margin:0 0 12px; color:#0f5132; background:#eef9f2; border:1px solid #cdebd9; border-radius:6px; padding:10px; font-size:13px; line-height:1.55; }
-    .result-grid { display:grid; grid-template-columns:repeat(2,minmax(180px,1fr)); gap:10px; }
-    label { display:grid; gap:5px; color:#475569; font-size:12px; font-weight:700; }
-    label.wide { margin-top:10px; }
-    .result-grid input, .result-grid select, textarea { width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; padding:8px 10px; color:var(--text); }
-    textarea { min-height:72px; resize:vertical; }
-    .hidden { display:none; }
-    .badge { display:inline-flex; align-items:center; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:700; }
-    .pass { color:var(--green); background:#e9f7ef; }
-    .fail { color:var(--red); background:#fdecec; }
-    .blocked { color:var(--amber); background:#fff5dd; }
-    .skip { color:#475569; background:#e8edf3; }
-    @media (max-width: 980px) {
-      header, main { padding-left:14px; padding-right:14px; }
-      .summary, .phase-body, .result-grid { grid-template-columns:1fr; }
-      .phase-head { display:block; }
-      .phase-meta { text-align:left; margin-top:10px; min-width:0; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      line-height: 1.55;
     }
-    @media print {
-      header { position:static; }
-      .toolbar { display:none; }
-      body { background:#fff; }
-      .phase-card { break-inside:avoid; }
+    header {
+      padding: 26px 32px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.9);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(8px);
+    }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 28px; letter-spacing: 0; }
+    h2 { font-size: 20px; }
+    h3 { font-size: 16px; }
+    .sub { color: var(--muted); margin-top: 6px; }
+    main { padding: 24px 32px 56px; max-width: 1760px; margin: 0 auto; }
+    .grid { display: grid; gap: 16px; }
+    .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+    .card-head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .card-body { padding: 18px 20px; }
+    .metric {
+      padding: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .metric b { display: block; font-size: 28px; margin-top: 4px; }
+    .pill, .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill.blue { background: var(--soft-blue); color: var(--blue); }
+    .pill.green { background: var(--soft-green); color: var(--green); }
+    .pill.orange { background: var(--soft-orange); color: var(--orange); }
+    .pill.red { background: var(--soft-red); color: var(--red); }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    button, select, input, textarea {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+    button {
+      padding: 9px 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    button.ghost { background: #f8fafc; }
+    select, input { height: 40px; padding: 0 12px; }
+    textarea { min-height: 74px; padding: 10px 12px; resize: vertical; width: 100%; }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px 10px;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    th {
+      background: #f8fafc;
+      color: #41536d;
+      font-size: 13px;
+      text-align: center;
+    }
+    td { font-size: 14px; }
+    .table-wrap { overflow-x: auto; }
+    .note {
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+    .warn { border-color: #fed7aa; background: var(--soft-orange); color: #8a4b0b; }
+    .danger { border-color: #fecaca; background: var(--soft-red); color: #991b1b; }
+    .success { border-color: #bbf7d0; background: var(--soft-green); color: #065f46; }
+    .phase {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .phase-head {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 52px 1fr 170px 170px;
+      gap: 14px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+    }
+    .idx {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #fff;
+      background: var(--blue);
+    }
+    .phase-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+      gap: 16px;
+    }
+    .checks { display: grid; gap: 8px; }
+    label.check {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    .result-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .result-box .full { grid-column: 1 / -1; }
+    .small { font-size: 12px; color: var(--muted); }
+    .code { font-family: Consolas, "SFMono-Regular", monospace; background: #eef2f7; border-radius: 6px; padding: 2px 6px; }
+    a { color: var(--blue); text-decoration: none; font-weight: 700; }
+    .sticky-actions {
+      position: sticky;
+      bottom: 0;
+      z-index: 8;
+      padding: 12px 0 0;
+      background: linear-gradient(180deg, rgba(238,243,248,0), var(--bg) 40%);
+    }
+    @media (max-width: 1100px) {
+      .grid.cols-4, .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
+      .phase-head { grid-template-columns: 42px 1fr; }
+      .phase-body { grid-template-columns: 1fr; }
+      main, header { padding-left: 16px; padding-right: 16px; }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>旅行社版本三人全流程测试确认表</h1>
-    <div class="meta">
-      <span>版本主题：增加旅行社端</span>
-      <span>端口：平台总控 / 旅行社 Web / 旅行社小程序 / 车公司 Web / 司机小程序</span>
-      <span>试运行 Web：https://admin-trial.taxi-airport.jp</span>
-      <span>试运行 API：https://api-trial.taxi-airport.jp</span>
-    </div>
-    <div class="toolbar">
-      <select id="terminalFilter">
-        <option value="">全部端口</option>
-        <option value="平台">平台总控</option>
-        <option value="旅行社 Web">旅行社 Web</option>
-        <option value="旅行社小程序">旅行社小程序</option>
-        <option value="车公司 Web">车公司 Web</option>
-        <option value="司机小程序">司机小程序</option>
-        <option value="全端">全端</option>
-      </select>
-      <select id="resultFilter">
-        <option value="">全部结果</option>
-        <option value="pass">通过</option>
-        <option value="fail">不通过</option>
-        <option value="blocked">阻塞</option>
-        <option value="skip">未测</option>
-        <option value="empty">未填写</option>
-      </select>
-      <input id="searchBox" placeholder="搜索阶段、端口、测试人" />
-      <button class="primary" id="exportJson">导出结果 JSON</button>
-      <button id="printPage">打印/另存 PDF</button>
-      <button id="clearLocal">清空本地填写</button>
-    </div>
+    <h1>TourFlow 0607 三人实测方案</h1>
+    <div class="sub">当前版本用于 Web + 小程序联合实测：订单解析、倒拍订单大厅、派车、司机点呼、旅行社跟踪、财务结算、跨租户边界和云端配置检查。</div>
   </header>
+
   <main>
-    <section class="summary">
-      <div class="metric">总阶段<b id="totalCount">0</b></div>
-      <div class="metric">通过<b id="passCount">0</b></div>
-      <div class="metric">不通过<b id="failCount">0</b></div>
-      <div class="metric">阻塞<b id="blockedCount">0</b></div>
-      <div class="metric">未测/未填<b id="openCount">0</b></div>
+    <section class="grid cols-4" id="summary">
+      <div class="metric"><span class="small">总测试项</span><b id="totalCount">0</b></div>
+      <div class="metric"><span class="small">已通过</span><b id="passCount">0</b></div>
+      <div class="metric"><span class="small">未通过/阻塞</span><b id="failCount">0</b></div>
+      <div class="metric"><span class="small">待执行</span><b id="todoCount">0</b></div>
     </section>
-    
-        <article class="phase-card" data-terminal="平台总控 / 旅行社 Web / 车公司 Web / 小程序" data-owner="A/B/C" data-phase-id="prep">
-          <div class="phase-head">
-            <div>
-              <h2>0. 环境与账号准备</h2>
-              <p>确认服务、账号、端口都可用。</p>
-            </div>
-            <div class="phase-meta">
-              <span>平台总控 / 旅行社 Web / 车公司 Web / 小程序</span>
-              <span>测试人：A/B/C</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>打开平台 Web：https://admin-trial.taxi-airport.jp</li><li>打开旅行社 Web：https://admin-trial.taxi-airport.jp/#agency-portal</li><li>确认后端健康检查：https://api-trial.taxi-airport.jp/api/ping</li><li>平台总控登录：admin / admin123</li><li>车公司 SKR/KEX/TYO 管理员分别登录</li><li>旅行社 AGA/AGB/AGC 分别登录</li><li>司机端至少抽查 3 个司机账号登录</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">所有测试人员均能进入对应端口，账号权限正确。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
 
-        <article class="phase-card" data-terminal="平台总控 Web" data-owner="A" data-phase-id="company-registration">
-          <div class="phase-head">
-            <div>
-              <h2>1. 公司注册与基础资料</h2>
-              <p>验证车公司和旅行社注册资料、缩写代码、藤本 PDF、银行资料。</p>
-            </div>
-            <div class="phase-meta">
-              <span>平台总控 Web</span>
-              <span>测试人：A</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>进入公司注册页面</li><li>新增车公司资料并填写公司缩写代码</li><li>新增旅行社资料并填写公司缩写代码</li><li>填写登记会社名、法人姓名、法人番号、发票登记号、许可号</li><li>填写地址、业务联系人、电话、邮箱</li><li>填写银行名称、支店、账户类型、账户号码、账户名义</li><li>上传藤本 PDF、许可文件 PDF、银行资料 PDF</li><li>保存草稿后提交审核</li><li>按类型、状态、关键词筛选</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">缩写代码必填；藤本 PDF 可上传；车公司代码进入 tenants.slug；旅行社代码进入 agencies.agency_code。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>执行前确认</h2>
+          <div class="sub">每次上传或正式测试前先跑这里，避免 API 指向本地、账号未同步、微信绑定开关误开这类重复问题。</div>
+        </div>
+        <span class="pill orange">先确认环境，再开始业务流</span>
+      </div>
+      <div class="card-body grid cols-2">
+        <div class="note">
+          <h3>访问地址</h3>
+          <p>平台/车公司 Web：<a href="https://admin-trial.taxi-airport.jp/">https://admin-trial.taxi-airport.jp/</a></p>
+          <p>旅行社 Web：<a href="https://admin-trial.taxi-airport.jp/#agency-portal">https://admin-trial.taxi-airport.jp/#agency-portal</a></p>
+          <p>云端 API：<a href="https://api-trial.taxi-airport.jp/api/ping">https://api-trial.taxi-airport.jp/api/ping</a></p>
+          <p>本地 Web：<span class="code">http://127.0.0.1:5173/</span>，本地 API：<span class="code">http://127.0.0.1:18765</span></p>
+        </div>
+        <div class="note warn">
+          <h3>当前账号口径</h3>
+          <p>账号文件：<span class="code">runtime/task_results/TEST_ACCOUNTS.md</span>。当前口径是 Web 和小程序同账号同密码。</p>
+          <p>旅行社内部角色和导游账号密码统一为 <span class="code">Test123456</span>，不再使用旧的手机号后四位。</p>
+          <p>手机真机测试前，确认小程序代码已上传对应版本；后端同步不等于手机端 UI 已更新。</p>
+        </div>
+      </div>
+    </section>
 
-        <article class="phase-card" data-terminal="旅行社 Web" data-owner="A" data-phase-id="agency-web-entry">
-          <div class="phase-head">
-            <div>
-              <h2>2. 旅行社 Web 入单</h2>
-              <p>验证机场接送和包车的批量解析、编辑、必填校验、保存。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社 Web</span>
-              <span>测试人：A</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>登录 AGA 旅行社</li><li>机场接送批量粘贴多条文本并解析</li><li>检查日期、时间、航班号、起点、终点、客人、电话、人数、行李、车型、价格</li><li>修改一条解析错误的数据并保存</li><li>包车批量粘贴多条文本并解析</li><li>检查路线、跨日、车型、价格、客人名</li><li>给包车行程上传标准 PDF</li><li>尝试缺少起拍价或一口价发布</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">解析后可编辑；缺必填项不能发布；保存后只进入本旅行社订单列表和日历。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>三人分工</h2>
+          <div class="sub">建议三台电脑加手机真机分工，避免同一账号同时操作造成状态错判。</div>
+        </div>
+      </div>
+      <div class="card-body grid cols-3">
+        <div class="note">
+          <h3>测试员 A：平台与旅行社 AGA</h3>
+          <p>登录平台总控，检查云端配置、账号、公司资料、订单号、跨租户可见性。</p>
+          <p>登录 AGA Web/小程序，执行入单、发布、我的订单、跟踪、日历和结算回执。</p>
+        </div>
+        <div class="note">
+          <h3>测试员 B：车公司 SKR</h3>
+          <p>分别登录 SKR 管理、调度、运行管理和司机账号，验证权限差异。</p>
+          <p>执行订单大厅竞拍/一口价、派车、司机确认、点呼出库/入库、费用上报。</p>
+        </div>
+        <div class="note">
+          <h3>测试员 C：交叉与异常</h3>
+          <p>使用 AGB/AGC、KEX/TYO 交叉登录，验证旅行社互相隔离、车公司多旅行社订单展示。</p>
+          <p>负责超时、撤销、变更、车型不匹配、错误账号、API 断链等异常场景。</p>
+        </div>
+      </div>
+    </section>
 
-        <article class="phase-card" data-terminal="旅行社小程序" data-owner="C" data-phase-id="agency-miniapp">
-          <div class="phase-head">
-            <div>
-              <h2>3. 旅行社小程序入单与查看</h2>
-              <p>验证旅行社小程序和 Web 数据同步。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社小程序</span>
-              <span>测试人：C</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>使用 AGB 登录旅行社小程序</li><li>查看订单列表</li><li>新增机场接送订单</li><li>新增包车订单</li><li>保存后在 Web 端刷新查看</li><li>在小程序端查看 Web 创建的订单</li><li>检查订单状态、价格、联系人、PDF、航班信息</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">Web 和小程序共用同一批数据；AGB 看不到 AGA/AGC 的我的订单。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>端口权限矩阵</h2>
+          <div class="sub">这张表作为本轮测试的权限边界，不符合时直接记为缺陷。</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:150px">端口/角色</th>
+              <th>可见页面</th>
+              <th>可执行动作</th>
+              <th>禁止或应隐藏</th>
+              <th style="width:170px">代表账号</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>平台总控</b></td>
+              <td>总控、注册审核、设置、审计、异常、经营分析、所有租户数据</td>
+              <td>查看全局、配置测试开关、审核公司资料、查看脉络联动</td>
+              <td>不得误当车公司或旅行社业务端使用</td>
+              <td><span class="code">admin</span></td>
+            </tr>
+            <tr>
+              <td><b>车公司管理</b></td>
+              <td>总览、订单大厅、订单、派车、日历、司机监控、车辆/司机、财务、设置</td>
+              <td>竞拍/一口价接单、修改本公司订单、派车、维护车辆司机、财务确认</td>
+              <td>后台控制、平台审计、旅行社端页面</td>
+              <td><span class="code">SKR-08070010000</span></td>
+            </tr>
+            <tr>
+              <td><b>车公司调度</b></td>
+              <td>派车、订单、日历、司机监控、车辆地图</td>
+              <td>解析订单、修正订单、派司机和车辆、发布本公司无法执行订单到大厅</td>
+              <td>订单大厅接单、财务、系统设置</td>
+              <td><span class="code">SKR-08070010001</span></td>
+            </tr>
+            <tr>
+              <td><b>车公司运行管理</b></td>
+              <td>司机/车辆信息、车辆地图、运行状态、日历</td>
+              <td>查看运行、维护司机车辆状态、协助定位</td>
+              <td>订单大厅接单、财务、后台控制、旅行社维护</td>
+              <td><span class="code">SKR-08070010002</span></td>
+            </tr>
+            <tr>
+              <td><b>司机小程序</b></td>
+              <td>首页、任务、地图、费用、我的</td>
+              <td>确认派单、点呼出库/入库、执行任务、位置/节点汇报、费用上报和领收书上传</td>
+              <td>订单大厅、其他司机任务、旅行社联系方式以外的敏感信息</td>
+              <td><span class="code">SKR-08070010101</span></td>
+            </tr>
+            <tr>
+              <td><b>旅行社管理</b></td>
+              <td>入单、订单大厅、我的订单、订单跟踪、日历、设置、结算</td>
+              <td>解析/修改/发布订单、撤回/变更申请、上传 PDF、维护藤本和打款资料</td>
+              <td>其他旅行社我的订单、车公司内部派车页</td>
+              <td><span class="code">AGA2026</span> / <span class="code">080-7101-0000</span></td>
+            </tr>
+            <tr>
+              <td><b>旅行社客服</b></td>
+              <td>入单、我的订单、订单跟踪、日历</td>
+              <td>录入和跟踪订单，处理客户变更说明</td>
+              <td>财务设置、平台级资料审核</td>
+              <td><span class="code">080-7101-0001</span></td>
+            </tr>
+            <tr>
+              <td><b>旅行社导游</b></td>
+              <td>当前订单、未开始订单、历史订单、跟踪、日历、我的</td>
+              <td>查看自己订单、游客联系方式、司机车辆信息，提交出发/到达/过程汇报</td>
+              <td>入单、订单大厅、所有订单、财务</td>
+              <td><span class="code">080-7101-0101</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-        <article class="phase-card" data-terminal="旅行社 Web / 订单大厅" data-owner="A" data-phase-id="auction-publish">
-          <div class="phase-head">
-            <div>
-              <h2>4. 订单大厅发布</h2>
-              <p>验证发布大厅、竞拍时间、起拍价、一口价、状态同步。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社 Web / 订单大厅</span>
-              <span>测试人：A</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>选择一条机场接送订单</li><li>设置竞拍时间 1 小时、起拍价、一口价</li><li>发布到订单大厅</li><li>选择一条包车订单</li><li>设置竞拍时间 4 小时并发布</li><li>检查订单列表状态</li><li>检查旅行社日历颜色</li><li>检查大厅公开信息是否脱敏</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">发布后生成大厅编号；列表和日历同步；大厅不公开游客、导游、担当联系方式。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>当前必须验证的规则</h2>
+          <div class="sub">这些是近期高频变更点，必须逐项确认。</div>
+        </div>
+      </div>
+      <div class="card-body grid cols-3">
+        <div class="note success">
+          <h3>订单号暴露规则</h3>
+          <p>旅行社内部号：<span class="code">AGA260615A1-0002</span>。</p>
+          <p>车公司接单后内部号：<span class="code">AGA260615A1-0002-SKR260615B1-0003</span>。</p>
+          <p>派司机车辆后：<span class="code">...-KEN6637H</span>。</p>
+          <p>公开大厅不展示订单号和旅行社身份，只展示基础行程、时间、车型、人数/行李数和价格。</p>
+        </div>
+        <div class="note success">
+          <h3>倒拍价格规则</h3>
+          <p>字段名称统一为“起拍价”和“一口价”。一口价是快速成交价，允许低于起拍价。</p>
+          <p>竞拍从高到低，每次点击竞拍降低 20；一口价直接成交。</p>
+          <p>自己已是当前最高价时，按钮应置灰并显示“当前最高价 ¥xxx”。</p>
+        </div>
+        <div class="note success">
+          <h3>车型与派车规则</h3>
+          <p>车辆类型统一：<span class="code">A-3</span>、<span class="code">A-4</span>、<span class="code">H</span>。</p>
+          <p>三代、7座、阿尔法解析为 A-3；四代解析为 A-4；10座、Hiace、海狮解析为 H。</p>
+          <p>订单要求车型与车辆车型不匹配时，应阻止派车或明确弹窗确认风险。</p>
+        </div>
+      </div>
+    </section>
 
-        <article class="phase-card" data-terminal="旅行社 Web / 车公司 Web / 平台总控" data-owner="B/C" data-phase-id="boundary">
-          <div class="phase-head">
-            <div>
-              <h2>5. 多旅行社/多车公司数据边界</h2>
-              <p>验证我的订单隔离、大厅围观、未接单详情拦截。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社 Web / 车公司 Web / 平台总控</span>
-              <span>测试人：B/C</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>SKR/KEX/TYO 三家车公司分别进入订单大厅</li><li>查看 AGA/AGB/AGC 发布的基础订单信息</li><li>未接单前尝试查看完整详情</li><li>AGA 尝试查看 AGB 我的订单</li><li>AGA 尝试操作 AGB 的订单</li><li>平台总控查看跨租户订单关系</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">大厅基础信息可围观；我的订单严格隔离；未接单前敏感详情不可见。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="card" id="phasesCard">
+      <div class="card-head">
+        <div>
+          <h2>测试步骤与确认表</h2>
+          <div class="sub">每完成一项，在右侧记录结果、测试人、证据和问题。浏览器会自动保存填写内容。</div>
+        </div>
+        <div class="toolbar">
+          <select id="filter">
+            <option value="all">全部状态</option>
+            <option value="todo">待执行</option>
+            <option value="pass">通过</option>
+            <option value="fail">不通过</option>
+            <option value="blocked">阻塞</option>
+          </select>
+          <button class="ghost" onclick="exportJson()">导出 JSON</button>
+          <button class="ghost" onclick="resetAll()">清空结果</button>
+        </div>
+      </div>
+      <div class="card-body" id="phaseList"></div>
+    </section>
 
-        <article class="phase-card" data-terminal="车公司 Web" data-owner="B/C" data-phase-id="cross-claim">
-          <div class="phase-head">
-            <div>
-              <h2>6. 交叉接单</h2>
-              <p>验证多个车公司接多个旅行社订单后的归属展示。</p>
-            </div>
-            <div class="phase-meta">
-              <span>车公司 Web</span>
-              <span>测试人：B/C</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>SKR 接 AGA 的机场接送订单</li><li>SKR 接 AGB 的包车订单</li><li>KEX 接 AGA 的另一条订单</li><li>TYO 接 AGC 的订单</li><li>三家车公司分别查看我接到的订单</li><li>检查来源旅行社列</li><li>非买方车公司尝试查看其他车公司已接订单详情</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">buyer_tenant_id 正确；车公司可混合看到多个旅行社来源；非买方仍不可见完整详情。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>实测订单数据</h2>
+          <div class="sub">建议直接用这些数据跑一遍，覆盖包车、接机、送机、路线链、车型和价格解析。</div>
+        </div>
+      </div>
+      <div class="card-body grid cols-2">
+        <div class="note">
+          <h3>包车批量样例</h3>
+          <p class="code">6.09 京都-安来(路程4小时) 包车 A-3 2300</p>
+          <p class="code">6.10 松江-神户(路程3小时) 包车 A-3 2300</p>
+          <p class="code">6.11 神户-京都市区游玩（含岚山小火车门票） 包车 H 1600</p>
+          <p class="code">6.12 京都游玩旧竹林院，浮御堂白须神社(optional) 琵琶湖 Biwako 包车 A-3 1900</p>
+          <p class="small">检查点：路线完整保留，不只截起终点；一地包车显示原文字，例如“尾道市 包车”。已解析字段不重复塞入备注。</p>
+        </div>
+        <div class="note">
+          <h3>机场接送样例</h3>
+          <p class="code">2026-06-10 09:30 关西机场T1 -> Osaka Namba Hotel 4人 5件 Hiace 客人Zhang 080-1111-2222 52000</p>
+          <p class="code">2026-06-10 14:00 Osaka Namba Hotel -> Kansai International Airport T1 3人 3件 Alphard 客人Li 080-2222-3333 68000</p>
+          <p class="small">检查点：接机/送机正确识别；人数和行李数分开；客人姓名电话仅接单后展示。</p>
+        </div>
+      </div>
+    </section>
 
-        <article class="phase-card" data-terminal="车公司 Web / 旅行社 Web" data-owner="B" data-phase-id="details-after-claim">
-          <div class="phase-head">
-            <div>
-              <h2>7. 接单后详情开放</h2>
-              <p>验证接单后双方联系方式和行程资料开放。</p>
-            </div>
-            <div class="phase-meta">
-              <span>车公司 Web / 旅行社 Web</span>
-              <span>测试人：B</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>SKR 打开已接订单详情</li><li>查看旅行社担当电话、微信、LINE、WhatsApp</li><li>查看导游信息和游客联系方式</li><li>查看 PDF 行程</li><li>旅行社查看车公司担当信息</li><li>旅行社查看车辆与司机信息占位</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">接单车公司可见完整订单；旅行社可见接单车公司信息；非接单车公司不可见。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="车公司 Web / 旅行社 Web / 旅行社小程序" data-owner="B" data-phase-id="dispatch-driver">
-          <div class="phase-head">
-            <div>
-              <h2>8. 派车派司机</h2>
-              <p>验证车公司派车后，旅行社端跟踪信息同步。</p>
-            </div>
-            <div class="phase-meta">
-              <span>车公司 Web / 旅行社 Web / 旅行社小程序</span>
-              <span>测试人：B</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>SKR 进入派车页面</li><li>选择已接订单</li><li>分配车辆</li><li>分配司机 Ken Sato</li><li>保存派车</li><li>旅行社 Web 刷新订单跟踪</li><li>旅行社小程序刷新订单跟踪</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">订单状态变为已派车；旅行社可见车辆和司机；司机端能看到任务。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="司机小程序 / 车公司 Web / 旅行社 Web" data-owner="B" data-phase-id="driver-miniapp">
-          <div class="phase-head">
-            <div>
-              <h2>9. 司机小程序执行汇报</h2>
-              <p>验证司机任务、节点汇报、地图/位置和状态回传。</p>
-            </div>
-            <div class="phase-meta">
-              <span>司机小程序 / 车公司 Web / 旅行社 Web</span>
-              <span>测试人：B</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>司机登录</li><li>查看今日任务</li><li>确认订单</li><li>出库</li><li>到达上车点</li><li>开始服务</li><li>完成订单</li><li>回库</li><li>上传必要图片或位置</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">状态不能跳级或倒退；旅行社、车公司、平台端同步更新。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="旅行社 Web / 车公司 Web / 平台总控" data-owner="A/B" data-phase-id="change-cancel">
-          <div class="phase-head">
-            <div>
-              <h2>10. 变更、撤回与取消费用</h2>
-              <p>验证未接单撤回、已接单变更、取消费用规则。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社 Web / 车公司 Web / 平台总控</span>
-              <span>测试人：A/B</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>旅行社发布一条订单，未接单时直接撤回</li><li>确认大厅下架、列表和日历标记已撤回</li><li>重新发布，检查新大厅编号</li><li>旅行社对已接单订单申请修改关键字段</li><li>车公司确认变更</li><li>测试 24 小时以上取消</li><li>测试 12 小时前强制取消</li><li>测试 6 小时前强制取消</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">未接单可直接撤回；已接单需车公司确认；费用规则和月度免费次数可追踪。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="旅行社 Web / 车公司 Web / 平台总控" data-owner="A/B" data-phase-id="settlement">
-          <div class="phase-head">
-            <div>
-              <h2>11. 收付款闭环</h2>
-              <p>验证订单完成后的付款请求、回执上传、确认收款。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社 Web / 车公司 Web / 平台总控</span>
-              <span>测试人：A/B</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>司机完成订单</li><li>车公司发起付款请求</li><li>旅行社查看付款请求</li><li>旅行社上传付款回执</li><li>车公司确认收到款项</li><li>平台总控查看结算状态</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">结算状态从 payment_requested 到 receipt_uploaded 到 paid，三端一致。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="平台总控 Web" data-owner="A" data-phase-id="platform-analytics">
-          <div class="phase-head">
-            <div>
-              <h2>12. 平台统计与审计</h2>
-              <p>验证平台端跨租户汇总、审计、统计。</p>
-            </div>
-            <div class="phase-meta">
-              <span>平台总控 Web</span>
-              <span>测试人：A</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>查看所有旅行社订单数量</li><li>查看所有车公司接单数量</li><li>查看订单大厅发布数量</li><li>查看成交率</li><li>查看超时撤回数量</li><li>查看已完成订单数量</li><li>查看结算金额</li><li>查看审计日志</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">平台可跨租户查看；业务端只能看自己权限范围；关键动作有记录。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="旅行社小程序 / 司机小程序 / Web" data-owner="C" data-phase-id="miniapp-sync">
-          <div class="phase-head">
-            <div>
-              <h2>13. 小程序同步专项</h2>
-              <p>专项验证小程序与 Web 端数据联动。</p>
-            </div>
-            <div class="phase-meta">
-              <span>旅行社小程序 / 司机小程序 / Web</span>
-              <span>测试人：C</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>旅行社小程序查看订单列表</li><li>旅行社小程序查看我的订单大厅</li><li>旅行社小程序查看日历</li><li>旅行社小程序查看订单跟踪</li><li>旅行社小程序查看付款状态</li><li>司机未分配前确认看不到任务</li><li>司机分配后确认看到任务</li><li>司机汇报后 Web 同步</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">Web 和小程序状态一致；司机只能看自己的任务。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
-
-        <article class="phase-card" data-terminal="全端" data-owner="A/B/C" data-phase-id="negative">
-          <div class="phase-head">
-            <div>
-              <h2>14. 异常与负向测试</h2>
-              <p>验证越权、缺字段、状态跳级、非 PDF 上传等异常场景。</p>
-            </div>
-            <div class="phase-meta">
-              <span>全端</span>
-              <span>测试人：A/B/C</span>
-            </div>
-          </div>
-          <div class="phase-body">
-            <section>
-              <h3>操作步骤</h3>
-              <ol><li>缺少起拍价发布订单</li><li>缺少一口价发布订单</li><li>AGA 查看 AGB 我的订单</li><li>AGA 撤回 AGB 订单</li><li>SKR 查看未接单完整详情</li><li>KEX 查看 SKR 已接单完整详情</li><li>SKR 司机查看 KEX 任务</li><li>司机直接跳到完成订单</li><li>上传非 PDF 藤本文件</li><li>注册重复公司代码</li></ol>
-            </section>
-            <section>
-              <h3>预期结果</h3>
-              <p class="expected">所有越权和非法状态都被拒绝；错误信息可理解。</p>
-              <div class="result-grid">
-                <label>测试结果<select data-field="result"><option value="">未填写</option><option value="pass">通过</option><option value="fail">不通过</option><option value="blocked">阻塞</option><option value="skip">未测</option></select></label>
-                <label>实际测试人<input data-field="tester" placeholder="姓名" /></label>
-                <label>测试日期<input data-field="date" type="date" /></label>
-                <label>证据/截图链接<input data-field="evidence" placeholder="截图路径、视频、记录编号" /></label>
-              </div>
-              <label class="wide">不通过/阻塞原因<textarea data-field="reason" placeholder="如不通过或阻塞，请写具体原因"></textarea></label>
-              <label class="wide">改进建议<textarea data-field="suggestion" placeholder="建议的产品、接口、权限、页面或测试补强"></textarea></label>
-            </section>
-          </div>
-        </article>
-        
+    <section class="sticky-actions">
+      <div class="card">
+        <div class="card-body toolbar">
+          <span class="pill blue">验收标准</span>
+          <span>核心链路 0-9 必须通过；10-13 可记录缺陷但不能影响主流程；云端 API、本地/云端账号、微信绑定开关必须先确认。</span>
+        </div>
+      </div>
+    </section>
   </main>
+
   <script>
-    const phases = [{"id": "prep", "title": "0. 环境与账号准备", "owner": "A/B/C", "terminal": "平台总控 / 旅行社 Web / 车公司 Web / 小程序", "objective": "确认服务、账号、端口都可用。", "steps": ["打开平台 Web：https://admin-trial.taxi-airport.jp", "打开旅行社 Web：https://admin-trial.taxi-airport.jp/#agency-portal", "确认后端健康检查：https://api-trial.taxi-airport.jp/api/ping", "平台总控登录：admin / admin123", "车公司 SKR/KEX/TYO 管理员分别登录", "旅行社 AGA/AGB/AGC 分别登录", "司机端至少抽查 3 个司机账号登录"], "expected": "所有测试人员均能进入对应端口，账号权限正确。"}, {"id": "company-registration", "title": "1. 公司注册与基础资料", "owner": "A", "terminal": "平台总控 Web", "objective": "验证车公司和旅行社注册资料、缩写代码、藤本 PDF、银行资料。", "steps": ["进入公司注册页面", "新增车公司资料并填写公司缩写代码", "新增旅行社资料并填写公司缩写代码", "填写登记会社名、法人姓名、法人番号、发票登记号、许可号", "填写地址、业务联系人、电话、邮箱", "填写银行名称、支店、账户类型、账户号码、账户名义", "上传藤本 PDF、许可文件 PDF、银行资料 PDF", "保存草稿后提交审核", "按类型、状态、关键词筛选"], "expected": "缩写代码必填；藤本 PDF 可上传；车公司代码进入 tenants.slug；旅行社代码进入 agencies.agency_code。"}, {"id": "agency-web-entry", "title": "2. 旅行社 Web 入单", "owner": "A", "terminal": "旅行社 Web", "objective": "验证机场接送和包车的批量解析、编辑、必填校验、保存。", "steps": ["登录 AGA 旅行社", "机场接送批量粘贴多条文本并解析", "检查日期、时间、航班号、起点、终点、客人、电话、人数、行李、车型、价格", "修改一条解析错误的数据并保存", "包车批量粘贴多条文本并解析", "检查路线、跨日、车型、价格、客人名", "给包车行程上传标准 PDF", "尝试缺少起拍价或一口价发布"], "expected": "解析后可编辑；缺必填项不能发布；保存后只进入本旅行社订单列表和日历。"}, {"id": "agency-miniapp", "title": "3. 旅行社小程序入单与查看", "owner": "C", "terminal": "旅行社小程序", "objective": "验证旅行社小程序和 Web 数据同步。", "steps": ["使用 AGB 登录旅行社小程序", "查看订单列表", "新增机场接送订单", "新增包车订单", "保存后在 Web 端刷新查看", "在小程序端查看 Web 创建的订单", "检查订单状态、价格、联系人、PDF、航班信息"], "expected": "Web 和小程序共用同一批数据；AGB 看不到 AGA/AGC 的我的订单。"}, {"id": "auction-publish", "title": "4. 订单大厅发布", "owner": "A", "terminal": "旅行社 Web / 订单大厅", "objective": "验证发布大厅、竞拍时间、起拍价、一口价、状态同步。", "steps": ["选择一条机场接送订单", "设置竞拍时间 1 小时、起拍价、一口价", "发布到订单大厅", "选择一条包车订单", "设置竞拍时间 4 小时并发布", "检查订单列表状态", "检查旅行社日历颜色", "检查大厅公开信息是否脱敏"], "expected": "发布后生成大厅编号；列表和日历同步；大厅不公开游客、导游、担当联系方式。"}, {"id": "boundary", "title": "5. 多旅行社/多车公司数据边界", "owner": "B/C", "terminal": "旅行社 Web / 车公司 Web / 平台总控", "objective": "验证我的订单隔离、大厅围观、未接单详情拦截。", "steps": ["SKR/KEX/TYO 三家车公司分别进入订单大厅", "查看 AGA/AGB/AGC 发布的基础订单信息", "未接单前尝试查看完整详情", "AGA 尝试查看 AGB 我的订单", "AGA 尝试操作 AGB 的订单", "平台总控查看跨租户订单关系"], "expected": "大厅基础信息可围观；我的订单严格隔离；未接单前敏感详情不可见。"}, {"id": "cross-claim", "title": "6. 交叉接单", "owner": "B/C", "terminal": "车公司 Web", "objective": "验证多个车公司接多个旅行社订单后的归属展示。", "steps": ["SKR 接 AGA 的机场接送订单", "SKR 接 AGB 的包车订单", "KEX 接 AGA 的另一条订单", "TYO 接 AGC 的订单", "三家车公司分别查看我接到的订单", "检查来源旅行社列", "非买方车公司尝试查看其他车公司已接订单详情"], "expected": "buyer_tenant_id 正确；车公司可混合看到多个旅行社来源；非买方仍不可见完整详情。"}, {"id": "details-after-claim", "title": "7. 接单后详情开放", "owner": "B", "terminal": "车公司 Web / 旅行社 Web", "objective": "验证接单后双方联系方式和行程资料开放。", "steps": ["SKR 打开已接订单详情", "查看旅行社担当电话、微信、LINE、WhatsApp", "查看导游信息和游客联系方式", "查看 PDF 行程", "旅行社查看车公司担当信息", "旅行社查看车辆与司机信息占位"], "expected": "接单车公司可见完整订单；旅行社可见接单车公司信息；非接单车公司不可见。"}, {"id": "dispatch-driver", "title": "8. 派车派司机", "owner": "B", "terminal": "车公司 Web / 旅行社 Web / 旅行社小程序", "objective": "验证车公司派车后，旅行社端跟踪信息同步。", "steps": ["SKR 进入派车页面", "选择已接订单", "分配车辆", "分配司机 Ken Sato", "保存派车", "旅行社 Web 刷新订单跟踪", "旅行社小程序刷新订单跟踪"], "expected": "订单状态变为已派车；旅行社可见车辆和司机；司机端能看到任务。"}, {"id": "driver-miniapp", "title": "9. 司机小程序执行汇报", "owner": "B", "terminal": "司机小程序 / 车公司 Web / 旅行社 Web", "objective": "验证司机任务、节点汇报、地图/位置和状态回传。", "steps": ["司机登录", "查看今日任务", "确认订单", "出库", "到达上车点", "开始服务", "完成订单", "回库", "上传必要图片或位置"], "expected": "状态不能跳级或倒退；旅行社、车公司、平台端同步更新。"}, {"id": "change-cancel", "title": "10. 变更、撤回与取消费用", "owner": "A/B", "terminal": "旅行社 Web / 车公司 Web / 平台总控", "objective": "验证未接单撤回、已接单变更、取消费用规则。", "steps": ["旅行社发布一条订单，未接单时直接撤回", "确认大厅下架、列表和日历标记已撤回", "重新发布，检查新大厅编号", "旅行社对已接单订单申请修改关键字段", "车公司确认变更", "测试 24 小时以上取消", "测试 12 小时前强制取消", "测试 6 小时前强制取消"], "expected": "未接单可直接撤回；已接单需车公司确认；费用规则和月度免费次数可追踪。"}, {"id": "settlement", "title": "11. 收付款闭环", "owner": "A/B", "terminal": "旅行社 Web / 车公司 Web / 平台总控", "objective": "验证订单完成后的付款请求、回执上传、确认收款。", "steps": ["司机完成订单", "车公司发起付款请求", "旅行社查看付款请求", "旅行社上传付款回执", "车公司确认收到款项", "平台总控查看结算状态"], "expected": "结算状态从 payment_requested 到 receipt_uploaded 到 paid，三端一致。"}, {"id": "platform-analytics", "title": "12. 平台统计与审计", "owner": "A", "terminal": "平台总控 Web", "objective": "验证平台端跨租户汇总、审计、统计。", "steps": ["查看所有旅行社订单数量", "查看所有车公司接单数量", "查看订单大厅发布数量", "查看成交率", "查看超时撤回数量", "查看已完成订单数量", "查看结算金额", "查看审计日志"], "expected": "平台可跨租户查看；业务端只能看自己权限范围；关键动作有记录。"}, {"id": "miniapp-sync", "title": "13. 小程序同步专项", "owner": "C", "terminal": "旅行社小程序 / 司机小程序 / Web", "objective": "专项验证小程序与 Web 端数据联动。", "steps": ["旅行社小程序查看订单列表", "旅行社小程序查看我的订单大厅", "旅行社小程序查看日历", "旅行社小程序查看订单跟踪", "旅行社小程序查看付款状态", "司机未分配前确认看不到任务", "司机分配后确认看到任务", "司机汇报后 Web 同步"], "expected": "Web 和小程序状态一致；司机只能看自己的任务。"}, {"id": "negative", "title": "14. 异常与负向测试", "owner": "A/B/C", "terminal": "全端", "objective": "验证越权、缺字段、状态跳级、非 PDF 上传等异常场景。", "steps": ["缺少起拍价发布订单", "缺少一口价发布订单", "AGA 查看 AGB 我的订单", "AGA 撤回 AGB 订单", "SKR 查看未接单完整详情", "KEX 查看 SKR 已接单完整详情", "SKR 司机查看 KEX 任务", "司机直接跳到完成订单", "上传非 PDF 藤本文件", "注册重复公司代码"], "expected": "所有越权和非法状态都被拒绝；错误信息可理解。"}];
-    const storageKey = "tour_dispatch_three_person_test_results_v1";
-    const fields = ["result", "tester", "date", "evidence", "reason", "suggestion"];
-    const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
+    const STORAGE_KEY = "tourflow_three_person_plan_0607";
+    const phases = [
+      {
+        id: "preflight",
+        title: "云端/本地环境预检",
+        owner: "A",
+        priority: "高",
+        checks: [
+          "云端 Web 可打开，API ping 正常，前端没有指向 127.0.0.1。",
+          "云端数据库不是本地路径，测试账号和车辆司机种子数据齐全。",
+          "微信自动绑定开关按测试需要关闭；手机真机小程序版本为最新上传版本。",
+          "Web 和小程序同账号同密码可以登录，旧手机号后四位密码不再作为主口径。"
+        ]
+      },
+      {
+        id: "agency-input",
+        title: "旅行社入单与解析",
+        owner: "A/C",
+        priority: "高",
+        checks: [
+          "一个解析框可以同时解析接机、送机和包车，自动分类生成同一张可编辑列表。",
+          "解析后直接在原表双击编辑，点击行外自动保存；日期时间、路线、车型、价格、客人电话可修改。",
+          "包车支持上传 PDF；机场接送默认不要求 PDF。",
+          "字段缺失时允许弹窗确认发布，但必须清楚提示缺失字段。"
+        ]
+      },
+      {
+        id: "agency-publish",
+        title: "旅行社发布到订单大厅",
+        owner: "A",
+        priority: "高",
+        checks: [
+          "可保存订单，也可直接发布；发布后进入我的订单、订单列表、日历和订单大厅状态同步。",
+          "起拍价、一口价、拍卖时间 1/2/4 小时可设置；一口价允许低于起拍价。",
+          "公开大厅只展示基础信息，不展示订单号、旅行社身份、联系人和游客信息。",
+          "超时未被接单订单标记为超时撤回，可按新订单逻辑重新发布。"
+        ]
+      },
+      {
+        id: "order-hall-privacy",
+        title: "订单大厅隐私与筛选",
+        owner: "C",
+        priority: "高",
+        checks: [
+          "车公司和旅行社看到的公开大厅不暴露订单号、旅行社名称和联系方式。",
+          "可按接机/送机/包车、日期、时间、路线、车型筛选。",
+          "接单后双方才能看到担当姓名、电话、微信/Line/WhatsApp、游客和导游联系方式。",
+          "自己公司发布到大厅的订单只显示“本公司发布”，不可自己竞拍或一口价接回。"
+        ]
+      },
+      {
+        id: "carrier-claim",
+        title: "车公司接单、竞拍和一口价",
+        owner: "B/C",
+        priority: "高",
+        checks: [
+          "管理账户可进入订单大厅；调度和运行管理不应有接单权限。",
+          "竞拍按钮点击后弹出确认：当前价、竞拍价、确认/取消；确认后当前价下降 20。",
+          "当前公司已是最高价时，竞拍按钮置灰，显示当前最高价。",
+          "一口价直接成交；成交后车公司订单表和旅行社我的订单同时变更。"
+        ]
+      },
+      {
+        id: "carrier-dispatch",
+        title: "车公司派车与车型校验",
+        owner: "B",
+        priority: "高",
+        checks: [
+          "接单后订单进入车公司订单/派车池，生成车公司内部订单号。",
+          "车辆池每家公司至少 3 台车；车辆名称前用状态灯，不显示 green/white 文本。",
+          "车型下拉只保留 A-3、A-4、H；车辆下拉只显示本公司车辆。",
+          "车型不匹配时阻止派车或弹窗二次确认，并记录风险。"
+        ]
+      },
+      {
+        id: "driver-notify",
+        title: "司机通知、确认和任务",
+        owner: "B",
+        priority: "高",
+        checks: [
+          "派车后通知发到司机端，不应只出现在调度平台。",
+          "司机首页显示未确认订单数；确认后订单进入任务页，首页今日订单按当天统计。",
+          "任务页可按日历选择日期，有订单日期显示角标，单击日期显示当天订单。",
+          "确认过的任务不重复弹窗；未读通知和全部订单按钮分别展示对应列表。"
+        ]
+      },
+      {
+        id: "driver-checkcall",
+        title: "司机点呼出库/入库流程",
+        owner: "B",
+        priority: "高",
+        checks: [
+          "首页保持原设计，在当前状态卡给出清晰提示：点击这里进行车辆出库操作。",
+          "未出库时任务页顶部永远有出库点呼项，完成睡眠、酒精、车辆状态等申告后点呼出库。",
+          "出库后出库模块折叠，进入第一个任务；任务按顺序执行。",
+          "当天无后续任务后显示入库流程，填写入库时间、休息时间和入库检查后结束工作。"
+        ]
+      },
+      {
+        id: "agency-tracking-guide",
+        title: "旅行社跟踪与导游端",
+        owner: "A/C",
+        priority: "中",
+        checks: [
+          "派车后旅行社可看到车公司担当、司机和车辆信息。",
+          "地图跟踪显示司机/车辆当前位置；无位置时明确显示暂无上报。",
+          "导游端只看自己的当前、未开始和历史订单，不显示入单和订单大厅。",
+          "导游可查看游客联系方式并提交出发、到达和过程地点汇报。"
+        ]
+      },
+      {
+        id: "change-cancel",
+        title: "变更、撤回和强制撤销",
+        owner: "A/B/C",
+        priority: "高",
+        checks: [
+          "未接单订单可随时撤回。",
+          "已接单订单不可直接撤回或修改关键字段，需向车公司提交变更/撤销申请。",
+          "24 小时以上可修改日期；临近订单日期不可改，仅允许协商时间等局部变更。",
+          "强制撤销规则可见：24 小时以上免费但每月最多 10 单；12 小时以前 50%；6 小时以内或未确认强撤全额。"
+        ]
+      },
+      {
+        id: "finance",
+        title: "财务和费用闭环",
+        owner: "A/B/C",
+        priority: "中",
+        checks: [
+          "车公司财务分上下游：旅行社应收/确认收款、司机工资/费用。",
+          "司机费用上报只显示“提交”，可选择垫付报销或司机代收，并可上传领收书。",
+          "司机工资支持送迎单价和包车单价，按月筛选数量后计算。",
+          "旅行社收到付款请求后可上传回执，车公司确认收款后订单完成。"
+        ]
+      },
+      {
+        id: "tenant-boundary",
+        title: "多旅行社/多车公司边界",
+        owner: "C",
+        priority: "高",
+        checks: [
+          "AGA/AGB/AGC 只能看到自己发布的我的订单和内部草稿。",
+          "公开大厅基础信息对符合权限的车公司可见，但隐藏旅行社身份。",
+          "SKR/KEX/TYO 接多个旅行社订单后，本公司订单列表按来源区分且不泄露其他公司内部数据。",
+          "司机只看分配给自己的任务，不能看到同公司其他司机任务。"
+        ]
+      },
+      {
+        id: "platform",
+        title: "平台总控与注册资料",
+        owner: "A",
+        priority: "中",
+        checks: [
+          "平台可看到公司注册资料、藤本 PDF、银行账户、法人、地址、担当电话等审核字段。",
+          "公司代码为注册必填，订单号中可追踪公司和账号两位码。",
+          "设置页有微信绑定测试开关；关闭时可账号密码登录，开启后可做真机绑定测试。",
+          "审计/异常/经营分析不出现在车公司普通业务端。"
+        ]
+      },
+      {
+        id: "negative",
+        title: "异常与回归测试",
+        owner: "A/B/C",
+        priority: "中",
+        checks: [
+          "错误密码、旧密码、跨租户账号、无权限页面访问均返回明确错误。",
+          "API 401/405/400 时前端显示后端 body，不只显示状态码。",
+          "订单不存在或不属于当前公司时，不应显示订单详情，只提示刷新或选择合法订单。",
+          "乱码、表格挤压、按钮出框、底部 tab 消失、API 指向本地均作为回归缺陷记录。"
+        ]
+      }
+    ];
 
     function loadState() {
-      document.querySelectorAll(".phase-card").forEach(card => {
-        const id = card.dataset.phaseId;
-        const row = state[id] || {};
-        fields.forEach(field => {
-          const input = card.querySelector(`[data-field="${field}"]`);
-          if (input) input.value = row[field] || "";
-        });
-      });
-      updateSummary();
-      applyFilters();
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
+      catch (_) { return {}; }
     }
-
-    function saveCard(card) {
-      const id = card.dataset.phaseId;
+    function saveState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      updateCounts();
+    }
+    function phaseValue(id, field) {
+      const state = loadState();
+      return (state[id] && state[id][field]) || "";
+    }
+    function setPhaseValue(id, field, value) {
+      const state = loadState();
       state[id] = state[id] || {};
-      fields.forEach(field => {
-        const input = card.querySelector(`[data-field="${field}"]`);
-        if (input) state[id][field] = input.value;
-      });
-      localStorage.setItem(storageKey, JSON.stringify(state));
-      updateSummary();
-      applyFilters();
+      state[id][field] = value;
+      saveState(state);
     }
-
-    function updateSummary() {
-      let pass = 0, fail = 0, blocked = 0, open = 0;
-      phases.forEach(phase => {
-        const result = (state[phase.id] || {}).result || "";
-        if (result === "pass") pass++;
-        else if (result === "fail") fail++;
-        else if (result === "blocked") blocked++;
-        else open++;
+    function render() {
+      const filter = document.getElementById("filter").value;
+      const list = document.getElementById("phaseList");
+      list.innerHTML = "";
+      phases.forEach((p, i) => {
+        const result = phaseValue(p.id, "result") || "todo";
+        if (filter !== "all" && result !== filter) return;
+        const el = document.createElement("div");
+        el.className = "phase";
+        el.innerHTML = `
+          <div class="phase-head">
+            <div class="idx">${String(i + 1).padStart(2, "0")}</div>
+            <div>
+              <h3>${p.title}</h3>
+              <div class="small">负责人：${p.owner} · 优先级：${p.priority}</div>
+            </div>
+            <select data-field="result">
+              <option value="todo">待执行</option>
+              <option value="pass">通过</option>
+              <option value="fail">不通过</option>
+              <option value="blocked">阻塞</option>
+            </select>
+            <input data-field="tester" placeholder="测试人" />
+          </div>
+          <div class="phase-body">
+            <div class="checks">
+              ${p.checks.map((c, idx) => `
+                <label class="check">
+                  <input type="checkbox" data-check="${idx}" />
+                  <span>${c}</span>
+                </label>
+              `).join("")}
+            </div>
+            <div class="result-box">
+              <input data-field="date" placeholder="测试日期，例如 2026-06-07" />
+              <input data-field="evidence" placeholder="证据：截图/订单号/账号" />
+              <textarea class="full" data-field="issue" placeholder="不通过或阻塞原因"></textarea>
+              <textarea class="full" data-field="suggestion" placeholder="改进建议或备注"></textarea>
+            </div>
+          </div>
+        `;
+        const saved = loadState()[p.id] || {};
+        el.querySelectorAll("[data-field]").forEach(input => {
+          const field = input.dataset.field;
+          input.value = saved[field] || (field === "result" ? "todo" : "");
+          input.addEventListener("change", e => setPhaseValue(p.id, field, e.target.value));
+          input.addEventListener("input", e => {
+            if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") setPhaseValue(p.id, field, e.target.value);
+          });
+        });
+        el.querySelectorAll("[data-check]").forEach(input => {
+          const key = `check_${input.dataset.check}`;
+          input.checked = !!saved[key];
+          input.addEventListener("change", e => setPhaseValue(p.id, key, e.target.checked));
+        });
+        list.appendChild(el);
       });
-      totalCount.textContent = phases.length;
-      passCount.textContent = pass;
-      failCount.textContent = fail;
-      blockedCount.textContent = blocked;
-      openCount.textContent = open;
+      updateCounts();
     }
-
-    function applyFilters() {
-      const terminal = terminalFilter.value;
-      const result = resultFilter.value;
-      const keyword = searchBox.value.trim().toLowerCase();
-      document.querySelectorAll(".phase-card").forEach(card => {
-        const phase = phases.find(item => item.id === card.dataset.phaseId);
-        const row = state[phase.id] || {};
-        const actualResult = row.result || "";
-        const terminalOk = !terminal || phase.terminal.includes(terminal) || terminal === "全端";
-        const resultOk = !result || (result === "empty" ? !actualResult : actualResult === result);
-        const haystack = `${phase.title} ${phase.owner} ${phase.terminal} ${phase.objective}`.toLowerCase();
-        const keywordOk = !keyword || haystack.includes(keyword);
-        card.classList.toggle("hidden", !(terminalOk && resultOk && keywordOk));
+    function updateCounts() {
+      const state = loadState();
+      let pass = 0, fail = 0, todo = 0;
+      phases.forEach(p => {
+        const r = (state[p.id] && state[p.id].result) || "todo";
+        if (r === "pass") pass++;
+        else if (r === "fail" || r === "blocked") fail++;
+        else todo++;
       });
+      document.getElementById("totalCount").textContent = phases.length;
+      document.getElementById("passCount").textContent = pass;
+      document.getElementById("failCount").textContent = fail;
+      document.getElementById("todoCount").textContent = todo;
     }
-
-    document.querySelectorAll("[data-field]").forEach(input => {
-      input.addEventListener("change", event => saveCard(event.target.closest(".phase-card")));
-      input.addEventListener("input", event => {
-        if (event.target.tagName === "TEXTAREA" || event.target.tagName === "INPUT") saveCard(event.target.closest(".phase-card"));
-      });
-    });
-    terminalFilter.addEventListener("change", applyFilters);
-    resultFilter.addEventListener("change", applyFilters);
-    searchBox.addEventListener("input", applyFilters);
-    printPage.addEventListener("click", () => window.print());
-    clearLocal.addEventListener("click", () => {
-      if (!confirm("确认清空本页本地填写的测试结果？")) return;
-      localStorage.removeItem(storageKey);
-      location.reload();
-    });
-    exportJson.addEventListener("click", () => {
-      const payload = {
-        exported_at: new Date().toISOString(),
-        version_note: "增加旅行社端",
-        phases: phases.map(phase => ({ ...phase, result: state[phase.id] || {} })),
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(loadState(), null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "three-person-test-results.json";
+      a.download = "tourflow-three-person-test-result-0607.json";
       a.click();
       URL.revokeObjectURL(url);
-    });
-    loadState();
+    }
+    function resetAll() {
+      if (!confirm("确认清空本页面已填写的测试结果？")) return;
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+    document.getElementById("filter").addEventListener("change", render);
+    render();
   </script>
 </body>
 </html>

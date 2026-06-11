@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
-import type { AuthUser, OrgMember, OrgOverview, ReminderSettings } from "@/types/api";
+import type { AuthUser, OrgMember, OrgOverview, PlatformAuthSettings, ReminderSettings } from "@/types/api";
 
 const roleOptions: OrgMember["role"][] = ["admin", "dispatcher", "operations_manager", "driver"];
 const roleLabels: Record<OrgMember["role"], string> = {
@@ -88,6 +88,7 @@ export function SettingsPage({ currentUser }: { currentUser: AuthUser }) {
   const [inviteForm, setInviteForm] = useState<InviteForm>(emptyInviteForm);
   const org = useQuery({ queryKey: ["org-overview"], queryFn: api.orgOverview });
   const reminderSettings = useQuery({ queryKey: ["reminder-settings"], queryFn: api.reminderSettings });
+  const platformAuthSettings = useQuery({ queryKey: ["platform-auth-settings"], queryFn: api.platformAuthSettings });
 
   const inviteMutation = useMutation({
     mutationFn: api.inviteMember,
@@ -119,6 +120,11 @@ export function SettingsPage({ currentUser }: { currentUser: AuthUser }) {
     },
   });
 
+  const updatePlatformAuthSettings = useMutation({
+    mutationFn: api.updatePlatformAuthSettings,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["platform-auth-settings"] }),
+  });
+
   const orgData = org.data ?? fallbackOrg();
 
   return (
@@ -136,17 +142,11 @@ export function SettingsPage({ currentUser }: { currentUser: AuthUser }) {
             <Info label="API 状态" value={org.isError || reminderSettings.isError ? "局部异常" : "在线"} />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <h2 className="text-base font-bold text-slate-950">账号策略</h2>
-            <p className="mt-1 text-sm text-slate-500">手机号登录，密码不明文展示，只允许管理员重置为手机号后 6 位。</p>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            <Info label="司机端" value="强制微信绑定" />
-            <Info label="调度小程序" value="强制微信绑定" />
-            <Info label="Web 管理端" value="角色权限控制" />
-          </CardContent>
-        </Card>
+        <PlatformAuthSettingsCard
+          settings={platformAuthSettings.data}
+          saving={updatePlatformAuthSettings.isPending}
+          onSave={(payload) => updatePlatformAuthSettings.mutate(payload)}
+        />
       </section>
 
       {org.isError || !org.data ? (
@@ -302,6 +302,65 @@ export function SettingsPage({ currentUser }: { currentUser: AuthUser }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function PlatformAuthSettingsCard({ settings, saving, onSave }: { settings?: PlatformAuthSettings; saving: boolean; onSave: (payload: Partial<PlatformAuthSettings>) => void }) {
+  const [draft, setDraft] = useState<PlatformAuthSettings>({
+    wechat_auto_login_enabled: settings?.wechat_auto_login_enabled ?? false,
+    wechat_binding_required: settings?.wechat_binding_required ?? false,
+  });
+
+  useEffect(() => {
+    if (settings) setDraft(settings);
+  }, [settings]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-950">账号策略</h2>
+            <p className="mt-1 text-sm text-slate-500">手机号登录不展示明文密码；测试阶段建议关闭微信自动登录和强制绑定，规模测试或上线前再开启。</p>
+          </div>
+          <Button type="button" disabled={saving} onClick={() => onSave(draft)}>
+            <Save size={16} />
+            保存
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2">
+        <SwitchRow
+          title="微信自动登录"
+          description="开启后，小程序启动时会尝试用微信 code 自动登录已绑定账号。"
+          checked={draft.wechat_auto_login_enabled}
+          onChange={(checked) => setDraft({ ...draft, wechat_auto_login_enabled: checked })}
+        />
+        <SwitchRow
+          title="强制微信绑定"
+          description="开启后，小程序账号密码登录也必须带微信 openid 并完成绑定校验。"
+          checked={draft.wechat_binding_required}
+          onChange={(checked) => setDraft({ ...draft, wechat_binding_required: checked })}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function SwitchRow({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border bg-white p-4">
+      <span>
+        <span className="block text-sm font-bold text-slate-950">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-slate-500">{description}</span>
+      </span>
+      <input
+        type="checkbox"
+        className="h-5 w-5 shrink-0 accent-primary"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
   );
 }
 

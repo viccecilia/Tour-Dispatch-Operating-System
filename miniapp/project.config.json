@@ -2,7 +2,7 @@
   "description": "WX Dispatch Miniapp",
   "miniprogramRoot": "./",
   "projectname": "wx-dispatch-miniapp",
-  "appid": "wxfb6b69e5353308de",
+  "appid": "wxc20edb3cbdb7e3b2",
   "setting": {
     "urlCheck": false,
     "es6": true,

@@ -1,5 +1,8 @@
 const api = require('../../utils/api');
 
+const LOCATION_CACHE_KEY = 'dispatch_driver_location_cache';
+const LOCATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 Page({
   data: {
     role: '',
@@ -284,11 +287,40 @@ Page({
   },
 
   withLocation(done) {
+    const cached = this.getCachedLocation();
+    if (cached) {
+      done(cached);
+      return;
+    }
     wx.getLocation({
       type: 'gcj02',
-      success: (res) => done({ latitude: res.latitude, longitude: res.longitude }),
+      success: (res) => {
+        const location = { latitude: res.latitude, longitude: res.longitude };
+        this.setCachedLocation(location);
+        done(location);
+      },
       fail: () => done({ latitude: null, longitude: null })
     });
+  },
+
+  getCachedLocation() {
+    try {
+      const cached = wx.getStorageSync(LOCATION_CACHE_KEY);
+      if (!cached || !cached.latitude || !cached.longitude) return null;
+      const createdAt = Number(cached.created_at || 0);
+      if (createdAt && Date.now() - createdAt > LOCATION_CACHE_TTL_MS) return null;
+      return { latitude: cached.latitude, longitude: cached.longitude };
+    } catch (err) {
+      return null;
+    }
+  },
+
+  setCachedLocation(location) {
+    try {
+      wx.setStorageSync(LOCATION_CACHE_KEY, { ...location, created_at: Date.now() });
+    } catch (err) {
+      console.warn('[driver location cache failed]', err);
+    }
   },
 
   pickCurrentAssignment(assignments, workbenchCurrent) {

@@ -166,7 +166,7 @@ Page({
   },
 
   logout() {
-    api.clearSession();
+    api.clearSession({ manual: true });
     wx.reLaunch({ url: '/pages/index/index' });
   }
 });

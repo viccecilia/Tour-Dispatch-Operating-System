@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 from backend.db.database import get_connection
-from backend.services.auth_service import authenticate, authenticate_phone, authenticate_wechat, normalize_phone, split_company_account
+from backend.services.auth_service import create_jwt, public_user, authenticate, authenticate_phone, authenticate_wechat, normalize_phone, split_company_account
 from backend.services.dispatch_mobile_audit_service import record_dispatch_mobile_audit
 from backend.services.parser_service import get_draft, parse_batch_text_to_drafts, parse_text_to_draft, update_draft
 from backend.services.tenant_context import get_current_tenant_id
@@ -73,6 +73,30 @@ def login_dispatcher_by_wechat(payload: dict[str, Any]) -> dict[str, Any] | None
             "dispatcher_role": dispatcher["dispatcher_role"],
             "tenant_id": dispatcher["tenant_id"],
         },
+    }
+
+
+def login_dispatcher_dev_mock(payload: dict[str, Any]) -> dict[str, Any] | None:
+    user = _load_dev_mock_driver_user(payload)
+    if not user:
+        return None
+    public = public_user(user)
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (public["id"],))
+        conn.commit()
+    dispatcher = _dispatcher_from_user(public)
+    return {
+        "token": create_jwt(public),
+        "user": public,
+        "dispatcher": dispatcher,
+        "dispatcher_session": {
+            "dispatcher_id": dispatcher["dispatcher_id"],
+            "dispatcher_code": dispatcher["dispatcher_code"],
+            "dispatcher_name": dispatcher["dispatcher_name"],
+            "dispatcher_role": dispatcher["dispatcher_role"],
+            "tenant_id": dispatcher["tenant_id"],
+        },
+        "mock_login": True,
     }
 
 
@@ -331,6 +355,69 @@ def _fleet_status(conn, tenant_id: int) -> dict[str, int]:
         "offline": max(0, len(all_driver_ids - online)),
         "pending_confirmation": len(assigned),
     }
+
+
+def _load_dev_mock_driver_user(payload: dict[str, Any]) -> dict[str, Any] | None:
+    raw_mock_id = str(payload.get("mock_driver_id") or "").strip()
+    mock_user_id = _to_int(raw_mock_id[1:] if raw_mock_id.upper().startswith("D") else raw_mock_id)
+    driver_code = str(payload.get("mock_driver_code") or payload.get("driver_code") or "").strip()
+    phone = str(payload.get("phone") or "").strip()
+    normalized_phone = normalize_phone(phone)
+    username = str(payload.get("username") or "").strip()
+    display_name = str(payload.get("driver_name") or "").strip()
+    with get_connection() as conn:
+        base_query = """
+            SELECT
+                u.id,
+                u.tenant_id,
+                u.username,
+                u.role,
+                u.display_name,
+                u.phone,
+                u.profile_type,
+                u.profile_id,
+                u.wx_bind_status,
+                u.must_change_password,
+                u.is_active,
+                t.name AS tenant_name,
+                t.slug AS tenant_slug
+            FROM users u
+            LEFT JOIN tenants t ON t.id = u.tenant_id
+            LEFT JOIN drivers d ON d.id = u.profile_id AND u.profile_type = 'driver'
+            WHERE u.is_active = 1
+              AND u.role = 'driver'
+              AND {where_clause}
+            ORDER BY u.id ASC
+            LIMIT 1
+        """
+        lookups: list[tuple[str, tuple[Any, ...]]] = []
+        if mock_user_id:
+            lookups.append(("u.id = ?", (mock_user_id,)))
+        if username:
+            lookups.append(("u.username = ?", (username,)))
+        if driver_code:
+            lookups.append(("d.driver_code = ? OR u.username = ?", (driver_code, driver_code)))
+        if normalized_phone:
+            lookups.append(
+                (
+                    "REPLACE(REPLACE(REPLACE(COALESCE(u.phone, ''), '-', ''), ' ', ''), '+', '') = ? OR u.username LIKE ?",
+                    (normalized_phone, f"%{normalized_phone}%"),
+                )
+            )
+        if display_name:
+            lookups.append(("u.display_name = ? OR d.name = ?", (display_name, display_name)))
+        lookups.extend(
+            [
+                ("u.id = ?", (411,)),
+                ("u.display_name = ? OR d.name = ?", ("Aki Tanaka", "Aki Tanaka")),
+                ("u.username = ?", ("SKR-08070010102",)),
+            ]
+        )
+        for where_clause, params in lookups:
+            row = conn.execute(base_query.format(where_clause=where_clause), params).fetchone()
+            if row:
+                return dict(row)
+    return None
 
 
 def _dispatcher_from_user(user: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 const API_STORAGE_KEY = 'wx_dispatch_api_base_url';
 const ACTIVE_TAB_KEY = 'dispatch_active_tab_path';
 const SESSION_STORAGE_KEY = 'dispatcher_session';
+const MANUAL_LOGOUT_KEY = 'dispatch_manual_logout';
 const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
 const DEFAULT_BASE_URL = TRIAL_BASE_URL;
@@ -32,10 +33,26 @@ function resetBaseUrl() {
   API_CONFIG.baseUrl = DEFAULT_BASE_URL;
 }
 
+function getRuntimeInfo() {
+  const deviceInfo = typeof wx.getDeviceInfo === 'function' ? wx.getDeviceInfo() : {};
+  const windowInfo = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : {};
+  const appBaseInfo = typeof wx.getAppBaseInfo === 'function' ? wx.getAppBaseInfo() : {};
+  return {
+    device: deviceInfo,
+    window: windowInfo,
+    app: appBaseInfo,
+    platform: deviceInfo.platform || appBaseInfo.platform || ''
+  };
+}
+
+function isLocalBaseUrl() {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(API_CONFIG.baseUrl);
+}
+
 function syncEnvironmentBaseUrl() {
   try {
-    const systemInfo = wx.getSystemInfoSync();
-    if (systemInfo && systemInfo.platform === 'devtools') {
+    const runtimeInfo = getRuntimeInfo();
+    if (runtimeInfo.platform === 'devtools') {
       setBaseUrl(LOCAL_BASE_URL);
       return;
     }
@@ -56,11 +73,25 @@ function getSession() {
 function setSession(session) {
   wx.setStorageSync(getSessionStorageKey(), session);
   wx.removeStorageSync(SESSION_STORAGE_KEY);
+  wx.removeStorageSync(MANUAL_LOGOUT_KEY);
 }
 
-function clearSession() {
+function clearSession(options = {}) {
   wx.removeStorageSync(getSessionStorageKey());
   wx.removeStorageSync(SESSION_STORAGE_KEY);
+  wx.removeStorageSync(`${SESSION_STORAGE_KEY}:${TRIAL_BASE_URL}`);
+  wx.removeStorageSync(`${SESSION_STORAGE_KEY}:${LOCAL_BASE_URL}`);
+  if (options.manual) {
+    wx.setStorageSync(MANUAL_LOGOUT_KEY, true);
+  }
+}
+
+function isManualLogout() {
+  return !!wx.getStorageSync(MANUAL_LOGOUT_KEY);
+}
+
+function clearManualLogout() {
+  wx.removeStorageSync(MANUAL_LOGOUT_KEY);
 }
 
 function getRole(session = getSession()) {
@@ -94,6 +125,13 @@ function request(path, options = {}) {
       },
       success: (res) => {
         if (res.statusCode >= 400) {
+          console.error('[dispatch-mobile api failed]', {
+            path,
+            method: options.method || 'GET',
+            statusCode: res.statusCode,
+            requestPayload: options.data || {},
+            responseBody: res.data
+          });
           if (res.statusCode === 401 && path.indexOf('/login') < 0) {
             clearSession();
             wx.reLaunch({ url: '/pages/index/index' });
@@ -103,9 +141,45 @@ function request(path, options = {}) {
         }
         resolve(res.data);
       },
-      fail: reject
+      fail: (err) => {
+        console.error('[dispatch-mobile api network failed]', {
+          path,
+          method: options.method || 'GET',
+          requestPayload: options.data || {},
+          error: err
+        });
+        reject(err);
+      }
     });
   });
+}
+
+function buildWechatLoginPayload(wxCode = '', overrides = {}) {
+  const code = String(wxCode || '').trim();
+  const local = isLocalBaseUrl();
+  const payload = {
+    code,
+    wx_code: code,
+    driver_code: overrides.driver_code || overrides.mock_driver_code || '',
+    openid: overrides.openid || overrides.wx_openid || '',
+    wx_openid: overrides.wx_openid || overrides.openid || '',
+    phone: overrides.phone || '',
+    client_type: 'dispatch_miniapp'
+  };
+  if (local) {
+    payload.mock_dev = true;
+    payload.mock_driver_id = overrides.mock_driver_id || 'D411';
+    payload.mock_driver_code = overrides.mock_driver_code || overrides.driver_code || 'SKR-D02';
+  }
+  console.info('[dispatch-mobile wechat-login payload]', payload);
+  return payload;
+}
+
+function toQuery(params = {}) {
+  const pairs = Object.keys(params)
+    .filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== '')
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`);
+  return pairs.length ? `?${pairs.join('&')}` : '';
 }
 
 function withDispatcher(payload = {}) {
@@ -129,17 +203,22 @@ module.exports = {
   useCloudBaseUrl,
   resetBaseUrl,
   syncEnvironmentBaseUrl,
+  getRuntimeInfo,
+  isLocalBaseUrl,
   setActiveTab,
   getSession,
   setSession,
   clearSession,
+  isManualLogout,
+  clearManualLogout,
   getRole,
   canAccess,
   withDispatcher,
   request,
+  appConfig: () => request('/api/dispatch-mobile/app-config'),
   login: (username, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
   loginPhone: (phone, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
-  loginWechat: (wxCode) => request('/api/dispatch-mobile/wechat-login', { method: 'POST', data: { wx_code: wxCode, client_type: 'dispatch_miniapp' } }),
+  loginWechat: (wxCode, overrides = {}) => request('/api/dispatch-mobile/wechat-login', { method: 'POST', data: buildWechatLoginPayload(wxCode, overrides) }),
   registerPhone: (data) => request('/api/auth/register', { method: 'POST', data: { ...data, client_type: data.client_type || 'dispatch_miniapp' } }),
   context: () => request('/api/dispatch-mobile/context'),
   dashboard: () => {
@@ -161,7 +240,8 @@ module.exports = {
     return request(`/api/dispatch-mobile/unassigned-orders${query}`);
   },
   notifications: () => request('/api/dispatch-mobile/notifications'),
-  driverNotifications: (driverId) => request(`/api/driver/notifications?driver_id=${driverId}`),
+  driverNotifications: (driverId) => request(`/api/driver/notifications?driver_id=${driverId}&limit=30`),
+  markDriverNotificationRead: (driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: { driver_id: driverId } }),
   driverAssignments: (driverId) => request(`/api/driver/assignments?driver_id=${driverId}`),
   driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
   driverProfile: (driverId) => request(`/api/driver/profile?driver_id=${driverId}`),
@@ -188,5 +268,6 @@ module.exports = {
   claimAuctionListing: (listingId, payload) => request(`/api/auction/listings/${listingId}/claim`, { method: 'POST', data: withDispatcher(payload) }),
   fleetLocations: () => request('/api/dispatch-mobile/fleet/latest-locations'),
   financeSummary: () => request('/api/dispatch-mobile/finance/summary'),
-  financeLedger: () => request('/api/dispatch-mobile/finance/ledger')
+  financeLedger: () => request('/api/dispatch-mobile/finance/ledger'),
+  financeDriverExpenses: (params = {}) => request(`/api/dispatch-mobile/finance/driver-expenses${toQuery(params)}`)
 };
