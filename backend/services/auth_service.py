@@ -32,6 +32,8 @@ def split_company_account(account: str | None) -> tuple[str | None, str]:
     if "-" not in text:
         return None, text
     prefix, rest = text.split("-", 1)
+    if prefix.isdigit():
+        return None, text
     return company_code_for_tenant(prefix), rest.strip()
 
 
@@ -427,6 +429,7 @@ def create_jwt(user: dict) -> str:
         "sub": user["id"],
         "username": user["username"],
         "role": user["role"],
+        "account_scope": user.get("account_scope"),
         "tenant_id": user.get("tenant_id") or 1,
         "profile_type": user.get("profile_type"),
         "profile_id": user.get("profile_id"),
@@ -463,6 +466,7 @@ def public_user(user: dict) -> dict:
     tenant_name = user.pop("tenant_name", None) or "DAITORA"
     tenant_slug = user.pop("tenant_slug", None) or "daitora"
     company_code = company_code_for_tenant(tenant_slug, tenant_name)
+    user["account_scope"] = _account_scope(user)
     user["company_code"] = company_code
     user["account_login"] = company_login_name(user.get("phone") or user.get("username"), tenant_slug, tenant_name)
     user["tenant"] = {
@@ -472,6 +476,16 @@ def public_user(user: dict) -> dict:
         "company_code": company_code,
     }
     return user
+
+
+def _account_scope(user: dict) -> str:
+    if user.get("account_scope"):
+        return str(user["account_scope"])
+    if str(user.get("username") or "").strip() == "admin":
+        return "platform"
+    if user.get("role") == "driver":
+        return "driver"
+    return "carrier"
 
 
 def normalize_phone(phone: str | None) -> str:

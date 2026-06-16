@@ -42,6 +42,7 @@ import type {
   ReminderSettings,
   ResourceAlert,
   Team,
+  TenantOption,
   Vehicle,
   VehicleInspectionRecord,
   WorkflowRule,
@@ -137,6 +138,17 @@ function listFrom<T>(payload: unknown, keys: string[]): T[] {
   return [];
 }
 
+function searchFrom(input: unknown, allowedKeys: string[]) {
+  const search = new URLSearchParams();
+  if (!input || typeof input !== "object" || Array.isArray(input)) return search;
+  const record = input as Record<string, unknown>;
+  allowedKeys.forEach((key) => {
+    const value = record[key];
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  });
+  return search;
+}
+
 export const api = {
   baseUrl: API_BASE_URL,
   ping: () => request<{ ok: boolean; message?: string }>("/api/ping"),
@@ -177,6 +189,10 @@ export const api = {
     request<{ registration: CompanyRegistration }>(`/api/company-registrations/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
+    }),
+  deleteCompanyRegistration: (id: number) =>
+    request<{ deleted: boolean }>(`/api/company-registrations/${id}`, {
+      method: "DELETE",
     }),
   uploadCompanyRegistrationFile: (id: number, payload: { file_type: "registry_certificate" | "business_license" | "bank_book"; file_name: string; file_base64: string }) =>
     request<{ success: boolean; file_type: string; file_url: string; file_name: string }>(`/api/company-registrations/${id}/upload`, {
@@ -592,8 +608,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  assignments: async () =>
-    listFrom<Assignment>(await request<unknown>("/api/dispatch/assignments"), ["assignments", "items", "data"]),
+  assignments: async (params?: unknown) => {
+    const search = searchFrom(params, ["tenant_id", "status"]);
+    return listFrom<Assignment>(await request<unknown>(`/api/dispatch/assignments${search.toString() ? `?${search}` : ""}`), ["assignments", "items", "data"]);
+  },
   assignmentEvidence: async (assignmentId: number) =>
     request<{ evidence_chain: AssignmentEvidenceChain }>(`/api/assignments/${assignmentId}/evidence`),
   orderEvidence: async (orderId: number) =>
@@ -601,10 +619,16 @@ export const api = {
   drivers: async () => listFrom<Driver>(await request<unknown>("/api/dispatch/drivers"), ["drivers", "items", "data"]),
   vehicles: async () =>
     listFrom<Vehicle>(await request<unknown>("/api/dispatch/vehicles"), ["vehicles", "items", "data"]),
-  resourceDrivers: async () =>
-    listFrom<Driver>(await request<unknown>("/api/resources/drivers"), ["drivers", "items", "data"]),
-  resourceVehicles: async () =>
-    listFrom<Vehicle>(await request<unknown>("/api/resources/vehicles"), ["vehicles", "items", "data"]),
+  platformTenants: async () =>
+    listFrom<TenantOption>(await request<unknown>("/api/platform/tenants"), ["tenants", "items", "data"]),
+  resourceDrivers: async (params?: unknown) => {
+    const search = searchFrom(params, ["tenant_id", "status"]);
+    return listFrom<Driver>(await request<unknown>(`/api/resources/drivers${search.toString() ? `?${search}` : ""}`), ["drivers", "items", "data"]);
+  },
+  resourceVehicles: async (params?: unknown) => {
+    const search = searchFrom(params, ["tenant_id", "status"]);
+    return listFrom<Vehicle>(await request<unknown>(`/api/resources/vehicles${search.toString() ? `?${search}` : ""}`), ["vehicles", "items", "data"]);
+  },
   resourceReminders: () =>
     request<{ alerts: ResourceAlert[]; total: number; expired: number; upcoming: number; maintenance: number; settings?: ReminderSettings }>("/api/resources/reminders"),
   reminderSettings: async () => (await request<{ settings: ReminderSettings }>("/api/settings/reminders")).settings,
@@ -629,8 +653,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  deleteDriver: (id: number) =>
-    request<{ deleted: boolean }>(`/api/resources/drivers/${id}`, {
+  deleteDriver: (id: number, tenantId?: number) =>
+    request<{ deleted: boolean }>(`/api/resources/drivers/${id}${tenantId ? `?tenant_id=${tenantId}` : ""}`, {
       method: "DELETE",
     }),
   createVehicle: (payload: Partial<Vehicle>) =>
@@ -643,8 +667,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  deleteVehicle: (id: number) =>
-    request<{ deleted: boolean }>(`/api/resources/vehicles/${id}`, {
+  deleteVehicle: (id: number, tenantId?: number) =>
+    request<{ deleted: boolean }>(`/api/resources/vehicles/${id}${tenantId ? `?tenant_id=${tenantId}` : ""}`, {
       method: "DELETE",
     }),
   createVehicleInspectionRecord: (vehicleId: number, payload: Partial<VehicleInspectionRecord>) =>
@@ -700,13 +724,12 @@ export const api = {
     request<{ today?: Record<string, number>; monthly?: Record<string, number> }>(`/api/driver/income?driver_id=${driverId}`),
   driverNotifications: async (driverId: number) =>
     listFrom<NotificationItem>(await request<unknown>(`/api/driver/notifications?driver_id=${driverId}`), ["notifications", "items", "data"]),
-  driverSafetyAlerts: async () =>
-    listFrom<DriverSafetyAlert>(await request<unknown>("/api/driver/safety-alerts"), ["alerts", "items", "data"]),
-  fleetLatestLocations: async (params?: { driver_id?: string; online_status?: string; vehicle_status?: string; limit?: number }) => {
-    const search = new URLSearchParams();
-    Object.entries(params || {}).forEach(([key, value]) => {
-      if (value !== undefined && value !== "") search.set(key, String(value));
-    });
+  driverSafetyAlerts: async (params?: unknown) => {
+    const search = searchFrom(params, ["tenant_id"]);
+    return listFrom<DriverSafetyAlert>(await request<unknown>(`/api/driver/safety-alerts${search.toString() ? `?${search}` : ""}`), ["alerts", "items", "data"]);
+  },
+  fleetLatestLocations: async (params?: unknown) => {
+    const search = searchFrom(params, ["driver_id", "online_status", "vehicle_status", "limit", "tenant_id"]);
     return listFrom<LocationLog>(await request<unknown>(`/api/fleet/latest-locations${search.toString() ? `?${search}` : ""}`), ["locations", "items", "data"]);
   },
 };

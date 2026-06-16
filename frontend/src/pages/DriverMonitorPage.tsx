@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock, MapPin, RadioTower, Siren } from "lucide-react";
+import { CompanyScopeFilter } from "@/components/CompanyScopeFilter";
 import { EmptyState } from "@/components/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -36,10 +37,11 @@ function reportLabel(type?: string) {
 
 export function DriverMonitorPage() {
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
-  const assignments = useQuery({ queryKey: ["assignments"], queryFn: api.assignments, refetchInterval: 4000 });
+  const [tenantScope, setTenantScope] = useState("all");
+  const assignments = useQuery({ queryKey: ["assignments", tenantScope], queryFn: () => api.assignments({ tenant_id: tenantScope }), refetchInterval: 4000 });
   const reports = useQuery({ queryKey: ["driver-reports"], queryFn: api.driverReports, refetchInterval: 4000 });
-  const locations = useQuery({ queryKey: ["fleet-latest-locations"], queryFn: () => api.fleetLatestLocations(), refetchInterval: 5000 });
-  const safetyAlerts = useQuery({ queryKey: ["driver-safety-alerts"], queryFn: api.driverSafetyAlerts, refetchInterval: 5000 });
+  const locations = useQuery({ queryKey: ["fleet-latest-locations", tenantScope], queryFn: () => api.fleetLatestLocations({ tenant_id: tenantScope }), refetchInterval: 5000 });
+  const safetyAlerts = useQuery({ queryKey: ["driver-safety-alerts", tenantScope], queryFn: () => api.driverSafetyAlerts({ tenant_id: tenantScope }), refetchInterval: 5000 });
   const evidenceChain = useQuery({
     queryKey: ["assignment-evidence", selectedAssignmentId],
     queryFn: () => api.assignmentEvidence(selectedAssignmentId || 0),
@@ -80,6 +82,9 @@ export function DriverMonitorPage() {
             <MonitorRuntimeStat label="已入库" value={stats.returnedVehicles || stats.completed} tone="green" />
             <MonitorRuntimeStat label="警报" value={stats.alerts} tone={stats.alerts ? "red" : "green"} />
           </div>
+        </div>
+        <div className="mt-4">
+          <CompanyScopeFilter value={tenantScope} onChange={setTenantScope} />
         </div>
       </section>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">

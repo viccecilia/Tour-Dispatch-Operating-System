@@ -26,7 +26,9 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { SystemMaintenancePage } from "@/pages/SystemMaintenancePage";
 import { VehiclesPage } from "@/pages/VehiclesPage";
 import { api, clearAuthToken, getAuthToken } from "@/services/apiClient";
+import { canAccessPage } from "@/auth/permissions";
 import type { AuthUser } from "@/types/api";
+import type { PageKey } from "@/stores/navigationStore";
 
 export function App() {
   const { activePage, setActivePage } = useNavigationStore();
@@ -59,7 +61,7 @@ export function App() {
 
   useEffect(() => {
     const onHashChange = () => {
-      const page = (window.location.hash.replace("#", "") || "dashboard") as typeof activePage;
+      const page = (window.location.hash.replace("#", "") || "dashboard") as PageKey;
       setActivePage(page);
     };
     onHashChange();
@@ -123,16 +125,4 @@ export function App() {
       {page}
     </SaasShell>
   );
-}
-
-function canAccessPage(user: AuthUser, page: string) {
-  const role = user.role;
-  const platformAdmin = user.username === "admin" || Number(user.tenant_id) === 1;
-  if (page === "system" || page === "audit") return false;
-  if (page === "agencies" || page === "company-registration") return platformAdmin;
-  if (page === "finance") return role === "admin";
-  if (page === "analytics") return role === "admin";
-  if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system", "audit"].includes(page);
-  if (role === "dispatcher") return !["finance", "analytics", "system", "audit"].includes(page);
-  return true;
 }

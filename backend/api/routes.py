@@ -75,11 +75,13 @@ from backend.services.billing_service import (
 from backend.services.calendar_service import get_dispatch_calendar, get_dispatch_detail
 from backend.services.company_registration_service import (
     create_company_registration,
+    delete_company_registration,
     list_company_registrations,
     update_company_registration,
     upload_company_registration_file,
 )
 from backend.services.dashboard_service import get_summary
+from backend.services.data_scope_service import list_carrier_tenants, resolve_tenant_filter, resolve_write_tenant
 from backend.services.dispatch_service import (
     assign_orders,
     cancel_assignment,
@@ -177,6 +179,7 @@ from backend.services.parser_service import (
     parse_voice_to_draft,
     update_draft,
 )
+from backend.services.permission_service import has_permission
 from backend.services.resource_service import (
     create_driver,
     create_vehicle,
@@ -541,7 +544,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"agencies": list_agencies(params)})
             return
         if path == "/api/company-registrations":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_permission("platform.company_registration.manage"):
                 return
             self.send_json({"registrations": list_company_registrations(params)})
             return
@@ -640,11 +643,22 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             self.send_csv(export_finance_csv(params), "finance_export.csv")
             return
+        if path == "/api/platform/tenants":
+            if not self.require_permission("platform.company_registration.manage"):
+                return
+            self.send_json({"tenants": list_carrier_tenants()})
+            return
         if path == "/api/resources/drivers":
-            self.send_json({"drivers": list_drivers(params.get("status"))})
+            user = self.require_api_user()
+            if not user:
+                return
+            self.send_json({"drivers": list_drivers(params.get("status"), resolve_tenant_filter(user, params.get("tenant_id")))})
             return
         if path == "/api/resources/vehicles":
-            self.send_json({"vehicles": list_vehicles(params.get("status"))})
+            user = self.require_api_user()
+            if not user:
+                return
+            self.send_json({"vehicles": list_vehicles(params.get("status"), resolve_tenant_filter(user, params.get("tenant_id")))})
             return
         if path == "/api/resources/reminders":
             self.send_json(get_resource_reminders())
@@ -700,7 +714,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"vehicles": list_available_vehicles()})
             return
         if path == "/api/dispatch/assignments":
-            self.send_json({"assignments": list_assignments(params.get("status", "active"))})
+            user = self.require_api_user()
+            if not user:
+                return
+            self.send_json({"assignments": list_assignments(params.get("status", "active"), resolve_tenant_filter(user, params.get("tenant_id")))})
             return
         if path == "/api/dispatch/route-suggestion":
             self.send_json(route_suggestion(self.parse_ids(params.get("order_ids", ""))))
@@ -723,12 +740,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"locations": list_location_logs(self.driver_id(params), int(params.get("limit") or 100))})
             return
         if path == "/api/fleet/latest-locations":
+            user = self.require_api_user()
+            if not user:
+                return
             self.send_json({
                 "locations": get_latest_locations(
                     params.get("driver_id"),
                     int(params.get("limit") or 50),
                     params.get("online_status"),
                     params.get("vehicle_status"),
+                    resolve_tenant_filter(user, params.get("tenant_id")),
                 )
             })
             return
@@ -760,7 +781,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"notifications": list_driver_notifications(self.driver_id(params), params)})
             return
         if path == "/api/driver/safety-alerts":
-            self.send_json({"alerts": list_driver_safety_alerts()})
+            user = self.require_api_user()
+            if not user:
+                return
+            self.send_json({"alerts": list_driver_safety_alerts(resolve_tenant_filter(user, params.get("tenant_id")))})
             return
         if path == "/api/driver/evidence":
             self.send_json({"evidence": list_driver_evidence(self.driver_id(params), params.get("assignment_id"))})
@@ -1064,7 +1088,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.safe_create(lambda: {"agency": create_agency(payload)}, HTTPStatus.CREATED)
             return
         if path == "/api/company-registrations":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_permission("platform.company_registration.manage"):
                 return
             self.safe_create(lambda: {"registration": create_company_registration(payload)}, HTTPStatus.CREATED)
             return
@@ -1168,10 +1192,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.safe_update(lambda: close_incident(incident_close_id, payload), "incident", "incident_not_found")
             return
         if path == "/api/resources/drivers":
-            self.safe_create(lambda: {"driver": create_driver(payload)}, HTTPStatus.CREATED)
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_create(lambda: {"driver": create_driver(payload, resolve_write_tenant(user, payload.get("tenant_id")))}, HTTPStatus.CREATED)
             return
         if path == "/api/resources/vehicles":
-            self.safe_create(lambda: {"vehicle": create_vehicle(payload)}, HTTPStatus.CREATED)
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_create(lambda: {"vehicle": create_vehicle(payload, resolve_write_tenant(user, payload.get("tenant_id")))}, HTTPStatus.CREATED)
             return
         vehicle_records_id = self._match_action_path(path, "/api/resources/vehicles/", "/inspection-records")
         if vehicle_records_id:
@@ -1209,21 +1239,21 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.dispatch_reassign_with_audit(payload, path)
             return
         if path == "/api/auction/listings":
-            user = self.require_role({"admin", "dispatcher"})
+            user = self.require_role({"admin"})
             if not user:
                 return
             self.auction_publish_with_audit(payload, path, user)
             return
         auction_claim_id = self._match_action_path(path, "/api/auction/listings/", "/claim")
         if auction_claim_id:
-            user = self.require_role({"admin", "dispatcher"})
+            user = self.require_role({"admin"})
             if not user:
                 return
             self.safe_update(lambda: claim_auction_listing(auction_claim_id, payload, user), "listing", "listing_not_found")
             return
         auction_bid_id = self._match_action_path(path, "/api/auction/listings/", "/bid")
         if auction_bid_id:
-            user = self.require_role({"admin", "dispatcher"})
+            user = self.require_role({"admin"})
             if not user:
                 return
             self.safe_update(lambda: bid_auction_listing(auction_bid_id, payload, user), "listing", "listing_not_found")
@@ -1432,11 +1462,17 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         driver_id = self.match_resource_path(path, "drivers")
         if driver_id:
-            self.safe_update(lambda: update_driver(driver_id, payload), "driver", "driver_not_found")
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: update_driver(driver_id, payload, resolve_write_tenant(user, payload.get("tenant_id"))), "driver", "driver_not_found")
             return
         vehicle_id = self.match_resource_path(path, "vehicles")
         if vehicle_id:
-            self.safe_update(lambda: update_vehicle(vehicle_id, payload), "vehicle", "vehicle_not_found")
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: update_vehicle(vehicle_id, payload, resolve_write_tenant(user, payload.get("tenant_id"))), "vehicle", "vehicle_not_found")
             return
         vehicle_record_id = self._match_prefixed_id(path, "/api/resources/vehicle-inspection-records/")
         if vehicle_record_id:
@@ -1448,13 +1484,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         company_registration_upload = self._match_action_path(path, "/api/company-registrations/", "/upload")
         if company_registration_upload:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_permission("platform.company_registration.manage"):
                 return
             self.safe_update(lambda: upload_company_registration_file(company_registration_upload, payload), "file", "company_registration_not_found")
             return
         company_registration_id = self._match_prefixed_id(path, "/api/company-registrations/")
         if company_registration_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_permission("platform.company_registration.manage"):
                 return
             self.safe_update(lambda: update_company_registration(company_registration_id, payload), "registration", "company_registration_not_found")
             return
@@ -1527,12 +1563,18 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         driver_id = self.match_resource_path(path, "drivers")
         if driver_id:
-            deleted = delete_driver(driver_id)
+            user = self.require_api_user()
+            if not user:
+                return
+            deleted = delete_driver(driver_id, resolve_write_tenant(user, params.get("tenant_id")))
             self.send_json({"deleted": True} if deleted else {"error": "driver_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
             return
         vehicle_id = self.match_resource_path(path, "vehicles")
         if vehicle_id:
-            deleted = delete_vehicle(vehicle_id)
+            user = self.require_api_user()
+            if not user:
+                return
+            deleted = delete_vehicle(vehicle_id, resolve_write_tenant(user, params.get("tenant_id")))
             self.send_json({"deleted": True} if deleted else {"error": "vehicle_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
             return
         vehicle_record_id = self._match_prefixed_id(path, "/api/resources/vehicle-inspection-records/")
@@ -1544,6 +1586,13 @@ class ApiHandler(BaseHTTPRequestHandler):
         if agency_id:
             deleted = delete_agency(agency_id)
             self.send_json({"deleted": True} if deleted else {"error": "agency_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
+            return
+        company_registration_id = self._match_prefixed_id(path, "/api/company-registrations/")
+        if company_registration_id:
+            if not self.require_permission("platform.company_registration.manage"):
+                return
+            deleted = delete_company_registration(company_registration_id)
+            self.send_json({"deleted": True} if deleted else {"error": "company_registration_not_found"}, HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND)
             return
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
@@ -1577,6 +1626,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             return None
         if user.get("role") not in allowed_roles:
             self.send_json({"error": "forbidden", "required_roles": sorted(allowed_roles)}, HTTPStatus.FORBIDDEN)
+            return None
+        return user
+
+    def require_permission(self, permission: str) -> dict | None:
+        user = self.require_api_user()
+        if not user:
+            return None
+        if not has_permission(user, permission):
+            self.send_json({"error": "forbidden", "required_permission": permission}, HTTPStatus.FORBIDDEN)
             return None
         return user
 

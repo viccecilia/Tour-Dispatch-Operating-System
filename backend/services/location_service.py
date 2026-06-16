@@ -10,6 +10,7 @@ from backend.db.database import get_connection
 from backend.services.order_number_service import normalize_vehicle_type_label
 from backend.services.tenant_context import get_current_tenant_id
 
+_DEFAULT_TENANT = object()
 
 DEFAULT_LOCATIONS = [
     {"std_name": "KIX", "loc_type": "Airport", "aliases": "KIX,关西,关空,关西机场,关西空港,关西国际机场,Kansai Airport"},
@@ -273,9 +274,16 @@ def get_latest_locations(
     limit: int = 50,
     online_status: str | None = None,
     vehicle_status: str | None = None,
+    tenant_id: int | None | object = _DEFAULT_TENANT,
 ) -> list[dict[str, Any]]:
-    params: list[Any] = [get_current_tenant_id()]
-    where = ["ll.tenant_id = ?"]
+    params: list[Any] = []
+    where = []
+    if tenant_id is _DEFAULT_TENANT:
+        where.append("ll.tenant_id = ?")
+        params.append(get_current_tenant_id())
+    elif tenant_id:
+        where.append("ll.tenant_id = ?")
+        params.append(tenant_id)
     if driver_id not in ("", None):
         where.append("ll.driver_id = ?")
         params.append(_to_int(driver_id))
@@ -287,6 +295,8 @@ def get_latest_locations(
             FROM (
                 SELECT
                     ll.*,
+                    t.name AS tenant_name,
+                    t.slug AS tenant_slug,
                     d.name AS driver_name,
                     d.phone AS driver_phone,
                     v.plate_number,
@@ -305,11 +315,12 @@ def get_latest_locations(
                     a.execution_status,
                     ROW_NUMBER() OVER (PARTITION BY ll.driver_id ORDER BY ll.reported_at DESC, ll.id DESC) AS rn
                 FROM location_logs ll
-                LEFT JOIN drivers d ON d.id = ll.driver_id
-                LEFT JOIN vehicles v ON v.id = ll.vehicle_id
-                LEFT JOIN assignments a ON a.id = ll.assignment_id
-                LEFT JOIN orders o ON o.id = ll.order_id
-                WHERE {" AND ".join(where)}
+                LEFT JOIN tenants t ON t.id = ll.tenant_id
+                LEFT JOIN drivers d ON d.id = ll.driver_id AND d.tenant_id = ll.tenant_id
+                LEFT JOIN vehicles v ON v.id = ll.vehicle_id AND v.tenant_id = ll.tenant_id
+                LEFT JOIN assignments a ON a.id = ll.assignment_id AND a.tenant_id = ll.tenant_id
+                LEFT JOIN orders o ON o.id = ll.order_id AND o.tenant_id = ll.tenant_id
+                {"WHERE " + " AND ".join(where) if where else ""}
             )
             WHERE rn = 1
             ORDER BY reported_at DESC, id DESC

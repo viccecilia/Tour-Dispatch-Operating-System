@@ -6,18 +6,18 @@ import {
   Building2,
   CalendarDays,
   CarFront,
-  FileCheck2,
   ClipboardList,
+  FileCheck2,
   FileText,
   Gavel,
-  MapPinned,
   LayoutDashboard,
   LucideIcon,
+  MapPinned,
   MonitorCog,
-  TimerReset,
   Receipt,
   Route,
   Settings,
+  TimerReset,
   Truck,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -27,73 +27,54 @@ import { api } from "@/services/apiClient";
 import { PageKey, useNavigationStore } from "@/stores/navigationStore";
 import { useLanguageStore } from "@/stores/languageStore";
 import { cn } from "@/lib/utils";
+import { accountScope, canAccessPage } from "@/auth/permissions";
 import type { AuthUser } from "@/types/api";
 import type { Locale } from "@/i18n/dictionaries";
 
-const navItems: Array<{ key: PageKey; labelKey: string; icon: LucideIcon }> = [
-  { key: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
-  { key: "notifications", labelKey: "notifications.title", icon: Bell },
-  { key: "parser", labelKey: "nav.parser", icon: FileText },
-  { key: "orders", labelKey: "nav.orders", icon: ClipboardList },
-  { key: "dispatch", labelKey: "nav.dispatch", icon: Route },
-  { key: "auction", labelKey: "订单大厅", icon: Gavel },
-  { key: "calendar", labelKey: "nav.calendar", icon: CalendarDays },
-  { key: "driver-monitor", labelKey: "nav.driver-monitor", icon: MonitorCog },
-  { key: "attendance", labelKey: "出勤台账", icon: TimerReset },
-  { key: "map", labelKey: "nav.map", icon: MapPinned },
-  { key: "vehicles", labelKey: "nav.vehicles", icon: Truck },
-  { key: "company-registration", labelKey: "公司注册", icon: FileCheck2 },
-  { key: "agencies", labelKey: "nav.agencies", icon: Building2 },
-  { key: "incidents", labelKey: "nav.incidents", icon: AlertTriangle },
-  { key: "finance", labelKey: "nav.finance", icon: Receipt },
-  { key: "analytics", labelKey: "nav.analytics", icon: BarChart3 },
-  { key: "automation", labelKey: "nav.automation", icon: Bot },
-  { key: "copilot", labelKey: "nav.copilot", icon: Bot },
-  { key: "settings", labelKey: "nav.settings", icon: Settings },
+const navItems: Array<{ key: PageKey; label: string; labelKey?: string; icon: LucideIcon }> = [
+  { key: "dashboard", label: "总览", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { key: "notifications", label: "通知中心", labelKey: "notifications.title", icon: Bell },
+  { key: "parser", label: "订单解析", labelKey: "nav.parser", icon: FileText },
+  { key: "orders", label: "订单", labelKey: "nav.orders", icon: ClipboardList },
+  { key: "dispatch", label: "派车", labelKey: "nav.dispatch", icon: Route },
+  { key: "auction", label: "订单大厅", icon: Gavel },
+  { key: "calendar", label: "日历", labelKey: "nav.calendar", icon: CalendarDays },
+  { key: "driver-monitor", label: "司机监控", labelKey: "nav.driver-monitor", icon: MonitorCog },
+  { key: "attendance", label: "出勤台账", icon: TimerReset },
+  { key: "map", label: "车辆地图", labelKey: "nav.map", icon: MapPinned },
+  { key: "vehicles", label: "车辆/司机", labelKey: "nav.vehicles", icon: Truck },
+  { key: "company-registration", label: "公司注册", icon: FileCheck2 },
+  { key: "agencies", label: "旅行社", labelKey: "nav.agencies", icon: Building2 },
+  { key: "incidents", label: "异常", labelKey: "nav.incidents", icon: AlertTriangle },
+  { key: "finance", label: "财务", labelKey: "nav.finance", icon: Receipt },
+  { key: "analytics", label: "经营分析", labelKey: "nav.analytics", icon: BarChart3 },
+  { key: "automation", label: "自动化", labelKey: "nav.automation", icon: Bot },
+  { key: "copilot", label: "运营助手", labelKey: "nav.copilot", icon: Bot },
+  { key: "settings", label: "设置", labelKey: "nav.settings", icon: Settings },
 ];
 
-function isPlatformAdmin(user: AuthUser) {
-  return user.username === "admin" || Number(user.tenant_id) === 1;
-}
-
-function visibleNavItems(user: AuthUser) {
-  const role = user.role;
-  const platformAdmin = isPlatformAdmin(user);
-  return navItems.filter((item) => {
-    const key = String(item.key);
-    if (key === "audit") return false;
-    if (key === "system") return false;
-    if (["agencies", "company-registration"].includes(key)) return platformAdmin;
-    if (key === "finance") return role === "admin";
-    if (key === "analytics") return role === "admin";
-    if (role === "operations_manager") return !["parser", "orders", "dispatch", "auction", "finance", "analytics", "system", "audit"].includes(key);
-    if (role === "dispatcher") return !["finance", "analytics", "system", "audit"].includes(key);
-    return true;
-  });
-}
-
-const titleKeys: Record<PageKey, string> = {
-  dashboard: "page.dashboard",
-  notifications: "notifications.title",
-  parser: "page.parser",
-  orders: "page.orders",
-  dispatch: "page.dispatch",
+const pageTitles: Record<PageKey, string> = {
+  dashboard: "总览",
+  notifications: "通知中心",
+  parser: "订单解析",
+  orders: "订单",
+  dispatch: "派车",
   auction: "订单大厅",
-  calendar: "page.calendar",
-  "driver-monitor": "page.driver-monitor",
-  attendance: "出勤与拘束台账",
-  map: "page.map",
-  vehicles: "page.vehicles",
+  calendar: "日历",
+  "driver-monitor": "司机监控",
+  attendance: "出勤台账",
+  map: "车辆地图",
+  vehicles: "车辆/司机",
   "company-registration": "公司注册",
-  agencies: "page.agencies",
-  incidents: "page.incidents",
-  finance: "page.finance",
-  analytics: "page.analytics",
-  automation: "page.automation",
-  copilot: "page.copilot",
-  audit: "page.audit",
-  system: "后台控制",
-  settings: "page.settings",
+  agencies: "旅行社",
+  incidents: "异常",
+  finance: "财务",
+  analytics: "经营分析",
+  automation: "自动化",
+  copilot: "运营助手",
+  audit: "审计",
+  system: "系统维护",
+  settings: "设置",
 };
 
 const localeLabels: Record<Locale, string> = {
@@ -111,6 +92,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
     queryFn: api.notificationSummary,
     refetchInterval: 20_000,
   });
+  const scope = accountScope(user);
 
   return (
     <div className="min-h-screen bg-[#eef3f8]">
@@ -121,12 +103,12 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
           </div>
           <div>
             <p className="text-sm font-black text-slate-950">{t("app.brand")}</p>
-            <p className="text-xs font-semibold text-slate-500">{t("app.subtitle")}</p>
+            <p className="text-xs font-semibold text-slate-500">{scopeLabel(scope)}</p>
           </div>
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {visibleNavItems(user).map((item) => {
+          {navItems.filter((item) => canAccessPage(user, item.key)).map((item) => {
             const Icon = item.icon;
             const active = item.key === activePage;
             return (
@@ -139,7 +121,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
                 onClick={() => setActivePage(item.key)}
               >
                 <Icon size={18} />
-                {t(item.labelKey)}
+                {item.labelKey ? t(item.labelKey) : item.label}
               </button>
             );
           })}
@@ -148,15 +130,15 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
         <div className="border-t border-slate-200 p-4 text-xs text-slate-500">
           <p className="font-bold text-slate-950">{user.display_name || user.username}</p>
           <p className="mt-1">{user.tenant?.name || `租户 ${user.tenant_id}`}</p>
-          <p>{t("topbar.demo")}</p>
+          <p>{scopeLabel(scope)}</p>
         </div>
       </aside>
 
       <div className="pl-64">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-8 backdrop-blur-xl">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">{t("topbar.section")}</p>
-            <h1 className="text-xl font-bold text-slate-950">{t(titleKeys[activePage])}</h1>
+            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">{scopeLabel(scope)}</p>
+            <h1 className="text-xl font-bold text-slate-950">{pageTitles[activePage]}</h1>
           </div>
           <div className="flex items-center gap-3">
             <select
@@ -175,7 +157,7 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
               <button
                 className="micro-press focus-runtime relative flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-slate-700 hover:bg-slate-50"
                 onClick={() => setNotificationsOpen((value) => !value)}
-                title={t("notifications.title")}
+                title="通知中心"
               >
                 <Bell size={17} />
                 {(notifications.data?.unread || 0) > 0 ? (
@@ -188,16 +170,16 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
                 <div className="absolute right-0 top-11 z-50 w-96 overflow-hidden rounded-xl border border-border bg-white shadow-xl">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <div>
-                      <div className="text-sm font-bold text-slate-950">{t("notifications.title")}</div>
+                      <div className="text-sm font-bold text-slate-950">通知中心</div>
                       <div className="text-xs text-slate-500">
-                        {notifications.data?.unread || 0} {t("notifications.unread")} · {notifications.data?.urgent || 0} {t("notifications.urgent")}
+                        {notifications.data?.unread || 0} 未读 · {notifications.data?.urgent || 0} 紧急
                       </div>
                     </div>
                     <button
                       className="text-xs font-semibold text-blue-600"
                       onClick={() => api.markAllNotificationsRead().then(() => notifications.refetch())}
                     >
-                      {t("notifications.markAllRead")}
+                      全部已读
                     </button>
                   </div>
                   <div className="max-h-96 overflow-auto">
@@ -225,16 +207,16 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
                         </button>
                       ))
                     ) : (
-                      <div className="px-4 py-8 text-center text-sm text-slate-500">{t("notifications.empty")}</div>
+                      <div className="px-4 py-8 text-center text-sm text-slate-500">暂无通知</div>
                     )}
                   </div>
                 </div>
               ) : null}
             </div>
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{t("topbar.demo")}</span>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{scopeLabel(scope)}</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{roleLabel(user.role)}</span>
             <button className="micro-press focus-runtime rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white" onClick={onLogout}>
-              {t("topbar.logout")}
+              退出
             </button>
           </div>
         </header>
@@ -243,6 +225,10 @@ export function SaasShell({ children, user, onLogout }: { children: ReactNode; u
       </div>
     </div>
   );
+}
+
+function scopeLabel(scope: string) {
+  return { platform: "平台总后台", carrier: "车公司后台", agency: "旅行社端", driver: "司机端" }[scope] || scope;
 }
 
 function roleLabel(role: string) {

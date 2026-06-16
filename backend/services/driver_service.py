@@ -9,6 +9,7 @@ from typing import Any
 from backend.db.database import get_connection
 from backend.services.tenant_context import get_current_tenant_id
 
+_DEFAULT_TENANT = object()
 
 REPORT_STATUS_MAP = {
     "confirm_order": "confirmed",
@@ -289,11 +290,30 @@ def submit_driver_incident(payload: dict[str, Any]) -> dict[str, Any]:
     return {"success": True, "incident": incident}
 
 
-def list_driver_safety_alerts() -> list[dict[str, Any]]:
-    tenant_id = get_current_tenant_id()
+def list_driver_safety_alerts(tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
     with get_connection() as conn:
+        incident_where = ["i.status IN ('open', 'processing')", "i.severity IN ('high', 'critical')"]
+        incident_params: list[Any] = []
+        stale_where = [
+            "a.status = 'active'",
+            "a.execution_status IN ('departed', 'arrived', 'in_service')",
+            "COALESCE(o.is_deleted, 0) = 0",
+            "(latest.reported_at IS NULL OR datetime(latest.reported_at) <= datetime('now', '-30 minutes'))",
+        ]
+        stale_params: list[Any] = []
+        latest_where = ""
+        latest_params: list[Any] = []
+        if tenant_id is _DEFAULT_TENANT:
+            tenant_id = get_current_tenant_id()
+        if tenant_id is not None:
+            incident_where.insert(0, "i.tenant_id = ?")
+            incident_params.append(tenant_id)
+            stale_where.insert(0, "a.tenant_id = ?")
+            stale_params.append(tenant_id)
+            latest_where = "WHERE tenant_id = ?"
+            latest_params.append(tenant_id)
         incident_rows = conn.execute(
-            """
+            f"""
             SELECT
                 'incident' AS alert_type,
                 i.id AS incident_id,
@@ -316,16 +336,14 @@ def list_driver_safety_alerts() -> list[dict[str, Any]]:
             LEFT JOIN drivers d ON d.id = a.driver_id AND d.tenant_id = i.tenant_id
             LEFT JOIN vehicles v ON v.id = a.vehicle_id AND v.tenant_id = i.tenant_id
             LEFT JOIN orders o ON o.id = i.order_id AND o.tenant_id = i.tenant_id
-            WHERE i.tenant_id = ?
-              AND i.status IN ('open', 'processing')
-              AND i.severity IN ('high', 'critical')
+            WHERE {" AND ".join(incident_where)}
             ORDER BY CASE i.severity WHEN 'critical' THEN 0 ELSE 1 END, i.created_at DESC
             LIMIT 20
             """,
-            (tenant_id,),
+            incident_params,
         ).fetchall()
         stale_rows = conn.execute(
-            """
+            f"""
             SELECT
                 'stale_location' AS alert_type,
                 a.id AS assignment_id,
@@ -351,22 +369,15 @@ def list_driver_safety_alerts() -> list[dict[str, Any]]:
                 JOIN (
                     SELECT driver_id, MAX(id) AS max_id
                     FROM location_logs
-                    WHERE tenant_id = ?
+                    {latest_where}
                     GROUP BY driver_id
                 ) m ON m.max_id = ll.id
             ) latest ON latest.driver_id = a.driver_id
-            WHERE a.tenant_id = ?
-              AND a.status = 'active'
-              AND a.execution_status IN ('departed', 'arrived', 'in_service')
-              AND COALESCE(o.is_deleted, 0) = 0
-              AND (
-                latest.reported_at IS NULL
-                OR datetime(latest.reported_at) <= datetime('now', '-30 minutes')
-              )
+            WHERE {" AND ".join(stale_where)}
             ORDER BY o.order_date ASC, o.start_time ASC
             LIMIT 20
             """,
-            (tenant_id, tenant_id),
+            latest_params + stale_params,
         ).fetchall()
     alerts = [dict(row) for row in incident_rows]
     for row in stale_rows:

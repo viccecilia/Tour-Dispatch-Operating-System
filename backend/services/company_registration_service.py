@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import RUNTIME_DIR
-from backend.db.database import get_connection
+from backend.db.database import get_connection, hash_password
+from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -76,6 +77,19 @@ TEXT_FIELDS = [
     "review_note",
 ]
 
+READABLE_TEXT_FIELDS = [
+    ("company_name", "公司名"),
+    ("registered_name", "登记会社名"),
+    ("representative_name", "法人姓名"),
+    ("address", "公司地址"),
+    ("contact_name", "业务联系人"),
+    ("bank_name", "银行名称"),
+    ("bank_branch", "支店名"),
+    ("bank_account_holder", "账户名义"),
+]
+
+REVIEW_READY_STATUSES = {"submitted", "approved"}
+
 
 def list_company_registrations(params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     ensure_company_registration_schema()
@@ -103,6 +117,8 @@ def list_company_registrations(params: dict[str, Any] | None = None) -> list[dic
     if status:
         sql.append("AND cr.status = ?")
         values.append(status)
+    else:
+        sql.append("AND COALESCE(cr.status, '') != 'archived'")
     if keyword:
         like = f"%{keyword}%"
         sql.append(
@@ -123,6 +139,7 @@ def list_company_registrations(params: dict[str, Any] | None = None) -> list[dic
 def create_company_registration(payload: dict[str, Any]) -> dict[str, Any]:
     ensure_company_registration_schema()
     data = _normalize(payload, partial=False)
+    _validate_readable_text(data)
     managing_tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         tenant_id = _linked_tenant(conn, data) if data["company_type"] == "carrier" else managing_tenant_id
@@ -136,6 +153,8 @@ def create_company_registration(payload: dict[str, Any]) -> dict[str, Any]:
             """,
             [managing_tenant_id, tenant_id, agency_id, *[data.get(field) for field in TEXT_FIELDS]],
         )
+        if data["company_type"] == "carrier" and data.get("status") == "approved":
+            _ensure_carrier_admin_account(conn, tenant_id, data)
         conn.commit()
         return get_company_registration(cursor.lastrowid) or {}
 
@@ -153,11 +172,20 @@ def update_company_registration(registration_id: Any, payload: dict[str, Any]) -
         if not before:
             return None
         merged = {**dict(before), **data}
+        _validate_readable_text(merged)
         if "company_code" in data or "company_name" in data or "registered_name" in data:
             if merged["company_type"] == "carrier":
-                _linked_tenant(conn, merged)
+                tenant_id = _linked_tenant(conn, merged)
+                merged["tenant_id"] = tenant_id
+                conn.execute(
+                    "UPDATE company_registrations SET tenant_id = ? WHERE id = ? AND managing_tenant_id = ?",
+                    (tenant_id, _to_int(registration_id), get_current_tenant_id()),
+                )
             elif merged["company_type"] == "agency":
                 _linked_agency(conn, merged, get_current_tenant_id(), agency_id=merged.get("agency_id"))
+        if merged["company_type"] == "carrier" and merged.get("status") == "approved":
+            tenant_id = int(merged.get("tenant_id") or _linked_tenant(conn, merged))
+            _ensure_carrier_admin_account(conn, tenant_id, merged)
         assignments = ", ".join(f"{key} = ?" for key in data)
         conn.execute(
             f"""
@@ -210,6 +238,23 @@ def upload_company_registration_file(registration_id: Any, payload: dict[str, An
         )
         conn.commit()
     return {"success": True, "file_type": file_type, "file_url": file_url, "file_name": file_name}
+
+
+def delete_company_registration(registration_id: Any) -> bool:
+    ensure_company_registration_schema()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE company_registrations
+            SET status = 'archived',
+                review_note = COALESCE(NULLIF(review_note, ''), '已归档，不在默认列表显示。'),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND managing_tenant_id = ?
+            """,
+            (_to_int(registration_id), get_current_tenant_id()),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def get_company_registration(registration_id: Any) -> dict[str, Any] | None:
@@ -279,7 +324,7 @@ def _normalize(payload: dict[str, Any], partial: bool) -> dict[str, Any]:
             value = _code(value)
         if field == "company_type" and value not in {"carrier", "agency"}:
             raise ValueError("invalid_company_type")
-        if field == "status" and value not in {"draft", "submitted", "approved", "rejected", "inactive"}:
+        if field == "status" and value not in {"draft", "submitted", "approved", "rejected", "inactive", "archived"}:
             raise ValueError("invalid_company_status")
         data[field] = value
     if not partial:
@@ -295,6 +340,23 @@ def _normalize(payload: dict[str, Any], partial: bool) -> dict[str, Any]:
     return data
 
 
+def _validate_readable_text(data: dict[str, Any]) -> None:
+    status = str(data.get("status") or "").strip()
+    if status not in REVIEW_READY_STATUSES:
+        return
+    bad_fields = [label for field, label in READABLE_TEXT_FIELDS if _looks_unreadable(data.get(field))]
+    if bad_fields:
+        raise ValueError(f"company_registration_text_encoding_invalid:{','.join(bad_fields)}")
+
+
+def _looks_unreadable(value: Any) -> bool:
+    text = re.sub(r"\s+", "", str(value or "").strip())
+    if not text:
+        return False
+    question_count = text.count("?")
+    return question_count >= 2 and question_count / max(len(text), 1) >= 0.25
+
+
 def _linked_tenant(conn, data: dict[str, Any]) -> int:
     code = _code(data.get("company_code"))
     name = str(data.get("company_name") or data.get("registered_name") or code).strip()
@@ -304,6 +366,58 @@ def _linked_tenant(conn, data: dict[str, Any]) -> int:
         return int(row["id"])
     cursor = conn.execute("INSERT INTO tenants (name, slug, status, updated_at) VALUES (?, ?, 'active', CURRENT_TIMESTAMP)", (name, code))
     return int(cursor.lastrowid)
+
+
+def _ensure_carrier_admin_account(conn, tenant_id: int, data: dict[str, Any]) -> int | None:
+    phone = str(data.get("contact_phone") or "").strip()
+    normalized_phone = normalize_phone(phone)
+    if len(normalized_phone) < 6:
+        return None
+    tenant = conn.execute("SELECT name, slug FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+    if not tenant:
+        return None
+    username = company_login_name(normalized_phone, tenant["slug"], tenant["name"])
+    existing = conn.execute(
+        """
+        SELECT id
+        FROM users
+        WHERE tenant_id = ?
+          AND role = 'admin'
+          AND (
+            REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+            OR username = ?
+          )
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (tenant_id, normalized_phone, username),
+    ).fetchone()
+    if existing:
+        return int(existing["id"])
+    username = _unique_username(conn, username)
+    password = phone_password_tail(phone)
+    display_name = f"{data.get('company_name') or tenant['name']} Admin"
+    cursor = conn.execute(
+        """
+        INSERT INTO users (
+            tenant_id, username, password_hash, role, display_name, phone,
+            profile_type, wx_bind_status, is_active, password_changed_at,
+            must_change_password, updated_at
+        )
+        VALUES (?, ?, ?, 'admin', ?, ?, 'operator', 'unbound', 1, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)
+        """,
+        (tenant_id, username, hash_password(password), display_name, phone),
+    )
+    return int(cursor.lastrowid)
+
+
+def _unique_username(conn, base: str) -> str:
+    username = base
+    suffix = 2
+    while conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+        username = f"{base}-{suffix}"
+        suffix += 1
+    return username
 
 
 def _linked_agency(conn, data: dict[str, Any], tenant_id: int, agency_id: Any | None = None) -> int:

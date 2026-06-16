@@ -25,6 +25,8 @@ def request(method: str, path: str, payload: dict | None = None) -> dict:
     headers = {"Content-Type": "application/json"}
     if TOKEN:
         headers["Authorization"] = f"Bearer {TOKEN}"
+    if payload is not None and method in {"POST", "PUT"} and path.startswith("/api/resources/"):
+        payload = {**payload, "tenant_id": payload.get("tenant_id") or 1}
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(f"{BASE_URL}{path}", data=data, headers=headers, method=method)
@@ -52,6 +54,7 @@ def main() -> None:
             "license_expires_at": (today + timedelta(days=10)).isoformat(),
             "medical_check_expires_at": (today - timedelta(days=1)).isoformat(),
             "status": "available",
+            "tenant_id": 1,
         },
     )["driver"]
     vehicle = request(
@@ -69,6 +72,7 @@ def main() -> None:
             "insurance_expires_at": (today - timedelta(days=2)).isoformat(),
             "maintenance_status": "左侧电门检查中",
             "status": "maintenance",
+            "tenant_id": 1,
         },
     )["vehicle"]
 

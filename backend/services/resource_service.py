@@ -5,6 +5,7 @@ from backend.db.database import get_connection
 from backend.services.settings_service import get_reminder_settings
 from backend.services.tenant_context import get_current_tenant_id
 
+_DEFAULT_TENANT = object()
 
 DRIVER_FIELDS = [
     "name",
@@ -87,29 +88,37 @@ RESOURCE_COLUMNS = {
 }
 
 
-def list_drivers(status: str | None = None) -> list[dict[str, Any]]:
+def list_drivers(status: str | None = None, tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
     _ensure_resource_columns()
     sql = [
         """
-        SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
-               driver_external_id, license_number, residence_status, residence_due_date,
+        SELECT d.id, d.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
+               d.name, d.phone, d.status, d.driver_status, d.driver_code, d.driver_language, d.office,
+               d.driver_external_id, d.license_number, d.residence_status, d.residence_due_date,
                health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
-               created_at, updated_at
-        FROM drivers
-        WHERE tenant_id = ? AND COALESCE(status, '') NOT IN ('deleted', 'retired')
+               d.created_at, d.updated_at
+        FROM drivers d
+        LEFT JOIN tenants t ON t.id = d.tenant_id
+        WHERE COALESCE(d.status, '') NOT IN ('deleted', 'retired')
         """
     ]
-    params: list[Any] = [get_current_tenant_id()]
+    params: list[Any] = []
+    if tenant_id is _DEFAULT_TENANT:
+        sql.append("AND d.tenant_id = ?")
+        params.append(get_current_tenant_id())
+    elif tenant_id:
+        sql.append("AND d.tenant_id = ?")
+        params.append(tenant_id)
     if status:
-        sql.append("AND status = ?")
+        sql.append("AND d.status = ?")
         params.append(status)
-    sql.append("ORDER BY CASE status WHEN 'available' THEN 0 WHEN 'busy' THEN 1 WHEN 'resting' THEN 2 ELSE 3 END, id")
+    sql.append("ORDER BY t.name, CASE d.status WHEN 'available' THEN 0 WHEN 'busy' THEN 1 WHEN 'resting' THEN 2 ELSE 3 END, d.id")
     with get_connection() as conn:
         return [_with_resource_alert(dict(row), "driver") for row in conn.execute(" ".join(sql), params).fetchall()]
 
 
-def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
+def create_driver(payload: dict[str, Any], tenant_id: int | None = None) -> dict[str, Any]:
     _ensure_resource_columns()
     data = _normalize_driver(payload, partial=False)
     with get_connection() as conn:
@@ -124,7 +133,7 @@ def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
-                get_current_tenant_id(),
+                tenant_id or get_current_tenant_id(),
                 data["name"],
                 data.get("phone"),
                 data["status"],
@@ -152,18 +161,18 @@ def create_driver(payload: dict[str, Any]) -> dict[str, Any]:
         )
         conn.commit()
         driver_id = cursor.lastrowid
-    created = get_driver(str(driver_id))
+    created = get_driver(str(driver_id), tenant_id)
     if not created:
         raise ValueError("driver_create_failed")
     return created
 
 
-def get_driver(driver_id: str) -> Optional[dict[str, Any]]:
+def get_driver(driver_id: str, tenant_id: int | None = None) -> Optional[dict[str, Any]]:
     _ensure_resource_columns()
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
+            SELECT id, tenant_id, name, phone, status, driver_status, driver_code, driver_language, office,
                    driver_external_id, license_number, residence_status, residence_due_date,
                    health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                    license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
@@ -171,17 +180,18 @@ def get_driver(driver_id: str) -> Optional[dict[str, Any]]:
             FROM drivers
             WHERE id = ? AND tenant_id = ?
             """,
-            (_to_int(driver_id), get_current_tenant_id()),
+            (_to_int(driver_id), tenant_id or get_current_tenant_id()),
         ).fetchone()
     return _with_resource_alert(dict(row), "driver") if row else None
 
 
-def update_driver(driver_id: str, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
-    if not get_driver(driver_id):
+def update_driver(driver_id: str, payload: dict[str, Any], tenant_id: int | None = None) -> Optional[dict[str, Any]]:
+    tenant_id = tenant_id or get_current_tenant_id()
+    if not get_driver(driver_id, tenant_id):
         return None
     data = _normalize_driver(payload, partial=True)
     if not data:
-        return get_driver(driver_id)
+        return get_driver(driver_id, tenant_id)
     assignments = ", ".join(f"{field} = ?" for field in data)
     params = [data[field] for field in data]
     params.append(_to_int(driver_id))
@@ -192,14 +202,15 @@ def update_driver(driver_id: str, payload: dict[str, Any]) -> Optional[dict[str,
             SET {assignments}, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
-            [*params, get_current_tenant_id()],
+            [*params, tenant_id],
         )
         conn.commit()
-    return get_driver(driver_id)
+    return get_driver(driver_id, tenant_id)
 
 
-def delete_driver(driver_id: str) -> bool:
-    if not get_driver(driver_id):
+def delete_driver(driver_id: str, tenant_id: int | None = None) -> bool:
+    tenant_id = tenant_id or get_current_tenant_id()
+    if not get_driver(driver_id, tenant_id):
         return False
     with get_connection() as conn:
         conn.execute(
@@ -208,35 +219,43 @@ def delete_driver(driver_id: str) -> bool:
             SET status = 'deleted', driver_status = 'deleted', updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
-            (_to_int(driver_id), get_current_tenant_id()),
+            (_to_int(driver_id), tenant_id),
         )
         conn.commit()
     return True
 
 
-def list_vehicles(status: str | None = None) -> list[dict[str, Any]]:
+def list_vehicles(status: str | None = None, tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
     _ensure_resource_columns()
     sql = [
         """
-        SELECT id, plate_number, vehicle_type, seat_count, status, plate_short_code, vehicle_type_code,
+        SELECT v.id, v.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
+               v.plate_number, v.vehicle_type, v.seat_count, v.status, v.plate_short_code, v.vehicle_type_code,
                vehicle_color, snow_tire, vehicle_group, first_registration_date, company_registration_date,
                last_inspection_date, next_inspection_due_date, shaken_due_date,
                insurance_due_date, inspection_expires_at, insurance_expires_at, maintenance_status,
-               created_at, updated_at
-        FROM vehicles
-        WHERE tenant_id = ? AND COALESCE(status, '') NOT IN ('deleted', 'retired')
+               v.created_at, v.updated_at
+        FROM vehicles v
+        LEFT JOIN tenants t ON t.id = v.tenant_id
+        WHERE COALESCE(v.status, '') NOT IN ('deleted', 'retired')
         """
     ]
-    params: list[Any] = [get_current_tenant_id()]
+    params: list[Any] = []
+    if tenant_id is _DEFAULT_TENANT:
+        sql.append("AND v.tenant_id = ?")
+        params.append(get_current_tenant_id())
+    elif tenant_id:
+        sql.append("AND v.tenant_id = ?")
+        params.append(tenant_id)
     if status:
-        sql.append("AND status = ?")
+        sql.append("AND v.status = ?")
         params.append(status)
-    sql.append("ORDER BY CASE status WHEN 'available' THEN 0 WHEN 'maintenance' THEN 1 ELSE 2 END, id")
+    sql.append("ORDER BY t.name, CASE v.status WHEN 'available' THEN 0 WHEN 'maintenance' THEN 1 ELSE 2 END, v.id")
     with get_connection() as conn:
         return [_with_resource_alert(dict(row), "vehicle") for row in conn.execute(" ".join(sql), params).fetchall()]
 
 
-def create_vehicle(payload: dict[str, Any]) -> dict[str, Any]:
+def create_vehicle(payload: dict[str, Any], tenant_id: int | None = None) -> dict[str, Any]:
     _ensure_resource_columns()
     data = _normalize_vehicle(payload, partial=False)
     with get_connection() as conn:
@@ -252,7 +271,7 @@ def create_vehicle(payload: dict[str, Any]) -> dict[str, Any]:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
-                get_current_tenant_id(),
+                tenant_id or get_current_tenant_id(),
                 data["plate_number"],
                 data["plate_number"],
                 data.get("vehicle_type"),
@@ -277,19 +296,20 @@ def create_vehicle(payload: dict[str, Any]) -> dict[str, Any]:
         )
         conn.commit()
         vehicle_id = cursor.lastrowid
-    created = get_vehicle(str(vehicle_id))
-    _replace_vehicle_records(vehicle_id, data.get("inspection_records"))
+    target_tenant_id = tenant_id or get_current_tenant_id()
+    created = get_vehicle(str(vehicle_id), target_tenant_id)
+    _replace_vehicle_records(vehicle_id, data.get("inspection_records"), target_tenant_id)
     if not created:
         raise ValueError("vehicle_create_failed")
-    return get_vehicle(str(vehicle_id)) or created
+    return get_vehicle(str(vehicle_id), target_tenant_id) or created
 
 
-def get_vehicle(vehicle_id: str) -> Optional[dict[str, Any]]:
+def get_vehicle(vehicle_id: str, tenant_id: int | None = None) -> Optional[dict[str, Any]]:
     _ensure_resource_columns()
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, plate_number, vehicle_type, seat_count, status, plate_short_code, vehicle_type_code,
+            SELECT id, tenant_id, plate_number, vehicle_type, seat_count, status, plate_short_code, vehicle_type_code,
                    vehicle_color, snow_tire, vehicle_group, first_registration_date, company_registration_date,
                    last_inspection_date, next_inspection_due_date, shaken_due_date,
                    insurance_due_date, inspection_expires_at, insurance_expires_at, maintenance_status,
@@ -297,17 +317,18 @@ def get_vehicle(vehicle_id: str) -> Optional[dict[str, Any]]:
             FROM vehicles
             WHERE id = ? AND tenant_id = ?
             """,
-            (_to_int(vehicle_id), get_current_tenant_id()),
+            (_to_int(vehicle_id), tenant_id or get_current_tenant_id()),
         ).fetchone()
     return _with_resource_alert(dict(row), "vehicle") if row else None
 
 
-def update_vehicle(vehicle_id: str, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
-    if not get_vehicle(vehicle_id):
+def update_vehicle(vehicle_id: str, payload: dict[str, Any], tenant_id: int | None = None) -> Optional[dict[str, Any]]:
+    tenant_id = tenant_id or get_current_tenant_id()
+    if not get_vehicle(vehicle_id, tenant_id):
         return None
     data = _normalize_vehicle(payload, partial=True)
     if not data:
-        return get_vehicle(vehicle_id)
+        return get_vehicle(vehicle_id, tenant_id)
     inspection_records = data.pop("inspection_records", None)
 
     assignments = []
@@ -329,16 +350,17 @@ def update_vehicle(vehicle_id: str, payload: dict[str, Any]) -> Optional[dict[st
             SET {', '.join(assignments)}, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
-            [*params, get_current_tenant_id()],
+            [*params, tenant_id],
         )
         conn.commit()
     if inspection_records is not None:
-        _replace_vehicle_records(_to_int(vehicle_id), inspection_records)
-    return get_vehicle(vehicle_id)
+        _replace_vehicle_records(_to_int(vehicle_id), inspection_records, tenant_id)
+    return get_vehicle(vehicle_id, tenant_id)
 
 
-def delete_vehicle(vehicle_id: str) -> bool:
-    if not get_vehicle(vehicle_id):
+def delete_vehicle(vehicle_id: str, tenant_id: int | None = None) -> bool:
+    tenant_id = tenant_id or get_current_tenant_id()
+    if not get_vehicle(vehicle_id, tenant_id):
         return False
     with get_connection() as conn:
         conn.execute(
@@ -347,14 +369,15 @@ def delete_vehicle(vehicle_id: str) -> bool:
             SET status = 'deleted', updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
-            (_to_int(vehicle_id), get_current_tenant_id()),
+            (_to_int(vehicle_id), tenant_id),
         )
         conn.commit()
     return True
 
 
-def create_vehicle_inspection_record(vehicle_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    vehicle = get_vehicle(vehicle_id)
+def create_vehicle_inspection_record(vehicle_id: str, payload: dict[str, Any], tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = tenant_id or get_current_tenant_id()
+    vehicle = get_vehicle(vehicle_id, tenant_id)
     if not vehicle:
         return None
     record = _normalize_inspection_record(payload)
@@ -367,7 +390,7 @@ def create_vehicle_inspection_record(vehicle_id: str, payload: dict[str, Any]) -
             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
-                get_current_tenant_id(),
+                tenant_id,
                 _to_int(vehicle_id),
                 record["inspection_type"],
                 record["inspection_date"],
@@ -648,13 +671,14 @@ def _derive_vehicle_dates(mapped: dict[str, Any], records: list[dict[str, Any]] 
     }
 
 
-def _replace_vehicle_records(vehicle_id: int, records: list[dict[str, Any]] | None) -> None:
+def _replace_vehicle_records(vehicle_id: int, records: list[dict[str, Any]] | None, tenant_id: int | None = None) -> None:
     if records is None:
         return
+    tenant_id = tenant_id or get_current_tenant_id()
     with get_connection() as conn:
         conn.execute(
             "DELETE FROM vehicle_inspection_records WHERE tenant_id = ? AND vehicle_id = ?",
-            (get_current_tenant_id(), vehicle_id),
+            (tenant_id, vehicle_id),
         )
         for record in records:
             conn.execute(
@@ -665,7 +689,7 @@ def _replace_vehicle_records(vehicle_id: int, records: list[dict[str, Any]] | No
                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
-                    get_current_tenant_id(),
+                    tenant_id,
                     vehicle_id,
                     record["inspection_type"],
                     record["inspection_date"],

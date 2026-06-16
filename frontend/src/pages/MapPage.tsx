@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { AlertTriangle, Clock, MapPinned, RadioTower, RefreshCcw, Search, ShieldAlert, UserRound } from "lucide-react";
+import { CompanyScopeFilter } from "@/components/CompanyScopeFilter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
 import type { DriverSafetyAlert, LocationLog } from "@/types/api";
@@ -47,15 +48,16 @@ export function MapPage() {
   const [keyword, setKeyword] = useState("");
   const [onlineStatus, setOnlineStatus] = useState("");
   const [vehicleStatus, setVehicleStatus] = useState("");
+  const [tenantScope, setTenantScope] = useState("all");
 
   const locationsQuery = useQuery({
-    queryKey: ["fleet-latest-locations-map", onlineStatus, vehicleStatus],
-    queryFn: () => api.fleetLatestLocations({ online_status: onlineStatus, vehicle_status: vehicleStatus, limit: 200 }),
+    queryKey: ["fleet-latest-locations-map", tenantScope, onlineStatus, vehicleStatus],
+    queryFn: () => api.fleetLatestLocations({ tenant_id: tenantScope, online_status: onlineStatus, vehicle_status: vehicleStatus, limit: 200 }),
     refetchInterval: 5000,
   });
   const alertsQuery = useQuery({
-    queryKey: ["driver-safety-alerts-map"],
-    queryFn: api.driverSafetyAlerts,
+    queryKey: ["driver-safety-alerts-map", tenantScope],
+    queryFn: () => api.driverSafetyAlerts({ tenant_id: tenantScope }),
     refetchInterval: 8000,
   });
 
@@ -68,6 +70,8 @@ export function MapPage() {
     return rows.filter((item) =>
       [
         item.driver_name,
+        item.tenant_name,
+        item.tenant_slug,
         item.driver_phone,
         item.plate_number,
         item.vehicle_type,
@@ -118,6 +122,7 @@ export function MapPage() {
 
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 p-4">
+          <CompanyScopeFilter value={tenantScope} onChange={setTenantScope} />
           <div className="relative min-w-72 flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input

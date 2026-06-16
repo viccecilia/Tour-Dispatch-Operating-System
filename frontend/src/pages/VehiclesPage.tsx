@@ -1,6 +1,7 @@
 import { KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CarFront, ChevronDown, ChevronRight, Search, Trash2, UserRound } from "lucide-react";
+import { CompanyScopeFilter, isAllCompanyScope } from "@/components/CompanyScopeFilter";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -65,9 +66,10 @@ export function VehiclesPage() {
   const [tab, setTab] = useState<ResourceTab>("vehicles");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
+  const [tenantScope, setTenantScope] = useState("all");
 
-  const drivers = useQuery({ queryKey: ["resource-drivers"], queryFn: api.resourceDrivers });
-  const vehicles = useQuery({ queryKey: ["resource-vehicles"], queryFn: api.resourceVehicles });
+  const drivers = useQuery({ queryKey: ["resource-drivers", tenantScope], queryFn: () => api.resourceDrivers({ tenant_id: tenantScope }) });
+  const vehicles = useQuery({ queryKey: ["resource-vehicles", tenantScope], queryFn: () => api.resourceVehicles({ tenant_id: tenantScope }) });
   const reminders = useQuery({ queryKey: ["resource-reminders"], queryFn: api.resourceReminders });
 
   async function refreshResources() {
@@ -82,8 +84,20 @@ export function VehiclesPage() {
     ]);
   }
 
+  function withTenantScope<T extends { tenant_id?: number }>(payload: T): T {
+    return isAllCompanyScope(tenantScope) ? payload : { ...payload, tenant_id: Number(tenantScope) };
+  }
+
+  function requireTenantForCreate() {
+    if (isAllCompanyScope(tenantScope)) {
+      setMessage("总后台新增车辆或司机时，请先选择一个具体公司。");
+      return false;
+    }
+    return true;
+  }
+
   const createDriver = useMutation({
-    mutationFn: api.createDriver,
+    mutationFn: (payload: Partial<Driver>) => api.createDriver(withTenantScope(payload)),
     onSuccess: async () => {
       setMessage("司机已新增。");
       await refreshResources();
@@ -101,7 +115,7 @@ export function VehiclesPage() {
   });
 
   const deleteDriver = useMutation({
-    mutationFn: api.deleteDriver,
+    mutationFn: ({ id, tenantId }: { id: number; tenantId?: number }) => api.deleteDriver(id, tenantId),
     onSuccess: async () => {
       setMessage("司机已从台账中移除。");
       await refreshResources();
@@ -110,7 +124,7 @@ export function VehiclesPage() {
   });
 
   const createVehicle = useMutation({
-    mutationFn: api.createVehicle,
+    mutationFn: (payload: Partial<Vehicle>) => api.createVehicle(withTenantScope(payload)),
     onSuccess: async () => {
       setMessage("车辆已新增。");
       await refreshResources();
@@ -128,7 +142,7 @@ export function VehiclesPage() {
   });
 
   const deleteVehicle = useMutation({
-    mutationFn: api.deleteVehicle,
+    mutationFn: ({ id, tenantId }: { id: number; tenantId?: number }) => api.deleteVehicle(id, tenantId),
     onSuccess: async () => {
       setMessage("车辆已从台账中移除。");
       await refreshResources();
@@ -168,6 +182,8 @@ export function VehiclesPage() {
     return (drivers.data || []).filter((item) =>
       [
         item.driver_external_id,
+        item.tenant_name,
+        item.tenant_slug,
         item.office,
         item.name,
         item.driver_code,
@@ -196,6 +212,8 @@ export function VehiclesPage() {
     return (vehicles.data || []).filter((item) =>
       [
         item.plate_number,
+        item.tenant_name,
+        item.tenant_slug,
         item.plate_short_code,
         item.vehicle_type,
         item.vehicle_type_code,
@@ -217,6 +235,9 @@ export function VehiclesPage() {
     );
   }, [query, vehicles.data]);
 
+  const vehicleTenantId = (id: number) => vehicles.data?.find((item) => item.id === id)?.tenant_id;
+  const driverTenantId = (id: number) => drivers.data?.find((item) => item.id === id)?.tenant_id;
+
   return (
     <div className="space-y-5">
       <Card>
@@ -236,6 +257,7 @@ export function VehiclesPage() {
                 <UserRound size={16} />
                 司机台账
               </Button>
+              <CompanyScopeFilter value={tenantScope} onChange={setTenantScope} />
             </div>
           </div>
         </CardHeader>
@@ -261,17 +283,19 @@ export function VehiclesPage() {
                 rows={filteredVehicles}
                 loading={vehicles.isLoading}
                 saving={createVehicle.isPending || updateVehicle.isPending || deleteVehicle.isPending}
-                onCreate={(payload) => createVehicle.mutate(payload)}
-                onSave={(id, payload) => updateVehicle.mutate({ id, payload })}
+                onCreate={(payload) => {
+                  if (requireTenantForCreate()) createVehicle.mutate(payload);
+                }}
+                onSave={(id, payload) => updateVehicle.mutate({ id, payload: { ...payload, tenant_id: vehicleTenantId(id) } })}
                 onDelete={(id) => {
-                  if (window.confirm("确认删除这台车辆？历史派车记录会保留。")) deleteVehicle.mutate(id);
+                  if (window.confirm("确认删除这台车辆？历史派车记录会保留。")) deleteVehicle.mutate({ id, tenantId: vehicleTenantId(id) });
                 }}
               />
               <VehicleMaintenanceTable
                 rows={filteredVehicles}
                 loading={vehicles.isLoading}
                 saving={updateVehicle.isPending || createVehicleInspectionRecord.isPending || updateVehicleInspectionRecord.isPending || deleteVehicleInspectionRecord.isPending}
-                onSave={(id, payload) => updateVehicle.mutate({ id, payload })}
+                onSave={(id, payload) => updateVehicle.mutate({ id, payload: { ...payload, tenant_id: vehicleTenantId(id) } })}
                 onCreateRecord={(vehicleId, payload) => createVehicleInspectionRecord.mutate({ vehicleId, payload })}
                 onUpdateRecord={(id, payload) => updateVehicleInspectionRecord.mutate({ id, payload })}
                 onDeleteRecord={(id) => deleteVehicleInspectionRecord.mutate(id)}
@@ -283,10 +307,12 @@ export function VehiclesPage() {
                 rows={filteredDrivers}
                 loading={drivers.isLoading}
                 saving={createDriver.isPending || updateDriver.isPending || deleteDriver.isPending}
-                onCreate={(payload) => createDriver.mutate(payload)}
-                onSave={(id, payload) => updateDriver.mutate({ id, payload })}
+                onCreate={(payload) => {
+                  if (requireTenantForCreate()) createDriver.mutate(payload);
+                }}
+                onSave={(id, payload) => updateDriver.mutate({ id, payload: { ...payload, tenant_id: driverTenantId(id) } })}
                 onDelete={(id) => {
-                  if (window.confirm("确认删除这名司机？历史派车和报备记录会保留。")) deleteDriver.mutate(id);
+                  if (window.confirm("确认删除这名司机？历史派车和报备记录会保留。")) deleteDriver.mutate({ id, tenantId: driverTenantId(id) });
                 }}
               />
             </div>

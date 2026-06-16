@@ -4,6 +4,7 @@ export type AuthUser = {
   id: number;
   username: string;
   account_login?: string;
+  account_scope?: "platform" | "carrier" | "agency" | "driver" | string;
   company_code?: string;
   role: "admin" | "dispatcher" | "operations_manager" | "driver";
   display_name?: string;
@@ -18,6 +19,13 @@ export type AuthUser = {
     name: string;
     slug: string;
   };
+};
+
+export type TenantOption = {
+  id: number;
+  name: string;
+  slug?: string;
+  status?: string;
 };
 
 export type AccountRole = "admin" | "dispatcher" | "operations_manager" | "driver";
@@ -410,6 +418,9 @@ export type Draft = {
 
 export type Driver = {
   id: number;
+  tenant_id?: number;
+  tenant_name?: string;
+  tenant_slug?: string;
   name: string;
   phone?: string;
   status?: string;
@@ -439,6 +450,9 @@ export type Driver = {
 
 export type Vehicle = {
   id: number;
+  tenant_id?: number;
+  tenant_name?: string;
+  tenant_slug?: string;
   plate_number: string;
   plate_no?: string;
   vehicle_type?: string;
@@ -606,6 +620,9 @@ export type DriverReport = {
 
 export type LocationLog = {
   id: number;
+  tenant_id?: number;
+  tenant_name?: string;
+  tenant_slug?: string;
   driver_id: number;
   vehicle_id?: number;
   assignment_id?: number;
@@ -933,7 +950,7 @@ export type CompanyRegistration = {
   business_license_name?: string;
   bank_book_url?: string;
   bank_book_name?: string;
-  status?: "draft" | "submitted" | "approved" | "rejected" | "inactive" | string;
+  status?: "draft" | "submitted" | "approved" | "rejected" | "inactive" | "archived" | string;
   review_note?: string;
   tenant_name?: string;
   tenant_slug?: string;

@@ -5,6 +5,7 @@ from backend.db.database import get_connection
 from backend.services.order_number_service import build_execution_order_oid, normalize_vehicle_type_code, plate_short_code
 from backend.services.tenant_context import get_current_tenant_id
 
+_DEFAULT_TENANT = object()
 
 def list_available_drivers() -> list[dict[str, Any]]:
     with get_connection() as conn:
@@ -63,7 +64,7 @@ def list_unassigned_orders() -> list[dict[str, Any]]:
         ]
 
 
-def list_assignments(status: str | None = "active") -> list[dict[str, Any]]:
+def list_assignments(status: str | None = "active", tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
     sql = [
         """
         SELECT
@@ -89,6 +90,9 @@ def list_assignments(status: str | None = "active") -> list[dict[str, Any]]:
             o.agency_name,
             o.price,
             o.dispatch_status,
+            a.tenant_id,
+            t.name AS tenant_name,
+            t.slug AS tenant_slug,
             d.name AS driver_name,
             d.phone AS driver_phone,
             v.plate_number,
@@ -99,8 +103,9 @@ def list_assignments(status: str | None = "active") -> list[dict[str, Any]]:
             r.location_text AS latest_location_text
         FROM assignments a
         JOIN orders o ON o.id = a.order_id
-        LEFT JOIN drivers d ON d.id = a.driver_id
-        LEFT JOIN vehicles v ON v.id = a.vehicle_id
+        LEFT JOIN tenants t ON t.id = a.tenant_id
+        LEFT JOIN drivers d ON d.id = a.driver_id AND d.tenant_id = a.tenant_id
+        LEFT JOIN vehicles v ON v.id = a.vehicle_id AND v.tenant_id = a.tenant_id
         LEFT JOIN (
             SELECT rr.*
             FROM driver_reports rr
@@ -111,11 +116,16 @@ def list_assignments(status: str | None = "active") -> list[dict[str, Any]]:
             ) latest ON latest.max_id = rr.id
         ) r ON r.assignment_id = a.id
         WHERE COALESCE(o.is_deleted, 0) = 0
-          AND a.tenant_id = ?
-          AND o.tenant_id = ?
+          AND a.tenant_id = o.tenant_id
         """
     ]
-    params: list[Any] = [get_current_tenant_id(), get_current_tenant_id()]
+    params: list[Any] = []
+    if tenant_id is _DEFAULT_TENANT:
+        sql.append("AND a.tenant_id = ?")
+        params.append(get_current_tenant_id())
+    elif tenant_id is not None:
+        sql.append("AND a.tenant_id = ?")
+        params.append(tenant_id)
     if status:
         sql.append("AND a.status = ?")
         params.append(status)
