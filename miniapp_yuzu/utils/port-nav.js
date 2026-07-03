@@ -1,9 +1,13 @@
 const session = require('./session');
 
+const DISPATCH_ROOT = '/package_dispatch';
+const COMPANY_LITE_ROOT = '/package_company_lite';
+
 const DISPATCH_TABS = {
   admin: [
     { key: 'home', label: '首页', url: '/package_dispatch/pages/home/index' },
     { key: 'dispatch', label: '派车', url: '/package_dispatch/pages/dispatch/index' },
+    { key: 'calendar', label: '日历', url: '/package_dispatch/pages/calendar/index' },
     { key: 'auction', label: '订单大厅', url: '/package_dispatch/pages/auction/index' },
     { key: 'map', label: '地图', url: '/package_dispatch/pages/map/index' },
     { key: 'finance', label: '财务', url: '/package_dispatch/pages/finance/index' },
@@ -12,12 +16,14 @@ const DISPATCH_TABS = {
   dispatcher: [
     { key: 'home', label: '首页', url: '/package_dispatch/pages/home/index' },
     { key: 'dispatch', label: '派车', url: '/package_dispatch/pages/dispatch/index' },
+    { key: 'calendar', label: '日历', url: '/package_dispatch/pages/calendar/index' },
     { key: 'map', label: '地图', url: '/package_dispatch/pages/map/index' },
     { key: 'profile', label: '我的', url: '/package_dispatch/pages/profile/index' }
   ],
   ops: [
     { key: 'home', label: '首页', url: '/package_dispatch/pages/home/index' },
     { key: 'dispatch', label: '车辆', url: '/package_dispatch/pages/dispatch/index' },
+    { key: 'calendar', label: '日历', url: '/package_dispatch/pages/calendar/index' },
     { key: 'map', label: '地图', url: '/package_dispatch/pages/map/index' },
     { key: 'profile', label: '我的', url: '/package_dispatch/pages/profile/index' }
   ],
@@ -69,13 +75,26 @@ function normalizeAgencyRole(rawRole) {
   return 'manager';
 }
 
-function tabsForCurrent(activeKey) {
+function routeDispatchRoot(route) {
+  const value = String(route || '');
+  return value.indexOf(`${COMPANY_LITE_ROOT}/`) === 0 ? COMPANY_LITE_ROOT : DISPATCH_ROOT;
+}
+
+function rewriteDispatchRoot(tabs, root) {
+  if (root === DISPATCH_ROOT) return tabs || [];
+  return (tabs || []).map((tab) => ({
+    ...tab,
+    url: String(tab.url || '').replace(DISPATCH_ROOT, root)
+  }));
+}
+
+function tabsForCurrent(activeKey, route) {
   const current = session.getSession();
   if (!current) return [];
   const rawRole = session.getRole(current);
   const tabs = current.port === 'agency'
     ? AGENCY_TABS[normalizeAgencyRole(rawRole)]
-    : DISPATCH_TABS[normalizeDispatchRole(rawRole)];
+    : rewriteDispatchRoot(DISPATCH_TABS[normalizeDispatchRole(rawRole)], routeDispatchRoot(route));
   return (tabs || []).map((tab) => ({
     ...tab,
     active: tab.key === activeKey

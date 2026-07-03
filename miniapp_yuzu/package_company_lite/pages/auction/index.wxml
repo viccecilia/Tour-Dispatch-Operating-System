@@ -1,0 +1,177 @@
+﻿<view class="page auction-page">
+  <view class="hero auction-hero">
+    <view class="hero-eyebrow">ORDER HALL</view>
+    <view class="title-with-help hero-title-row">
+      <view class="hero-title">订单大厅</view>
+      <view class="help-dot hero-help" data-type="hero" bindtap="showHelp">?</view>
+    </view>
+    <view class="hero-meta">把本公司暂时无法执行的订单放入大厅，也可以接走其他车公司的大厅订单。</view>
+  </view>
+
+  <view class="panel publish-panel">
+    <view class="panel-header">
+      <view class="title-with-help">
+        <view class="panel-title">发布到大厅</view>
+        <view class="help-dot" data-type="publish" bindtap="showHelp">?</view>
+      </view>
+      <button class="mini-button" bindtap="goDispatch">去选订单</button>
+    </view>
+
+    <block wx:if="{{draft && draft.order_ids.length}}">
+      <view class="draft-list">
+        <view wx:for="{{draft.orders}}" wx:key="id" class="draft-row">
+          <view>
+            <view class="row-title">{{item.oid || item.id}}</view>
+            <view class="muted">{{item.order_date || '-'}} {{item.start_time || ''}} · {{item.pickup_location || '-'}} → {{item.dropoff_location || '-'}}</view>
+          </view>
+          <view class="price-pill">¥{{item.price || item.price_jpy || 0}}</view>
+        </view>
+      </view>
+
+      <view class="price-form">
+        <view class="field">
+          <view class="field-label">起拍价 JPY</view>
+          <input class="input" type="number" value="{{startPrice}}" data-key="startPrice" bindinput="onInput" placeholder="例如 45000" />
+        </view>
+        <view class="field">
+          <view class="field-label">一口价 JPY</view>
+          <input class="input" type="number" value="{{buyoutPrice}}" data-key="buyoutPrice" bindinput="onInput" placeholder="例如 36000" />
+        </view>
+      </view>
+
+      <view class="duration-row">
+        <view class="field-label">拍卖时间</view>
+        <view class="duration-options">
+          <view
+            wx:for="{{durationOptions}}"
+            wx:key="*this"
+            data-hours="{{item}}"
+            class="duration-button {{durationHours === item ? 'active' : ''}}"
+            bindtap="chooseDuration"
+          >{{item}}小时</view>
+        </view>
+      </view>
+
+      <view class="field">
+        <view class="field-label">备注</view>
+        <textarea class="textarea note-input" value="{{note}}" data-key="note" bindinput="onInput" placeholder="例如：先大阪车，行程信息已确认" />
+      </view>
+      <view class="publish-actions">
+        <button class="button-secondary" bindtap="clearDraft">取消</button>
+        <button class="button-primary" loading="{{loading}}" bindtap="publishDraft">确认发布</button>
+      </view>
+    </block>
+
+    <view wx:else class="empty-state">
+      <view class="empty-title">暂无待发布订单</view>
+      <view class="muted">请先到派车页选择订单，再点击“放入大厅”。</view>
+    </view>
+  </view>
+
+  <view wx:if="{{message}}" class="panel message-panel">{{message}}</view>
+
+  <view class="hall-tabs">
+    <view class="hall-tab {{hallTab === 'market' ? 'hall-tab-active' : ''}}" data-tab="market" bindtap="switchHallTab">大厅订单</view>
+    <view class="hall-tab {{hallTab === 'mine' ? 'hall-tab-active' : ''}}" data-tab="mine" bindtap="switchHallTab">我的订单</view>
+  </view>
+
+  <view wx:if="{{hallTab === 'market'}}" class="panel">
+    <view class="panel-header">
+      <view class="title-with-help">
+        <view class="panel-title">大厅订单</view>
+        <view class="help-dot" data-type="list" bindtap="showHelp">?</view>
+      </view>
+      <button class="mini-button" loading="{{loading}}" bindtap="loadListings">刷新</button>
+    </view>
+
+    <view class="auction-list">
+      <view wx:for="{{listings}}" wx:key="id" class="auction-row">
+        <view class="auction-main">
+          <view class="row-title">{{item.oid || item.order_id}}</view>
+          <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+          <view wx:if="{{item.guestSummaryText}}" class="muted">{{item.guestSummaryText}}</view>
+          <view class="meta-line">
+            <text>{{item.order_type || '-'}}</text>
+            <text>{{item.vehicle_type || '-'}}</text>
+            <text>{{item.passenger_count || '-'}}人 / {{item.luggage_count || '-'}}件</text>
+            <text>{{item.durationText}}</text>
+            <text class="countdown-pill {{item.isExpired ? 'expired' : ''}}">{{item.countdownText}}</text>
+          </view>
+        </view>
+        <view class="auction-price">
+          <text>起拍 {{item.startPriceText}}</text>
+          <strong>当前 {{item.currentPriceText}}</strong>
+          <text>一口 {{item.buyoutPriceText}}</text>
+        </view>
+        <view class="auction-actions">
+          <view wx:if="{{item.isOwnListing}}" class="own-listing-note">本公司发布</view>
+          <block wx:else>
+            <button class="small-action bid-action {{item.canBid ? '' : 'disabled'}}" disabled="{{!item.canBid}}" data-id="{{item.id}}" data-current="{{item.current_bid_jpy || item.start_price_jpy}}" data-buyout="{{item.buyout_price_jpy}}" bindtap="placeBid">{{item.bidActionText}}</button>
+            <button class="small-action primary {{item.canClaim ? '' : 'disabled'}}" disabled="{{!item.canClaim}}" data-id="{{item.id}}" data-price="{{item.buyout_price_jpy}}" bindtap="claimListing">一口价</button>
+          </block>
+        </view>
+      </view>
+      <view wx:if="{{!listings.length}}" class="empty-state">
+        <view class="empty-title">暂无可接大厅订单</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{hallTab === 'mine'}}" class="panel deal-panel">
+    <view class="panel-header">
+      <view class="title-with-help">
+        <view class="panel-title">我的订单</view>
+        <view class="help-dot" data-type="deal" bindtap="showHelp">?</view>
+      </view>
+      <button class="mini-button" loading="{{loading}}" bindtap="loadListings">刷新</button>
+    </view>
+
+    <view wx:if="{{soldByMe.length}}" class="deal-group">
+      <view class="deal-group-title">我发布后被接走</view>
+      <view wx:for="{{soldByMe}}" wx:key="id" class="deal-row">
+        <view class="deal-main">
+          <view class="row-title">{{item.oid || item.order_id}}</view>
+          <view class="muted">已被 {{item.buyerName}} 接单</view>
+          <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+          <view wx:if="{{item.guestSummaryText}}" class="muted">{{item.guestSummaryText}}</view>
+          <view class="deal-countdown">{{item.countdownText}}</view>
+        </view>
+        <view class="deal-price">{{item.currentPriceText}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{claimedByMe.length}}" class="deal-group">
+      <view class="deal-group-title">我接下待派车</view>
+      <view wx:for="{{claimedByMe}}" wx:key="id" class="deal-row">
+        <view class="deal-main">
+          <view class="row-title">{{item.oid || item.order_id}}</view>
+          <view class="muted">来自 {{item.sellerName}}</view>
+          <view class="muted">已进入本公司订单池，请到派车页安排司机和车辆。</view>
+          <view class="muted">{{item.timeText}} · {{item.routeText}}</view>
+          <view wx:if="{{item.guestSummaryText}}" class="muted">{{item.guestSummaryText}}</view>
+          <view class="deal-countdown">{{item.countdownText}}</view>
+        </view>
+        <button class="mini-button deal-button" bindtap="goDispatch">去派车</button>
+      </view>
+    </view>
+
+    <view wx:if="{{!soldByMe.length && !claimedByMe.length}}" class="empty-state">
+      <view class="empty-title">暂无我的大厅订单</view>
+      <view class="muted">本公司发布后被接走、或本公司一口价接下的订单会显示在这里。</view>
+    </view>
+  </view>
+
+  <view wx:if="{{helpTip}}" class="help-mask" catchtap="hideHelp">
+    <view class="help-popover" catchtap="noop">
+      <view class="help-popover-head">
+        <view class="help-popover-title">{{helpTip.title}}</view>
+        <view class="help-close" bindtap="hideHelp">×</view>
+      </view>
+      <view class="help-popover-body">{{helpTip.content}}</view>
+    </view>
+  </view>
+
+  <custom-tab-bar />
+</view>
+
+

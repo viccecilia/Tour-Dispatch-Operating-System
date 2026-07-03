@@ -1,0 +1,56 @@
+<view class="page info-page">
+  <view class="hero info-hero">
+    <view class="hero-eyebrow">OPERATIONS INFO</view>
+    <view class="hero-title">司机车辆</view>
+    <view class="hero-meta">运行管理查看司机、车辆和今日出勤基础信息</view>
+  </view>
+
+  <view class="info-tabs">
+    <view class="info-tab {{section === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="switchSection">
+      <text>司机资料</text>
+      <strong>{{summary.driverTotal}}</strong>
+      <view>体检 {{summary.healthDue}} · 驾照 {{summary.licenseDue}}</view>
+    </view>
+    <view class="info-tab {{section === 'vehicles' ? 'active' : ''}}" data-section="vehicles" bindtap="switchSection">
+      <text>车辆资料</text>
+      <strong>{{summary.vehicleTotal}}</strong>
+      <view>正常 {{summary.vehicleNormal}} · 维修 {{summary.vehicleRepair}}</view>
+    </view>
+    <view class="info-tab {{section === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="switchSection">
+      <text>今日出勤</text>
+      <strong>{{summary.attendanceTotal}}</strong>
+      <view>异常 {{summary.incidentTotal}}</view>
+    </view>
+  </view>
+
+  <view class="panel info-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">{{title}}</view>
+        <view class="muted">{{hint}}</view>
+      </view>
+      <view class="soft-count">{{visibleRows.length}}</view>
+    </view>
+    <input class="input info-search" value="{{search}}" bindinput="onSearch" placeholder="搜索司机、车牌、电话、路线或备注" />
+    <view class="info-list">
+      <view wx:for="{{visibleRows}}" wx:key="id" class="info-row">
+        <view class="info-row-head">
+          <view>
+            <view class="row-title">{{item.title}}</view>
+            <view class="muted">{{item.meta}}</view>
+          </view>
+        </view>
+        <view wx:if="{{item.body}}" class="info-body">{{item.body}}</view>
+        <view class="info-field-grid">
+          <view wx:for="{{item.fields}}" wx:for-item="field" wx:key="label" class="info-field">
+            <text>{{field.label}}</text>
+            <strong>{{field.value}}</strong>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{!visibleRows.length}}" class="empty-state">暂无数据</view>
+    </view>
+  </view>
+
+  <custom-tab-bar />
+</view>

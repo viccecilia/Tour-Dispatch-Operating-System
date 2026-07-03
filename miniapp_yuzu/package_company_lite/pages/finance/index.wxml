@@ -1,0 +1,82 @@
+<view class="page finance-page">
+  <view class="hero finance-hero">
+    <view class="hero-eyebrow">MOBILE FINANCE</view>
+    <view class="hero-title">财务概览</view>
+    <view class="hero-meta">订单金额、司机垫付、代收款和待确认费用。</view>
+  </view>
+
+  <view class="panel finance-overview">
+    <view class="panel-title">今日财务待办</view>
+    <view class="finance-focus-grid">
+      <view
+        wx:for="{{cards}}"
+        wx:key="view"
+        class="finance-focus {{item.tone}} {{activeView === item.view ? 'active' : ''}}"
+        data-view="{{item.view}}"
+        bindtap="setView"
+      >
+        <text>{{item.label}}</text>
+        <strong>{{item.value}}</strong>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">订单金额</view>
+    <view class="grid finance-sub-grid">
+      <view class="metric" data-view="orders" bindtap="setView">
+        <text>订单数</text>
+        <strong>{{summary.order_count || 0}}</strong>
+      </view>
+      <view class="metric" data-view="orders" bindtap="setView">
+        <text>合计金额</text>
+        <strong>{{summary.total_amount_label || '¥0'}}</strong>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="section-head">
+      <view>
+        <view class="panel-title">{{activeTitle}}</view>
+        <view class="muted">{{activeHint}}</view>
+      </view>
+      <button class="mini-btn" bindtap="loadFinance" loading="{{loading}}">刷新</button>
+    </view>
+
+    <view wx:if="{{activeView === 'today' || activeView === 'orders'}}" class="finance-list">
+      <view wx:for="{{visibleOrders}}" wx:key="order_id" class="finance-row">
+        <view class="finance-row-main">
+          <view class="row-title">{{item.displayId}} · {{item.displayAgency}}</view>
+          <view class="muted">{{item.displayDate}} · {{item.displayDriver}}</view>
+          <view class="row-route">{{item.displayRoute}}</view>
+        </view>
+        <view class="amount">{{item.displayAmount}}</view>
+      </view>
+      <view wx:if="{{!visibleOrders.length}}" class="empty-state">
+        <view class="empty-title">暂无订单</view>
+        <view class="muted">当前分类下没有订单金额记录。</view>
+      </view>
+    </view>
+
+    <view wx:else class="finance-list">
+      <view wx:for="{{visibleExpenses}}" wx:key="id" class="finance-row">
+        <view class="finance-row-main">
+          <view class="row-title">{{item.displayId}} · {{item.displayDriver}}</view>
+          <view class="muted">{{item.displayDate}} · {{item.displayKind}} · {{item.displayStatus}}</view>
+          <view class="row-route">{{item.displayRoute}}</view>
+          <view wx:if="{{item.note}}" class="row-note">{{item.note}}</view>
+        </view>
+        <view class="amount">{{item.displayAmount}}</view>
+      </view>
+      <view wx:if="{{!visibleExpenses.length}}" class="empty-state">
+        <view class="empty-title">暂无费用记录</view>
+        <view class="muted">当前分类下没有司机费用记录。</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{message}}" class="panel message">{{message}}</view>
+</view>
+
+<custom-tab-bar />
