@@ -3,6 +3,35 @@ const session = require('./session');
 const DISPATCH_ROOT = '/package_dispatch';
 const COMPANY_LITE_ROOT = '/package_company_lite';
 
+const COMPANY_LITE_TABS = {
+  admin: [
+    { key: 'home', label: '首页', url: '/package_company_lite/pages/home/index' },
+    { key: 'drivers', label: '司机出勤', url: '/package_company_lite/pages/attendance-drivers/index' },
+    { key: 'vehicles', label: '车辆出勤', url: '/package_company_lite/pages/attendance-vehicles/index' },
+    { key: 'map', label: '地图', url: '/package_company_lite/pages/map/index' },
+    { key: 'profile', label: '我的', url: '/package_company_lite/pages/profile/index' }
+  ],
+  dispatcher: [
+    { key: 'home', label: '首页', url: '/package_company_lite/pages/home/index' },
+    { key: 'drivers', label: '司机出勤', url: '/package_company_lite/pages/attendance-drivers/index' },
+    { key: 'vehicles', label: '车辆出勤', url: '/package_company_lite/pages/attendance-vehicles/index' },
+    { key: 'map', label: '地图', url: '/package_company_lite/pages/map/index' },
+    { key: 'profile', label: '我的', url: '/package_company_lite/pages/profile/index' }
+  ],
+  ops: [
+    { key: 'home', label: '首页', url: '/package_company_lite/pages/home/index' },
+    { key: 'drivers', label: '司机出勤', url: '/package_company_lite/pages/attendance-drivers/index' },
+    { key: 'vehicles', label: '车辆出勤', url: '/package_company_lite/pages/attendance-vehicles/index' },
+    { key: 'map', label: '地图', url: '/package_company_lite/pages/map/index' },
+    { key: 'profile', label: '我的', url: '/package_company_lite/pages/profile/index' }
+  ],
+  driver: [
+    { key: 'home', label: '首页', url: '/package_company_lite/pages/home/index' },
+    { key: 'task', label: '任务', url: '/package_company_lite/pages/task/index' },
+    { key: 'profile', label: '我的', url: '/package_company_lite/pages/profile/index' }
+  ]
+};
+
 const DISPATCH_TABS = {
   admin: [
     { key: 'home', label: '首页', url: '/package_dispatch/pages/home/index' },
@@ -92,9 +121,12 @@ function tabsForCurrent(activeKey, route) {
   const current = session.getSession();
   if (!current) return [];
   const rawRole = session.getRole(current);
+  const dispatchRoot = routeDispatchRoot(route);
   const tabs = current.port === 'agency'
     ? AGENCY_TABS[normalizeAgencyRole(rawRole)]
-    : rewriteDispatchRoot(DISPATCH_TABS[normalizeDispatchRole(rawRole)], routeDispatchRoot(route));
+    : dispatchRoot === COMPANY_LITE_ROOT
+      ? COMPANY_LITE_TABS[normalizeDispatchRole(rawRole)]
+      : rewriteDispatchRoot(DISPATCH_TABS[normalizeDispatchRole(rawRole)], dispatchRoot);
   return (tabs || []).map((tab) => ({
     ...tab,
     active: tab.key === activeKey

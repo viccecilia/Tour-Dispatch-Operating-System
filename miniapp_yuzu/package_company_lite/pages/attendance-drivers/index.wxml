@@ -1,0 +1,93 @@
+<view class="page attendance-page">
+  <view class="hero attendance-hero">
+    <view class="hero-eyebrow">DRIVER ATTENDANCE</view>
+    <view class="hero-title">司机出勤</view>
+    <view class="hero-meta">按营业所查看当前出勤、空闲司机和证件预警。</view>
+  </view>
+
+  <view class="office-tabs">
+    <view wx:for="{{offices}}" wx:key="key" class="office-tab {{office === item.key ? 'active' : ''}}" data-office="{{item.key}}" bindtap="switchOffice">{{item.label}}</view>
+  </view>
+
+  <view class="metric-grid">
+    <view class="metric-card">
+      <text>司机</text>
+      <strong>{{summary.total}}</strong>
+    </view>
+    <view class="metric-card active">
+      <text>出勤</text>
+      <strong>{{summary.working}}</strong>
+    </view>
+    <view class="metric-card idle">
+      <text>空闲</text>
+      <strong>{{summary.idle}}</strong>
+    </view>
+    <view class="metric-card warn">
+      <text>预警</text>
+      <strong>{{summary.alerts}}</strong>
+    </view>
+  </view>
+
+  <view class="panel section-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">出勤司机</view>
+        <view class="muted">今天有任务或已出勤的司机。</view>
+      </view>
+      <view class="soft-count">{{workingRows.length}}</view>
+    </view>
+    <view class="resource-list">
+      <view wx:for="{{workingRows}}" wx:key="id" class="resource-row">
+        <view>
+          <view class="row-title">{{item.name}}</view>
+          <view class="muted">{{item.officeLabel}} | {{item.phone}}</view>
+        </view>
+        <view class="status-pill active">{{item.statusText}}</view>
+        <view class="resource-body">{{item.taskLine}}</view>
+      </view>
+      <view wx:if="{{!workingRows.length}}" class="empty-state">当前筛选范围暂无出勤司机</view>
+    </view>
+  </view>
+
+  <view class="panel section-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">空闲司机</view>
+        <view class="muted">今天暂无任务，可临时调度。</view>
+      </view>
+      <view class="soft-count">{{idleRows.length}}</view>
+    </view>
+    <view class="resource-list compact">
+      <view wx:for="{{idleRows}}" wx:key="id" class="resource-row compact-row">
+        <view>
+          <view class="row-title">{{item.name}}</view>
+          <view class="muted">{{item.officeLabel}} | {{item.phone}}</view>
+        </view>
+        <view class="status-pill idle">空闲</view>
+      </view>
+      <view wx:if="{{!idleRows.length}}" class="empty-state">当前筛选范围暂无空闲司机</view>
+    </view>
+  </view>
+
+  <view class="panel section-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">证件与体检预警</view>
+        <view class="muted">30 天内到期或已过期的司机资料。</view>
+      </view>
+      <view class="soft-count">{{alertRows.length}}</view>
+    </view>
+    <view class="resource-list compact">
+      <view wx:for="{{alertRows}}" wx:key="id" class="resource-row alert-row">
+        <view>
+          <view class="row-title">{{item.name}}</view>
+          <view class="muted">{{item.alertText}}</view>
+        </view>
+        <view class="status-pill warn">{{item.alertLevel}}</view>
+      </view>
+      <view wx:if="{{!alertRows.length}}" class="empty-state">暂无司机到期预警</view>
+    </view>
+  </view>
+
+  <custom-tab-bar />
+</view>

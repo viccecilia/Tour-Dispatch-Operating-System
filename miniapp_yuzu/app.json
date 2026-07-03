@@ -53,6 +53,8 @@
         "pages/auction/index",
         "pages/map/index",
         "pages/info/index",
+        "pages/attendance-drivers/index",
+        "pages/attendance-vehicles/index",
         "pages/calendar/index",
         "pages/finance/index",
         "pages/task/index",

@@ -1,0 +1,136 @@
+@import "../../../app.wxss";
+
+.attendance-hero {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  box-shadow: 0 18rpx 42rpx rgba(20, 184, 166, 0.22);
+}
+
+.office-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.office-tab {
+  height: 72rpx;
+  border-radius: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  background: #ffffff;
+  border: 1rpx solid #dbe7f5;
+  font-size: 25rpx;
+  font-weight: 900;
+}
+
+.office-tab.active {
+  color: #0f766e;
+  background: #e9fbf8;
+  border-color: #99f6e4;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.metric-card {
+  min-height: 104rpx;
+  box-sizing: border-box;
+  border-radius: 22rpx;
+  padding: 16rpx;
+  background: #ffffff;
+  border: 1rpx solid #dbe7f5;
+  box-shadow: var(--shadow-card);
+}
+
+.metric-card text {
+  display: block;
+  color: #64748b;
+  font-size: 21rpx;
+  font-weight: 850;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 8rpx;
+  color: #0f172a;
+  font-size: 38rpx;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.metric-card.active strong {
+  color: #0f766e;
+}
+
+.metric-card.idle strong {
+  color: #2563eb;
+}
+
+.metric-card.warn strong {
+  color: #dc2626;
+}
+
+.section-panel {
+  margin-top: 18rpx;
+}
+
+.resource-list {
+  margin-top: 14rpx;
+}
+
+.resource-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #edf2f7;
+}
+
+.resource-row:last-child {
+  border-bottom: 0;
+}
+
+.resource-body {
+  grid-column: 1 / -1;
+  color: #475569;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.compact-row {
+  align-items: center;
+}
+
+.status-pill {
+  align-self: start;
+  border-radius: 999rpx;
+  padding: 7rpx 14rpx;
+  font-size: 21rpx;
+  font-weight: 900;
+}
+
+.status-pill.active {
+  color: #0f766e;
+  background: #ccfbf1;
+}
+
+.status-pill.idle {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.status-pill.warn {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.alert-row .row-title {
+  color: #b91c1c;
+}

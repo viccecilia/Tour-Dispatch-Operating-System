@@ -7,6 +7,10 @@ from backend.services.tenant_context import get_current_tenant_id
 
 _DEFAULT_TENANT = object()
 
+def _table_columns(conn: Any, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
 def list_available_drivers() -> list[dict[str, Any]]:
     with get_connection() as conn:
         return [
@@ -15,7 +19,7 @@ def list_available_drivers() -> list[dict[str, Any]]:
                 """
                 SELECT id, name, phone, status, driver_code, driver_language, office, created_at, updated_at
                 FROM drivers
-                WHERE COALESCE(status, 'available') NOT IN ('retired', 'deleted')
+                WHERE COALESCE(status, 'available') NOT IN ('retired', 'removed', 'decommissioned', 'deleted')
                   AND tenant_id = ?
                   AND COALESCE(driver_code, '') != ''
                   AND COALESCE(phone, '') LIKE '0%'
@@ -29,14 +33,22 @@ def list_available_drivers() -> list[dict[str, Any]]:
 
 def list_available_vehicles() -> list[dict[str, Any]]:
     with get_connection() as conn:
+        vehicle_columns = _table_columns(conn, "vehicles")
+        office_expr = "office" if "office" in vehicle_columns else "'' AS office"
+        maintenance_status_expr = "maintenance_status" if "maintenance_status" in vehicle_columns else "'' AS maintenance_status"
         return [
             dict(row)
             for row in conn.execute(
-                """
-                SELECT id, plate_number, vehicle_type, seat_count, status, plate_short_code, vehicle_type_code, vehicle_color, snow_tire, created_at, updated_at
+                f"""
+                SELECT id, plate_number, vehicle_type, seat_count, status, {maintenance_status_expr},
+                       {office_expr}, plate_short_code, vehicle_type_code, vehicle_color, snow_tire,
+                       last_inspection_date, shaken_due_date, created_at, updated_at
                 FROM vehicles
                 WHERE tenant_id = ?
-                  AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
+                  AND COALESCE(status, 'available') NOT IN (
+                    'retired', 'removed', 'decommissioned', 'deleted',
+                    '减车', '已减车', '出售', '已出售', '报废'
+                  )
                 ORDER BY id
                 """
                 ,
@@ -65,8 +77,11 @@ def list_unassigned_orders() -> list[dict[str, Any]]:
 
 
 def list_assignments(status: str | None = "active", tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
-    sql = [
-        """
+    with get_connection() as conn:
+        order_columns = _table_columns(conn, "orders")
+        raw_text_expr = "o.raw_text" if "raw_text" in order_columns else "'' AS raw_text"
+        sql = [
+            f"""
         SELECT
             a.id,
             a.order_id,
@@ -85,10 +100,20 @@ def list_assignments(status: str | None = "active", tenant_id: int | None | obje
             o.end_time,
             o.pickup_location,
             o.dropoff_location,
+            o.pickup_latitude,
+            o.pickup_longitude,
+            o.dropoff_latitude,
+            o.dropoff_longitude,
             o.order_type,
             o.vehicle_type AS order_vehicle_type,
             o.agency_name,
+            o.guest_name,
+            o.guest_contact,
+            o.passenger_count,
+            o.luggage_count,
             o.price,
+            o.remark,
+            {raw_text_expr},
             o.dispatch_status,
             a.tenant_id,
             t.name AS tenant_name,
@@ -118,19 +143,18 @@ def list_assignments(status: str | None = "active", tenant_id: int | None | obje
         WHERE COALESCE(o.is_deleted, 0) = 0
           AND a.tenant_id = o.tenant_id
         """
-    ]
-    params: list[Any] = []
-    if tenant_id is _DEFAULT_TENANT:
-        sql.append("AND a.tenant_id = ?")
-        params.append(get_current_tenant_id())
-    elif tenant_id is not None:
-        sql.append("AND a.tenant_id = ?")
-        params.append(tenant_id)
-    if status:
-        sql.append("AND a.status = ?")
-        params.append(status)
-    sql.append("ORDER BY o.order_date ASC, o.start_time ASC, a.id DESC")
-    with get_connection() as conn:
+        ]
+        params: list[Any] = []
+        if tenant_id is _DEFAULT_TENANT:
+            sql.append("AND a.tenant_id = ?")
+            params.append(get_current_tenant_id())
+        elif tenant_id is not None:
+            sql.append("AND a.tenant_id = ?")
+            params.append(tenant_id)
+        if status:
+            sql.append("AND a.status = ?")
+            params.append(status)
+        sql.append("ORDER BY o.order_date ASC, o.start_time ASC, a.id DESC")
         return [dict(row) for row in conn.execute(" ".join(sql), params).fetchall()]
 
 
@@ -552,7 +576,7 @@ def _fetch_vehicle(conn, vehicle_id: int) -> dict[str, Any] | None:
         FROM vehicles
         WHERE id = ?
           AND tenant_id = ?
-          AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
+          AND COALESCE(status, 'available') NOT IN ('retired', 'removed', 'decommissioned', 'deleted')
         """,
         (vehicle_id, get_current_tenant_id()),
     ).fetchone()
