@@ -1,25 +1,83 @@
 <view class="page info-page">
   <view class="hero info-hero">
-    <view class="hero-eyebrow">OPERATIONS INFO</view>
-    <view class="hero-title">司机车辆</view>
-    <view class="hero-meta">运行管理查看司机、车辆和今日出勤基础信息</view>
+    <view class="hero-eyebrow">RESOURCE LIBRARY</view>
+    <view class="hero-title">资料总览</view>
+    <view class="hero-meta">车辆信息、人员信息和车辆 PDF 统一查询</view>
   </view>
 
   <view class="info-tabs">
-    <view class="info-tab {{section === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="switchSection">
-      <text>司机资料</text>
-      <strong>{{summary.driverTotal}}</strong>
-      <view>体检 {{summary.healthDue}} · 驾照 {{summary.licenseDue}}</view>
-    </view>
     <view class="info-tab {{section === 'vehicles' ? 'active' : ''}}" data-section="vehicles" bindtap="switchSection">
-      <text>车辆资料</text>
-      <strong>{{summary.vehicleTotal}}</strong>
-      <view>正常 {{summary.vehicleNormal}} · 维修 {{summary.vehicleRepair}}</view>
+      <text class="info-tab-label">车辆信息</text>
+      <strong class="info-tab-value">{{summary.vehicleTotal}}</strong>
+      <view class="info-tab-meta">PDF {{summary.pdfTotal}} · 类别 {{summary.categoryTotal}}</view>
     </view>
-    <view class="info-tab {{section === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="switchSection">
-      <text>今日出勤</text>
-      <strong>{{summary.attendanceTotal}}</strong>
-      <view>异常 {{summary.incidentTotal}}</view>
+    <view class="info-tab {{section === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="switchSection">
+      <text class="info-tab-label">人员信息</text>
+      <strong class="info-tab-value">{{summary.driverTotal}}</strong>
+      <view class="info-tab-meta">体检 {{summary.healthDue}} · 驾照 {{summary.licenseDue}}</view>
+    </view>
+  </view>
+
+  <view class="resource-filter-bar">
+    <picker mode="selector" range="{{officeFilters}}" range-key="label" value="{{officeFilterIndex}}" bindchange="onOfficeFilterChange">
+      <view class="resource-filter-select">
+        <text class="filter-label">事务所</text>
+        <strong class="filter-value">{{officeFilterLabel}}</strong>
+        <view class="filter-arrow">⌄</view>
+      </view>
+    </picker>
+    <picker wx:if="{{section === 'drivers'}}" mode="selector" range="{{driverListFilters}}" range-key="label" value="{{driverListModeIndex}}" bindchange="onDriverListModeChange">
+      <view class="resource-filter-select">
+        <text class="filter-label">状态</text>
+        <strong class="filter-value">{{driverListModeLabel}}</strong>
+        <view class="filter-arrow">⌄</view>
+      </view>
+    </picker>
+    <picker wx:else mode="selector" range="{{vehicleListFilters}}" range-key="label" value="{{vehicleListModeIndex}}" bindchange="onVehicleListModeChange">
+      <view class="resource-filter-select">
+        <text class="filter-label">状态</text>
+        <strong class="filter-value">{{vehicleListModeLabel}}</strong>
+        <view class="filter-arrow">⌄</view>
+      </view>
+    </picker>
+  </view>
+
+  <view class="alert-grid" wx:if="{{false}}">
+    <view class="alert-card vehicle">
+      <view class="alert-title">车检 30 天内</view>
+      <view class="alert-number">{{summary.vehicleInspectionDue}}</view>
+      <view wx:if="{{vehicleInspectionAlerts.length}}" class="alert-list">
+        <view wx:for="{{vehicleInspectionAlerts}}" wx:key="id" class="alert-row {{item.tone}}">
+          <text>{{item.title}}</text>
+          <strong>{{item.status}}</strong>
+          <view>{{item.meta}}</view>
+        </view>
+      </view>
+      <view wx:else class="alert-empty">暂无临近到期车辆</view>
+    </view>
+    <view class="alert-card inspection">
+      <view class="alert-title">3个月点检 30 天内</view>
+      <view class="alert-number">{{summary.threeMonthDue}}</view>
+      <view wx:if="{{threeMonthAlerts.length}}" class="alert-list">
+        <view wx:for="{{threeMonthAlerts}}" wx:key="id" class="alert-row {{item.tone}}">
+          <text>{{item.title}}</text>
+          <strong>{{item.status}}</strong>
+          <view>{{item.meta}}</view>
+        </view>
+      </view>
+      <view wx:else class="alert-empty">暂无临近到期车辆</view>
+    </view>
+    <view class="alert-card health">
+      <view class="alert-title">人员体检 30 天内</view>
+      <view class="alert-number">{{summary.healthDue}}</view>
+      <view wx:if="{{healthAlerts.length}}" class="alert-list">
+        <view wx:for="{{healthAlerts}}" wx:key="id" class="alert-row {{item.tone}}">
+          <text>{{item.title}}</text>
+          <strong>{{item.status}}</strong>
+          <view>{{item.meta}}</view>
+        </view>
+      </view>
+      <view wx:else class="alert-empty">暂无临近到期人员</view>
     </view>
   </view>
 
@@ -31,24 +89,115 @@
       </view>
       <view class="soft-count">{{visibleRows.length}}</view>
     </view>
-    <input class="input info-search" value="{{search}}" bindinput="onSearch" placeholder="搜索司机、车牌、电话、路线或备注" />
-    <view class="info-list">
-      <view wx:for="{{visibleRows}}" wx:key="id" class="info-row">
-        <view class="info-row-head">
+    <input class="input info-search" value="{{search}}" bindinput="onSearch" placeholder="搜索司机、车牌、后四位、电话、PDF 名称" />
+
+    <view wx:if="{{loading}}" class="empty-state">正在读取资料</view>
+    <view wx:else class="info-list">
+      <view wx:for="{{visibleRows}}" wx:key="id" class="info-row {{item.type}} {{expandedDriverId === item.id ? 'expanded' : ''}}">
+        <view class="info-row-head" data-id="{{item.id}}" bindtap="toggleDriverRow">
           <view>
-            <view class="row-title">{{item.title}}</view>
+            <view class="row-title-line">
+              <picker wx:if="{{section === 'drivers'}}" mode="selector" range="{{driverStatusLabels}}" value="{{item.statusIndex}}" data-resource-id="{{item.resourceId}}" data-driver-code="{{item.driverCode}}" data-phone="{{item.phone}}" data-title="{{item.title}}" bindchange="updateDriverStatus" catchtap="noop">
+                <view class="status-dot {{item.statusValue}}"></view>
+              </picker>
+              <view class="row-title">{{item.title}}</view>
+            </view>
             <view class="muted">{{item.meta}}</view>
+          </view>
+          <view class="info-row-actions">
+            <picker wx:if="{{section === 'vehicles'}}" mode="selector" range="{{vehicleStatusLabels}}" value="{{item.statusIndex}}" data-resource-id="{{item.resourceId}}" data-suffix="{{item.suffix}}" data-title="{{item.title}}" bindchange="updateVehicleStatus" catchtap="noop">
+              <view class="status-pill {{item.statusValue}}">{{item.statusLabel}}</view>
+            </picker>
+            <view wx:if="{{section === 'drivers'}}" class="expand-mark">{{expandedDriverId === item.id ? '收起' : '展开'}}</view>
+            <view wx:if="{{item.docCount}}" class="doc-count">{{item.docCount}} PDF</view>
+            <view wx:if="{{section === 'vehicles'}}" class="expand-mark">{{expandedDriverId === item.id ? '收起' : '展开'}}</view>
           </view>
         </view>
         <view wx:if="{{item.body}}" class="info-body">{{item.body}}</view>
-        <view class="info-field-grid">
+        <view wx:if="{{section === 'drivers' && expandedDriverId === item.id}}" class="driver-health-edit">
+          <view>
+            <text>体检日期</text>
+            <strong>{{item.healthExamDate || '-'}}</strong>
+          </view>
+          <view class="driver-health-actions">
+            <picker mode="date" value="{{item.healthExamDate}}" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" bindchange="updateDriverHealthDate">
+              <view class="health-edit-button">更新体检</view>
+            </picker>
+            <view class="health-upload-button" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" bindtap="uploadDriverHealthDocument">上传资料</view>
+          </view>
+        </view>
+        <view wx:if="{{section === 'vehicles' && expandedDriverId === item.id}}" class="driver-health-edit">
+          <view>
+            <text>{{item.nextRequiredLabel || '点检/车检'}}</text>
+            <strong>{{item.nextRequiredText || '-'}}</strong>
+          </view>
+          <view class="driver-health-actions">
+            <picker mode="date" value="{{item.nextRequiredIso}}" data-key="{{item.suffix || item.title}}" data-title="{{item.title}}" data-type="{{item.nextRequiredType || 'inspection'}}" bindchange="updateVehicleInspectionDate">
+              <view class="health-edit-button">更新日期</view>
+            </picker>
+            <view class="health-upload-button" data-key="{{item.suffix || item.title}}" data-title="{{item.title}}" data-type="{{item.nextRequiredType || 'inspection'}}" data-date="{{item.nextRequiredIso}}" bindtap="uploadVehicleInspectionDocument">上传资料</view>
+          </view>
+        </view>
+        <view wx:if="{{expandedDriverId === item.id}}" class="info-field-grid">
           <view wx:for="{{item.fields}}" wx:for-item="field" wx:key="label" class="info-field">
             <text>{{field.label}}</text>
             <strong>{{field.value}}</strong>
           </view>
         </view>
+
+        <view wx:if="{{section === 'vehicles' && expandedDriverId === item.id && item.docGroups.length}}" class="doc-section">
+          <view wx:for="{{item.docGroups}}" wx:for-item="group" wx:key="category" class="doc-group">
+            <view class="doc-group-title">{{group.category}} <text>{{group.files.length}}</text></view>
+            <view class="doc-files">
+              <view wx:for="{{group.files}}" wx:for-item="doc" wx:key="fileKey" class="doc-file" data-url="{{doc.url}}" data-name="{{doc.name}}" bindtap="downloadDoc">
+                <view class="doc-name">{{doc.name}}</view>
+                <view class="doc-meta">{{doc.date}} {{doc.sizeLabel}}</view>
+                <view class="doc-action">下载</view>
+              </view>
+            </view>
+          </view>
+        </view>
       </view>
       <view wx:if="{{!visibleRows.length}}" class="empty-state">暂无数据</view>
+    </view>
+  </view>
+
+  <view class="alert-grid">
+    <view class="alert-card vehicle">
+      <view class="alert-title">车检 30 天内</view>
+      <view class="alert-number">{{summary.vehicleInspectionDue}}</view>
+      <view wx:if="{{vehicleInspectionAlerts.length}}" class="alert-list">
+        <view wx:for="{{vehicleInspectionAlerts}}" wx:key="id" class="alert-row {{item.tone}}">
+          <text>{{item.title}}</text>
+          <strong>{{item.status}}</strong>
+          <view>{{item.meta}}</view>
+        </view>
+      </view>
+      <view wx:else class="alert-empty">暂无临近到期车辆</view>
+    </view>
+    <view class="alert-card inspection">
+      <view class="alert-title">3个月点检 30 天内</view>
+      <view class="alert-number">{{summary.threeMonthDue}}</view>
+      <view wx:if="{{threeMonthAlerts.length}}" class="alert-list">
+        <view wx:for="{{threeMonthAlerts}}" wx:key="id" class="alert-row {{item.tone}}">
+          <text>{{item.title}}</text>
+          <strong>{{item.status}}</strong>
+          <view>{{item.meta}}</view>
+        </view>
+      </view>
+      <view wx:else class="alert-empty">暂无临近到期车辆</view>
+    </view>
+    <view class="alert-card health">
+      <view class="alert-title">人员体检 30 天内</view>
+      <view class="alert-number">{{summary.healthDue}}</view>
+      <view wx:if="{{healthAlerts.length}}" class="alert-list">
+        <view wx:for="{{healthAlerts}}" wx:key="id" class="alert-row {{item.tone}}">
+          <text>{{item.title}}</text>
+          <strong>{{item.status}}</strong>
+          <view>{{item.meta}}</view>
+        </view>
+      </view>
+      <view wx:else class="alert-empty">暂无临近到期人员</view>
     </view>
   </view>
 

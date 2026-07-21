@@ -19,7 +19,8 @@ def create_notification(payload: dict[str, Any]) -> dict[str, Any]:
     priority = str(payload.get("priority") or "normal").strip()
     if priority not in PRIORITIES:
         priority = "normal"
-    tenant_id = get_current_tenant_id()
+    tenant_override = _to_int(payload.get("tenant_id"))
+    tenant_id = tenant_override if tenant_override > 0 else get_current_tenant_id()
     with get_connection() as conn:
         source_type = _text(payload.get("source_type"))
         source_id = _text(payload.get("source_id"))
@@ -36,7 +37,7 @@ def create_notification(payload: dict[str, Any]) -> dict[str, Any]:
                 (tenant_id, source_type, source_id),
             ).fetchone()
             if existing:
-                return get_notification(existing["id"]) or {}
+                return _get_notification_for_tenant(conn, tenant_id, existing["id"]) or {}
         cursor = conn.execute(
             """
             INSERT INTO notifications (
@@ -59,7 +60,7 @@ def create_notification(payload: dict[str, Any]) -> dict[str, Any]:
         )
         conn.commit()
         notification_id = cursor.lastrowid
-    return get_notification(notification_id) or {}
+    return _get_notification_for_tenant_id(tenant_id, notification_id) or {}
 
 
 def list_notifications(params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -99,6 +100,19 @@ def get_notification(notification_id: int | str) -> dict[str, Any] | None:
             (get_current_tenant_id(), _to_int(notification_id)),
         ).fetchone()
     return dict(row) if row else None
+
+
+def _get_notification_for_tenant(conn: Any, tenant_id: int, notification_id: int | str) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM notifications WHERE tenant_id = ? AND id = ?",
+        (tenant_id, _to_int(notification_id)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _get_notification_for_tenant_id(tenant_id: int, notification_id: int | str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        return _get_notification_for_tenant(conn, tenant_id, notification_id)
 
 
 def mark_notification_read(notification_id: int | str) -> dict[str, Any] | None:
@@ -305,7 +319,7 @@ def sync_resource_notifications() -> None:
                 "title": f"{alert.get('label') or '资源提醒'}：{alert.get('name')}",
                 "body": alert.get("message"),
                 "priority": priority,
-                "target_role": "admin",
+                "target_role": "operations_manager",
                 "link": "#vehicles",
                 "source_type": "resource_alert",
                 "source_id": source_id,
@@ -332,6 +346,7 @@ def sync_dispatch_runtime_notifications() -> None:
                     a.driver_id,
                     a.vehicle_id,
                     a.execution_status,
+                    a.assigned_at,
                     a.status AS assignment_status,
                     o.id AS order_id,
                     o.oid,
@@ -363,8 +378,15 @@ def sync_dispatch_runtime_notifications() -> None:
                 WHERE a.tenant_id = ?
                   AND a.status = 'active'
                   AND COALESCE(o.is_deleted, 0) = 0
-                  AND o.order_date >= date(?, '-1 day')
-                  AND o.order_date <= date(?, '+1 day')
+                  AND (
+                    (o.order_date >= date(?, '-1 day') AND o.order_date <= date(?, '+1 day'))
+                    OR (
+                      a.execution_status = 'assigned'
+                      AND o.order_date >= date('now')
+                      AND a.assigned_at IS NOT NULL
+                      AND a.assigned_at <= datetime('now', '-90 minutes')
+                    )
+                  )
                 ORDER BY o.order_date ASC, o.start_time ASC, a.id ASC
                 LIMIT 500
                 """,
@@ -389,6 +411,7 @@ def sync_dispatch_runtime_notifications() -> None:
                 item,
                 "unconfirmed",
             )
+            _create_driver_confirm_overdue(driver_id, item, now)
 
         if status in {"assigned", "confirmed"} and _is_due(start_dt, now, minutes_before=90):
             _create_runtime_pair(
@@ -444,6 +467,45 @@ def sync_dispatch_runtime_notifications() -> None:
                 item,
                 "not_returned",
             )
+
+
+def _create_driver_confirm_overdue(driver_id: int, item: dict[str, Any], now: datetime) -> None:
+    assigned_at = _parse_timestamp(item.get("assigned_at"))
+    if not assigned_at or now < assigned_at + timedelta(minutes=90):
+        return
+    assignment_id = item.get("assignment_id")
+    order_label = item.get("oid") or f"#{assignment_id}"
+    route = f"{item.get('pickup_location') or '-'} -> {item.get('dropoff_location') or '-'}"
+    body = (
+        f"{order_label} 已派单超过 90 分钟，司机 {item.get('driver_name') or '-'} 尚未确认。"
+        f"\n{item.get('order_date')} {item.get('start_time') or ''} {route}"
+    )
+    for role in ("dispatcher", "admin", "operations_manager"):
+        create_notification(
+            {
+                "notification_type": "driver_confirm_overdue",
+                "title": "司机超过90分钟未确认订单",
+                "body": body,
+                "priority": "high",
+                "target_role": role,
+                "link": "#driver-confirm",
+                "source_type": "driver_confirm_overdue",
+                "source_id": f"{role}:{assignment_id}",
+            }
+        )
+    if driver_id > 0:
+        create_notification(
+            {
+                "notification_type": "new_order",
+                "title": "你有待确认派单",
+                "body": f"{order_label} 已等待确认超过 90 分钟，请尽快在司机首页确认接单。\n{item.get('order_date')} {item.get('start_time') or ''} {route}",
+                "priority": "high",
+                "target_role": "driver",
+                "link": "#driver",
+                "source_type": "driver_confirm_overdue",
+                "source_id": f"{driver_id}:driver_confirm_overdue:{assignment_id}",
+            }
+        )
 
 
 def _create_runtime_pair(driver_id: int, notification_type: str, title: str, body: str, priority: str, item: dict[str, Any], code: str) -> None:
@@ -637,6 +699,18 @@ def _assignment_start_datetime(item: dict[str, Any]) -> datetime | None:
         return datetime.strptime(raw, "%Y-%m-%d %H:%M")
     except (TypeError, ValueError):
         return None
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text[:19], fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _assignment_end_datetime(item: dict[str, Any]) -> datetime | None:

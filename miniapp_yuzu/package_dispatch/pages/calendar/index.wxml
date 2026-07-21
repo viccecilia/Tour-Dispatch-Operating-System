@@ -1,67 +1,161 @@
 <view class="page calendar-page">
   <view class="hero calendar-hero">
     <view class="hero-eyebrow">OPERATIONS CALENDAR</view>
-    <view class="hero-title">出勤日历</view>
-    <view class="hero-meta">默认显示一周，下拉页面切换整月；日本周末和祝日用红色标注。</view>
+    <view class="hero-title">订单日历</view>
   </view>
 
-  <view class="calendar-summary">
-    <view class="range-main">
-      <view class="range-title">{{rangeLabel}}</view>
-      <view class="range-date">
-        <picker mode="date" value="{{dateFrom}}" bindchange="onDateFrom">
-          <view class="range-picker">{{dateFrom}}</view>
-        </picker>
-        <text>至</text>
-        <picker mode="date" value="{{dateTo}}" bindchange="onDateTo">
-          <view class="range-picker">{{dateTo}}</view>
-        </picker>
-      </view>
+  <view class="calendar-filter-bar">
+    <picker range="{{driverFilterOptions}}" value="{{driverFilterIndex}}" bindchange="onDriverFilterChange">
+      <view class="calendar-filter-pill">{{driverFilterOptions[driverFilterIndex] || '全部司机'}}</view>
+    </picker>
+    <picker range="{{vehicleFilterOptions}}" value="{{vehicleFilterIndex}}" bindchange="onVehicleFilterChange">
+      <view class="calendar-filter-pill">{{vehicleFilterOptions[vehicleFilterIndex] || '全部车辆'}}</view>
+    </picker>
+  </view>
+
+  <view class="calendar-kpi-grid">
+    <view class="calendar-kpi-card">
+      <view class="calendar-kpi-label">当日订单</view>
+      <view class="calendar-kpi-value">{{summary.total}}</view>
     </view>
-    <view class="range-action" bindtap="toggleRange">{{mode === 'month' ? '收回一周' : '展开整月'}}</view>
+    <view class="calendar-kpi-card">
+      <view class="calendar-kpi-label">空闲司机</view>
+      <view class="calendar-kpi-value">{{summary.idleDrivers}}</view>
+    </view>
+    <view class="calendar-kpi-card">
+      <view class="calendar-kpi-label">空闲车辆</view>
+      <view class="calendar-kpi-value">{{summary.idleVehicles}}</view>
+    </view>
   </view>
 
-  <view class="weekday-row">
-    <view wx:for="{{weekdayHeaders}}" wx:key="*this" class="{{item.holiday ? 'holiday' : ''}}">{{item.label}}</view>
-  </view>
+  <view wx:if="{{mode === '30d'}}" class="month-section-list">
+    <view wx:for="{{calendarMonths}}" wx:for-item="month" wx:key="key" class="month-panel panel">
+      <view class="month-window-head">
+        <picker wx:if="{{month.isFirst}}" mode="date" value="{{anchorDate}}" bindchange="onAnchorDateChange">
+          <view class="month-window-picker">
+            <view class="month-window-title">{{month.year}}年{{month.monthLabel}}月</view>
+          </view>
+        </picker>
+        <view wx:else class="month-window-title">{{month.year}}年{{month.monthLabel}}月</view>
+        <view wx:if="{{month.isFirst}}" class="range-switch month-range-switch" bindtap="toggleRange">切到7日</view>
+      </view>
 
-  <view class="day-grid {{mode === 'month' ? 'month' : 'week'}}">
-    <view wx:for="{{calendarDays}}" wx:key="key" class="day-card {{item.empty ? 'empty' : ''}} {{item.active ? 'active' : ''}} {{item.holiday ? 'holiday' : ''}}" data-date="{{item.date}}" bindtap="selectDay">
-      <view class="day-top">
-        <view>
-          <view class="day-label">{{item.label}}</view>
+      <view class="weekday-row">
+        <view wx:for="{{weekdayHeaders}}" wx:key="label" class="weekday-cell {{item.holiday ? 'holiday' : ''}}">
+          {{item.label}}
         </view>
-        <view class="day-count">{{item.attendanceCount}}</view>
       </view>
-      <view wx:if="{{item.holidayName || item.attendanceCount}}" class="day-name">{{item.holidayName || '出勤'}}</view>
-      <view wx:if="{{item.incidentCount}}" class="day-incident">{{item.incidentCount}}</view>
+
+      <view class="timeline-grid">
+        <view wx:for="{{month.weeks}}" wx:for-item="week" wx:key="key" class="timeline-week">
+          <view
+            wx:for="{{week.cells}}"
+            wx:for-item="day"
+            wx:key="key"
+            class="month-cell month-mode {{day.active ? 'active' : ''}} {{day.holiday ? 'holiday' : ''}} {{day.today ? 'today' : ''}} {{day.outsideMonth ? 'outside' : ''}}"
+            data-date="{{day.date}}"
+            bindtap="selectDay"
+          >
+            <view class="month-cell-inner">
+              <text class="month-day">{{day.label}}</text>
+              <text wx:if="{{day.attendanceCount > 0}}" class="month-count">{{day.attendanceCount}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
+  </view>
+
+  <view wx:else class="panel week-panel">
+    <view class="month-window-head">
+      <picker mode="date" value="{{anchorDate}}" bindchange="onAnchorDateChange">
+        <view class="month-window-picker">
+          <view class="month-window-title">{{displayYear}}年{{displayMonthLabel}}月</view>
+        </view>
+      </picker>
+      <view class="range-switch month-range-switch" bindtap="toggleRange">切到30日</view>
+    </view>
+
+    <view class="weekday-row">
+      <view wx:for="{{weekdayHeaders}}" wx:key="label" class="weekday-cell {{item.holiday ? 'holiday' : ''}}">
+        {{item.label}}
+      </view>
+    </view>
+
+    <scroll-view
+      scroll-x
+      enhanced
+      show-scrollbar="false"
+      class="week-window"
+      scroll-left="{{weekScrollLeftTarget}}"
+      bindscroll="onWeekTimelineScroll"
+    >
+      <view class="week-strip">
+        <view
+          wx:for="{{weekDays}}"
+          wx:key="key"
+          class="week-card {{item.active ? 'active' : ''}} {{item.holiday ? 'holiday' : ''}} {{item.today ? 'today' : ''}}"
+          data-date="{{item.date}}"
+          bindtap="selectDay"
+        >
+          <view class="week-card-day">{{item.shortLabel}}</view>
+          <view wx:if="{{item.attendanceCount > 0}}" class="week-card-count">{{item.attendanceCount}}</view>
+        </view>
+      </view>
+    </scroll-view>
   </view>
 
   <view class="panel compact-ledger">
     <view class="panel-header-lite">
       <view>
-        <view class="panel-title">{{selectedDate}} 出勤列表</view>
-        <view class="muted">一条出勤信息一行，包含司机、车辆、睡眠、点呼、出入库和休息时间。</view>
+        <view class="panel-title">{{selectedDate}} 出勤司机</view>
+        <view class="muted">点击司机，下面只显示这位司机当天订单。</view>
       </view>
-      <view class="soft-count">{{dayRows.length}} 条</view>
+      <view class="soft-count">{{driverGroups.length}} 人</view>
     </view>
-    <view class="ledger-list">
+
+    <scroll-view wx:if="{{driverGroups.length}}" scroll-x enhanced show-scrollbar="false" class="driver-group-scroll">
+      <view class="driver-group-strip">
+        <view
+          wx:for="{{driverGroups}}"
+          wx:key="key"
+          class="driver-group-card {{activeDriverKey === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="selectDriverGroup"
+        >
+          <view class="driver-main">{{item.driver}}</view>
+          <view class="driver-sub">{{item.vehicle}}</view>
+          <view class="driver-badge">{{item.count}}单</view>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view wx:if="{{!driverGroups.length}}" class="empty-state">当前日期没有符合筛选条件的订单</view>
+
+    <view wx:if="{{dayRows.length}}" class="ledger-list">
+      <view class="selected-driver-head">
+        <view>
+          <view class="selected-driver-title">{{activeDriverTitle}}</view>
+          <view class="selected-driver-meta">{{activeDriverMeta}}</view>
+        </view>
+        <view class="selected-driver-count">{{dayRows.length}} 单</view>
+      </view>
       <view wx:for="{{dayRows}}" wx:key="id" class="ledger-row">
         <view class="ledger-main">
-          <view class="ledger-title">{{item.time}} · {{item.driver}} · {{item.vehicle}}</view>
-          <view class="ledger-route">{{item.route}}</view>
+          <view class="ledger-title">{{item.time}} · {{item.route}}</view>
+          <view wx:if="{{item.guestLine}}" class="ledger-guest">{{item.guestLine}}</view>
+          <view wx:if="{{item.agency}}" class="ledger-guest">旅行社：{{item.agency}}</view>
+          <view wx:if="{{item.remark}}" class="ledger-remark">{{item.remark}}</view>
         </view>
         <view class="ledger-fields">
-          <text>睡眠 {{item.sleep}}</text>
-          <text>点呼 {{item.departCall}}</text>
-          <text>出库 {{item.departTime}}</text>
-          <text>入库 {{item.returnTime}}</text>
-          <text>休息 {{item.rest}}</text>
-          <text>{{item.status}}</text>
+          <view class="ledger-pill">睡眠 {{item.sleep}}</view>
+          <view class="ledger-pill">点呼 {{item.departCall}}</view>
+          <view class="ledger-pill">出库 {{item.departTime}}</view>
+          <view class="ledger-pill">回库 {{item.returnTime}}</view>
+          <view class="ledger-pill">休息 {{item.rest}}</view>
+          <view class="ledger-pill">{{item.status}}</view>
         </view>
       </view>
-      <view wx:if="{{!dayRows.length}}" class="empty-state">当天暂无出勤记录</view>
     </view>
   </view>
 

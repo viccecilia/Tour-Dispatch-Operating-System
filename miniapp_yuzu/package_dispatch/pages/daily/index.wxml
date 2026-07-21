@@ -1,0 +1,79 @@
+<view class="page daily-page">
+  <view class="hero daily-hero">
+    <view class="hero-eyebrow">DAILY ASSIGNMENT</view>
+    <view class="hero-title">日配</view>
+    <view class="hero-meta">粘贴司机分组订单，解析后编辑，再保存或发布。</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-head">
+      <view>
+        <view class="panel-title">司机分组文本</view>
+        <view class="muted">司机姓名一行，下面跟当天订单；可包含车牌尾号。</view>
+      </view>
+      <view class="panel-actions">
+        <button class="ghost-mini" bindtap="fillExample">示例</button>
+        <button class="ghost-mini" bindtap="clearSource">清空</button>
+      </view>
+    </view>
+    <textarea class="source-textarea" value="{{sourceText}}" bindinput="onSourceInput" placeholder="例如：&#10;林泽群 3893&#10;1.31 10:00 京都单送关西酒店 3代 绿800" />
+    <view class="action-row">
+      <button class="button-secondary action-button" bindtap="parseText">解析</button>
+      <button class="button-primary action-button" bindtap="saveDraft">保存草稿</button>
+    </view>
+    <view wx:if="{{message}}" class="notice">{{message}}</view>
+  </view>
+
+  <view class="summary-grid">
+    <view class="summary-card"><text>司机</text><strong>{{stats.drivers}}</strong></view>
+    <view class="summary-card"><text>订单</text><strong>{{stats.orders}}</strong></view>
+    <view class="summary-card"><text>待发布</text><strong>{{stats.unpublished}}</strong></view>
+    <view class="summary-card warning"><text>作废</text><strong>{{stats.voided}}</strong></view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-head">
+      <view>
+        <view class="panel-title">分配预览</view>
+        <view class="muted">可修改司机、车辆、订单内容和状态。</view>
+      </view>
+      <button class="ghost-mini" bindtap="addGroup">加司机</button>
+    </view>
+
+    <view wx:if="{{!groups.length}}" class="empty">暂无解析内容</view>
+
+    <view wx:for="{{groups}}" wx:key="id" wx:for-index="groupIndex" class="driver-group">
+      <view class="group-head">
+        <input class="group-input" value="{{item.driverName}}" data-group-index="{{groupIndex}}" data-key="driverName" bindinput="onGroupInput" placeholder="司机姓名" />
+        <input class="group-input vehicle" value="{{item.vehicleCode}}" data-group-index="{{groupIndex}}" data-key="vehicleCode" bindinput="onGroupInput" placeholder="车牌/车辆" />
+        <button class="delete-mini" data-group-index="{{groupIndex}}" bindtap="removeGroup">删除</button>
+      </view>
+
+      <view wx:for="{{item.orders}}" wx:key="id" wx:for-item="order" wx:for-index="orderIndex" class="order-editor">
+        <view class="order-head">
+          <view class="order-title">订单 {{order.displayIndex}}</view>
+          <button class="delete-mini" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" bindtap="removeOrder">删单</button>
+        </view>
+        <view class="form-grid">
+          <view class="field"><view class="field-label">日期</view><input class="mini-input" value="{{order.date}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="date" bindinput="onOrderInput" placeholder="YYYY-MM-DD" /></view>
+          <view class="field"><view class="field-label">时间</view><input class="mini-input" value="{{order.time}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="time" bindinput="onOrderInput" placeholder="HH:mm" /></view>
+          <view class="field"><view class="field-label">类型</view><input class="mini-input" value="{{order.type}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="type" bindinput="onOrderInput" placeholder="接机/送机/包车" /></view>
+          <view class="field"><view class="field-label">车型</view><input class="mini-input" value="{{order.vehicleType}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="vehicleType" bindinput="onOrderInput" placeholder="3代/10座" /></view>
+          <view class="field wide-field"><view class="field-label">路线</view><input class="mini-input" value="{{order.route}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="route" bindinput="onOrderInput" placeholder="起点 -> 终点" /></view>
+          <view class="field"><view class="field-label">价格</view><input class="mini-input" value="{{order.price}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="price" bindinput="onOrderInput" placeholder="金额" /></view>
+          <view class="field"><view class="field-label">状态</view><input class="mini-input" value="{{order.status}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="status" bindinput="onOrderInput" placeholder="待发布/作废" /></view>
+          <view class="field wide-field"><view class="field-label">备注</view><input class="mini-input" value="{{order.remark}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="remark" bindinput="onOrderInput" placeholder="原始内容/补充说明" /></view>
+        </view>
+      </view>
+
+      <button class="tiny-btn" data-group-index="{{groupIndex}}" bindtap="addOrder">添加订单</button>
+    </view>
+  </view>
+
+  <view class="sticky-actions">
+    <button class="button-secondary action-button" bindtap="saveDraft">保存草稿</button>
+    <button class="button-primary action-button" bindtap="publishAssignments">发布日配</button>
+  </view>
+
+  <custom-tab-bar />
+</view>

@@ -1,11 +1,39 @@
 ﻿const api = require('../../utils/api');
 
+const HOME_HIDDEN_RESOURCE_VEHICLE_TAILS = ['7721', '3724', '7728'];
+const RESOURCE_VEHICLE_REMINDER_DAYS = 30;
+const RESOURCE_DRIVER_HEALTH_REMINDER_DAYS = 30;
+const HIDDEN_DRIVER_NAMES = [
+  '刘明海',
+  '劉明海',
+  '刘晟',
+  '劉晟',
+  '王爽',
+  '楊増福',
+  '滝澤雅禾',
+  '富塚紀子',
+  '陳鈴',
+  '唐洋洲',
+  '谷口張延瑾',
+  '谷口延瑾',
+  '福田弘一'
+];
+
+const HOME_TITLE_BY_ROLE = {
+  admin: '管理首页',
+  dispatcher: '调度首页',
+  operations_manager: '运管首页',
+  driver: '司机首页'
+};
+
 Page({
   data: {
     username: '',
     password: '',
     session: null,
     roleLabel: '',
+    heroName: '统一账号登录',
+    heroMeta: '调度 / 管理 / 司机 / 运行管理统一入口',
     statusLabel: '未出库',
     statusHint: '确认接单后进入任务页完成出库。',
     canDispatch: false,
@@ -45,17 +73,78 @@ Page({
     panelMode: 'orders',
     panelTitle: '今日订单',
     panelHint: '点击订单进入任务页处理。',
+    panelUnit: '条',
     panelRows: [],
     driverOrderChipLabel: '今日订单',
     driverOrderChipCount: 0,
+    allOrderChipCount: 0,
     driverOrderChipAlert: false,
     driverStats: [],
     visibleDriverStats: [],
     pressureExpanded: false,
     notifications: [],
+    unassignedRows: [],
+    dispatchAllRows: [],
+    dispatchOverview: {
+      todayAssigned: 0,
+      todayActive: 0,
+      todayTotal: 0,
+      unassignedToday: 0,
+      driverTotal: 0,
+      vehicleTotal: 0,
+      idleDrivers: 0,
+      idleVehicles: 0,
+      hiaceTotal: 0,
+      idleHiace: 0,
+      alphardTotal: 0,
+      idleAlphard: 0,
+      vehicleTypeRows: []
+    },
+    resourceSummary: {
+      vehicleTotal: 0,
+      driverTotal: 0,
+      pdfTotal: 0,
+      categoryTotal: 0,
+      vehicleInspectionDue: 0,
+      threeMonthDue: 0,
+      healthDue: 0,
+      licenseDue: 0,
+      residenceDue: 0,
+      alertTotal: 0
+    },
+    resourceVehicleAlerts: [],
+    resourceInspectionAlerts: [],
+    resourceHealthAlerts: [],
+    resourceLicenseAlerts: [],
+    resourceResidenceAlerts: [],
+    resourceAlertRows: [],
+    visibleResourceAlertRows: [],
+    resourceAlertFilter: 'all',
+    resourceAllVehicleRows: [],
+    resourceAllDriverRows: [],
+    resourceVehicleRows: [],
+    resourceDriverRows: [],
+    resourcePdfRows: [],
+    resourceError: '',
+    resourceFocus: 'alerts',
+    resourceOfficeFilter: 'all',
+    officeFilters: [
+      { label: '全部', value: 'all' },
+      { label: '大阪', value: 'osaka' },
+      { label: '京都', value: 'kyoto' }
+    ],
+    resourceExpandedSection: '',
+    expandedHomeVehicleId: '',
+    expandedHomeDriverId: '',
+    dispatchTaskRows: [],
+    idleDriverRows: [],
+    idleVehicleRows: [],
+    vehicleIdleTypeRows: [],
     error: '',
     loading: false,
     autoLoginTried: false,
+    wechatAutoLoginEnabled: false,
+    wechatBindingRequired: false,
     pendingPromptKey: ''
   },
 
@@ -65,8 +154,23 @@ Page({
     const session = api.getSession();
     this.setSessionState(session);
     this.refreshTabBar();
-    if (this.data.session) this.loadDashboard();
-    else this.loadLoginMode();
+    if (this.data.session) {
+      console.info('[dispatch home session]', {
+        baseUrl: api.getBaseUrl(),
+        role: api.getRole(this.data.session),
+        hasToken: !!(this.data.session && this.data.session.token)
+      });
+      this.loadDashboard();
+      return;
+    }
+    console.warn('[dispatch home missing session]', {
+      baseUrl: api.getBaseUrl(),
+      hasUnified: !!wx.getStorageSync('yuzu_session'),
+      hasDispatch: !!wx.getStorageSync(`dispatcher_session:${api.getBaseUrl()}`),
+      hasDispatchPlain: !!wx.getStorageSync('dispatcher_session')
+    });
+    wx.setStorageSync('yuzu_selected_port', 'dispatch');
+    wx.reLaunch({ url: '/pages/login/index?port=dispatch' });
   },
 
   loadLoginMode() {
@@ -75,6 +179,10 @@ Page({
       .then((config) => {
         const settings = (config && config.settings) || config || {};
         console.info('[dispatch-mobile app-config]', settings);
+        this.setData({
+          wechatAutoLoginEnabled: !!settings.wechat_auto_login_enabled,
+          wechatBindingRequired: !!settings.wechat_binding_required
+        });
         if (api.isManualLogout && api.isManualLogout()) {
           this.setData({ loading: false, autoLoginTried: true });
           return;
@@ -114,9 +222,18 @@ Page({
   setSessionState(session) {
     const role = api.getRole(session);
     const labels = { admin: '管理', dispatcher: '调度', operations_manager: '运行管理', driver: '司机' };
+    const dispatcher = (session && session.dispatcher) || {};
+    const user = (session && session.user) || {};
+    const heroName = dispatcher.dispatcher_name || user.name || user.username || '统一账号登录';
+    const heroCode = dispatcher.dispatcher_code || user.account_code || user.code || '';
+    const roleLabel = labels[role] || '账号';
+    const heroMeta = session ? [heroCode, roleLabel].filter(Boolean).join(' - ') : '调度 / 管理 / 司机 / 运行管理统一入口';
+    wx.setNavigationBarTitle({ title: HOME_TITLE_BY_ROLE[role] || '首页' });
     this.setData({
       session,
-      roleLabel: labels[role] || '账号',
+      roleLabel,
+      heroName,
+      heroMeta,
       canDispatch: api.canAccess('dispatch', session),
       canFinance: api.canAccess('finance', session),
       canDriverTasks: role === 'driver',
@@ -143,9 +260,10 @@ Page({
     const account = String(this.data.username || '').trim();
     const password = String(this.data.password || '');
     const isPhone = /^\+?[\d\s-]{6,}$/.test(account) || /^[A-Za-z0-9]+-[\d\s-]{6,}$/.test(account);
-    this.getWechatLoginCode()
+    const loginWithCode = this.data.wechatAutoLoginEnabled || this.data.wechatBindingRequired;
+    const codeTask = loginWithCode ? this.getWechatLoginCode().catch(() => '') : Promise.resolve('');
+    codeTask
       .then((wxCode) => (isPhone ? api.loginPhone(account, password, wxCode) : api.login(account, password, wxCode)))
-      .catch(() => (isPhone ? api.loginPhone(account, password, '') : api.login(account, password, '')))
       .catch(() => (isPhone ? api.loginPhone(account.replace(/[^\d]/g, ''), password, '') : Promise.reject({ error: 'login_failed' })))
       .then((res) => {
         api.setSession(res);
@@ -180,6 +298,7 @@ Page({
     const session = this.data.session || {};
     const role = api.getRole(session);
     const canViewOperations = role === 'operations_manager';
+    const canViewResources = role !== 'driver';
     const driverId = session.user && session.user.profile_id ? session.user.profile_id : 0;
     const notificationTask = role === 'driver' && driverId
       ? api.driverNotifications(driverId).catch(() => ({ notifications: [] }))
@@ -193,9 +312,31 @@ Page({
     const profileTask = role === 'driver' && driverId
       ? api.driverProfile(driverId).catch(() => ({ driver: null }))
       : Promise.resolve({ driver: null });
-    const vehicleTask = canViewOperations
+    const vehicleTask = (canViewOperations || this.data.canDispatch)
       ? api.vehicles().catch(() => ({ vehicles: [] }))
       : Promise.resolve({ vehicles: [] });
+    const unassignedTask = this.data.canDispatch
+      ? api.unassignedOrders().catch(() => ({ orders: [] }))
+      : Promise.resolve({ orders: [] });
+    const dispatchDraftTask = this.data.canDispatch
+      ? api.drafts().catch(() => ({ drafts: [] }))
+      : Promise.resolve({ drafts: [] });
+    const resourceTask = canViewResources
+      ? api.resourceLibrary()
+        .then((library) => {
+          const summary = (library && library.summary) || {};
+          console.info('[dispatch resource library loaded]', {
+            vehicles: Array.isArray(library && library.vehicles) ? library.vehicles.length : 0,
+            drivers: Array.isArray(library && library.drivers) ? library.drivers.length : 0,
+            pdf: summary.pdf_files || summary.pdfTotal || 0
+          });
+          return library;
+        })
+        .catch((err) => {
+          console.warn('[dispatch resource library failed]', err);
+          return { vehicles: [], drivers: [], summary: {}, resourceError: err && (err.error || err.detail || err.errMsg) || 'resource_failed' };
+        })
+      : Promise.resolve({ vehicles: [], drivers: [], summary: {} });
 
     return Promise.all([
       api.dashboard().catch((err) => {
@@ -208,38 +349,81 @@ Page({
       driverTask,
       workbenchTask,
       profileTask,
-      vehicleTask
+      vehicleTask,
+      unassignedTask,
+      dispatchDraftTask,
+      resourceTask
     ])
-      .then(([dashboard, notifications, assignments, drivers, driverAssignments, workbench, profile, vehicles]) => {
+      .then((results) => {
+        const dashboard = results && results[0];
+        const notifications = results && results[1];
+        const assignments = results && results[2];
+        const drivers = results && results[3];
+        const driverAssignments = results && results[4];
+        const workbench = results && results[5];
+        const profile = results && results[6];
+        const vehicles = results && results[7];
+        const unassigned = results && results[8];
+        const dispatchDrafts = results && results[9];
+        const resourceLibrary = results && results[10];
         const safeDashboard = dashboard || emptyDashboard;
         const allAssignments = Array.isArray(assignments && assignments.assignments) ? assignments.assignments : [];
         const allDrivers = Array.isArray(drivers && drivers.drivers) ? drivers.drivers : [];
         const allVehicles = Array.isArray(vehicles && vehicles.vehicles) ? vehicles.vehicles : [];
+        const tenantId = this.currentTenantId();
+        const draftRows = (Array.isArray(dispatchDrafts && dispatchDrafts.drafts) ? dispatchDrafts.drafts : [])
+          .filter((item) => !tenantId || !item.tenant_id || Number(item.tenant_id) === tenantId)
+          .filter((item) => item.parse_status !== 'confirmed' && item.parse_status !== 'discarded')
+          .map((item) => this.decorateUnassignedOrder(Object.assign({}, item, { kind: 'draft' })));
+        const orderRows = (Array.isArray(unassigned && unassigned.orders) ? unassigned.orders : [])
+          .filter((item) => !tenantId || !item.tenant_id || Number(item.tenant_id) === tenantId)
+          .map((item) => this.decorateUnassignedOrder(Object.assign({}, item, { kind: 'order' })));
+        const unassignedRows = this.sortDispatchRows(draftRows.concat(orderRows)).slice(0, 160);
         const driverStats = canViewDriverWorkload ? this.buildDriverStats(allAssignments, allDrivers) : [];
-        const driverRows = (Array.isArray(driverAssignments && driverAssignments.assignments) ? driverAssignments.assignments : []).map((item) => this.decorateAssignment(item));
+        const assignmentSourceRows = Array.isArray(driverAssignments && driverAssignments.assignments) ? driverAssignments.assignments : [];
+        const workbenchPendingRows = Array.isArray(workbench && workbench.pending_assignments) ? workbench.pending_assignments : [];
+        const driverRows = this.mergeDriverAssignments(assignmentSourceRows, workbenchPendingRows)
+          .map((item) => this.decorateAssignment(item));
         const today = this.formatDate(new Date());
+        const dispatchAssignments = allAssignments
+          .filter((item) => !tenantId || !item.tenant_id || Number(item.tenant_id) === tenantId)
+          .map((item) => this.decorateAssignment(item));
+        const dispatchAllRows = this.sortDispatchRows(dispatchAssignments.concat(unassignedRows)).slice(0, 220);
         const pendingRows = driverRows.filter((item) => item.rawStatus === 'assigned');
         const todayRows = driverRows.filter((item) => this.isAssignmentOnDate(item, today));
         const exceptionRows = driverRows.filter((item) => ['incident', 'exception', 'delayed'].indexOf(String(item.order_status || item.status || '')) >= 0);
+        const resourceOverview = this.buildResourceOverview(resourceLibrary || {}, allDrivers, allVehicles);
+        const visibleResourceAlertRows = this.filterResourceAlertRows(
+          resourceOverview.alertRows,
+          this.data.resourceAlertFilter
+        );
+        const filteredResourceRows = this.filterResourceRowsByOffice(resourceOverview.vehicleRows, resourceOverview.driverRows, this.data.resourceOfficeFilter);
+        const availabilityDrivers = allDrivers.length ? allDrivers : this.resourceDriversForAvailability(resourceOverview.driverRows);
+        const availabilityVehicles = allVehicles.length ? allVehicles : this.resourceVehiclesForAvailability(resourceOverview.vehicleRows);
+        const todayDispatchRows = dispatchAssignments.filter((item) => this.isAssignmentOnDate(item, today));
+        const dispatchOverview = this.buildDispatchOverview(todayDispatchRows, availabilityDrivers, availabilityVehicles, unassignedRows);
+        const idleResources = this.buildIdleResources(todayDispatchRows, availabilityDrivers, availabilityVehicles);
         const dueRows = this.buildDueRows(profile.driver);
         const notificationRows = (Array.isArray(notifications && notifications.notifications) ? notifications.notifications : [])
           .filter((item) => !this.isSuppressedDriverNotification(item))
           .slice(0, 30)
           .map((item) => this.decorateNotification(item));
         const unreadRows = notificationRows.filter((item) => item.rawStatus !== 'read');
-        const nextDashboard = role === 'driver'
-          ? {
-            ...safeDashboard,
-            counts: {
-              ...(safeDashboard.counts || {}),
-              today_orders: todayRows.length,
-              pending_confirmations: pendingRows.length,
-              exception_orders: exceptionRows.length,
-              notifications_unread: unreadRows.length,
-              notifications_total: notificationRows.length
-            }
-          }
-          : safeDashboard;
+        const nextDashboard = Object.assign({}, safeDashboard, {
+          counts: Object.assign({}, safeDashboard.counts || {})
+        });
+        if (role === 'driver') {
+          nextDashboard.counts.today_orders = todayRows.length;
+          nextDashboard.counts.pending_confirmations = pendingRows.length;
+          nextDashboard.counts.exception_orders = exceptionRows.length;
+          nextDashboard.counts.notifications_unread = unreadRows.length;
+          nextDashboard.counts.notifications_total = notificationRows.length;
+        }
+        if (this.data.canDispatch) {
+          nextDashboard.counts.unassigned_orders = unassignedRows.length;
+          nextDashboard.counts.notifications_unread = unreadRows.length;
+          nextDashboard.counts.notifications_total = notificationRows.length;
+        }
         const status = this.computeDriverStatus(driverRows, workbench);
         const operations = role === 'operations_manager'
           ? this.buildOperationsDashboard(nextDashboard, allAssignments, allDrivers, allVehicles)
@@ -259,15 +443,24 @@ Page({
               this.data.operationsAttendanceRows
             )
           };
-        const panel = this.buildPanel(this.data.panelMode, todayRows, driverRows, pendingRows, exceptionRows, notificationRows);
+        const preferredPanelMode = !this.data.canDispatch && pendingRows.length && this.data.panelMode === 'orders'
+          ? 'pending'
+          : this.data.panelMode;
+        const panel = this.data.canDispatch
+          ? this.buildDispatchPanel(this.data.panelMode, unassignedRows, unreadRows, dispatchAllRows, driverStats, resourceOverview.alertRows)
+          : this.buildPanel(preferredPanelMode, todayRows, driverRows, pendingRows, exceptionRows, unreadRows);
         const operationsDetail = role === 'operations_manager' && this.data.operationsSection === 'notifications'
           ? this.buildOperationsNotificationDetail(notificationRows)
           : operations.detail;
         this.setData({
           dashboard: nextDashboard,
           driverAssignments: driverRows,
-          driverOrderChipLabel: '今日订单',
-          driverOrderChipCount: todayRows.length,
+          panelMode: preferredPanelMode,
+          unassignedRows,
+          dispatchAllRows,
+          driverOrderChipLabel: this.data.canDispatch ? '待委派订单' : (pendingRows.length ? '待确认派单' : '今日订单'),
+          driverOrderChipCount: this.data.canDispatch ? unassignedRows.length : (pendingRows.length || todayRows.length),
+          allOrderChipCount: this.data.canDispatch ? dispatchAllRows.length : driverRows.length,
           driverOrderChipAlert: false,
           notifications: notificationRows,
           statusLabel: status.label,
@@ -285,14 +478,38 @@ Page({
           operationsDetailUnit: operationsDetail.unit,
           panelTitle: panel.title,
           panelHint: panel.hint,
+          panelUnit: panel.unit || '条',
           panelRows: panel.rows,
           driverStats,
           visibleDriverStats: this.visibleDriverStats(driverStats, this.data.pressureExpanded),
+          dispatchOverview,
+          resourceSummary: resourceOverview.summary,
+          resourceVehicleAlerts: resourceOverview.vehicleInspectionAlerts,
+          resourceInspectionAlerts: resourceOverview.threeMonthAlerts,
+          resourceHealthAlerts: resourceOverview.healthAlerts,
+          resourceLicenseAlerts: resourceOverview.licenseAlerts,
+          resourceResidenceAlerts: resourceOverview.residenceAlerts,
+          resourceAlertRows: resourceOverview.alertRows,
+          visibleResourceAlertRows,
+          resourceAllVehicleRows: resourceOverview.vehicleRows,
+          resourceAllDriverRows: resourceOverview.driverRows,
+          resourceVehicleRows: filteredResourceRows.vehicles,
+          resourceDriverRows: filteredResourceRows.drivers,
+          resourcePdfRows: resourceOverview.pdfRows,
+          resourceError: resourceOverview.error,
+          vehicleIdleTypeRows: dispatchOverview.vehicleTypeRows || [],
+          dispatchTaskRows: todayDispatchRows.slice(0, 8),
+          idleDriverRows: idleResources.idleDriverRows,
+          idleVehicleRows: idleResources.idleVehicleRows,
           loading: false
         });
+        if (role !== 'driver') this.refreshResourceOverview();
         this.promptPendingAssignments(role, pendingRows);
       })
-      .catch(() => this.setData({ loading: false, error: '无法加载移动首页。' }));
+      .catch((err) => {
+        console.error('[dispatch home load failed]', err);
+        this.setData({ loading: false, error: '无法加载移动首页。' });
+      });
   },
 
   promptPendingAssignments(role, pendingRows) {
@@ -400,7 +617,8 @@ Page({
         this.detailLine('维修说明', vehicle.maintenance_note || vehicle.repair_note || vehicle.remark)
       ].filter(Boolean)
     }));
-    const driverRows = (drivers || []).map((driver) => {
+    const visibleDrivers = (drivers || []).filter((driver) => !this.isHiddenDriver(driver));
+    const driverRows = visibleDrivers.map((driver) => {
       const healthDays = this.daysUntil(driver.health_check_due_date || driver.health_check_date);
       const licenseDays = this.daysUntil(driver.license_due_date || driver.license_expiry_date);
       return {
@@ -449,7 +667,7 @@ Page({
         vehicleAvailable: vehicleCounts.available || Number(fleetStatus.available || counts.available_vehicles || 0),
         vehicleMaintenance: maintenanceVehicles,
         vehicleRetired: retiredVehicles,
-        driverTotal: drivers.length,
+        driverTotal: visibleDrivers.length,
         driverHealthDue: healthDue.length,
         driverLicenseDue: licenseDue.length,
         driverDueTotal: healthDue.length + licenseDue.length,
@@ -539,16 +757,649 @@ Page({
 
   decorateAssignment(item) {
     const rawStatus = item.execution_status || item.status || 'assigned';
-    return {
-      ...item,
+    const guestBits = [];
+    if (item.guest_name) guestBits.push(item.guest_name);
+    if (item.guest_contact) {
+      const region = this.detectPhoneRegion(item.guest_contact);
+      guestBits.push(region ? `${item.guest_contact}（${region}）` : item.guest_contact);
+    }
+    if (item.passenger_count) guestBits.push(`${item.passenger_count}位`);
+    if (item.luggage_count || item.luggage_count === 0) guestBits.push(`行李 ${item.luggage_count}`);
+    const resourceBits = [item.driver_name || '未定司机', item.plate_number || '未定车辆'].filter(Boolean);
+    const remark = String(item.remark || '').trim();
+    const timeRangeText = this.assignmentTimeText(item);
+    const routeText = this.assignmentRouteText(item);
+    const orderNoText = item.oid || item.order_id || '订单';
+    return Object.assign({}, item, {
       rawStatus,
       id: item.assignment_id || item.id,
-      title: item.oid || item.order_id || '订单',
-      meta: `${item.order_date || '-'} ${item.start_time || '--:--'} · ${this.statusText(rawStatus)}`,
-      body: `${item.pickup_location || '-'} -> ${item.dropoff_location || '-'}`,
+      title: timeRangeText,
+      meta: this.statusText(rawStatus),
+      body: routeText,
+      orderNoText,
+      timeRangeText,
+      routeText,
+      guestLine: guestBits.join(' · '),
+      resourceLine: resourceBits.join(' · '),
+      remarkPreview: remark ? remark.slice(0, 60) : '',
       action: rawStatus === 'assigned' ? 'confirm' : 'task',
       actionText: rawStatus === 'assigned' ? '确认' : '查看'
+    });
+  },
+
+  assignmentTimeText(item) {
+    const startDate = item.order_date || item.start_date || '-';
+    const startTime = item.start_time || '--:--';
+    const endDate = item.end_date || '';
+    const endTime = item.end_time || '';
+    const startText = `${startDate} ${startTime}`;
+    if (!endTime) return startText;
+    if (endDate && endDate !== startDate) return `${startText} - ${endDate} ${endTime}`;
+    return `${startText} - ${endTime}`;
+  },
+
+  assignmentRouteText(item) {
+    return `${item.pickup_location || '-'} → ${item.dropoff_location || '-'}`;
+  },
+
+  mergeDriverAssignments(primaryRows, pendingRows) {
+    const merged = [];
+    const seen = {};
+    (primaryRows || []).concat(pendingRows || []).forEach((item) => {
+      const key = String(item.assignment_id || item.id || item.order_id || `${item.order_date}-${item.start_time}-${item.oid}`);
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      merged.push(item);
+    });
+    return merged.sort((a, b) => {
+      const left = `${a.order_date || ''} ${a.start_time || ''} ${a.assignment_id || a.id || ''}`;
+      const right = `${b.order_date || ''} ${b.start_time || ''} ${b.assignment_id || b.id || ''}`;
+      return left.localeCompare(right, 'zh-Hans-CN');
+    });
+  },
+
+  buildDispatchOverview(assignments, drivers, vehicles, unassignedRows) {
+    const today = this.formatDate(new Date());
+    const activeStatuses = ['departed', 'arrived', 'in_service'];
+    const activeAssignments = (assignments || []).filter((item) => activeStatuses.indexOf(String(item.rawStatus || item.execution_status || item.status || '')) >= 0);
+    const driverIds = new Set((assignments || []).map((item) => Number(item.driver_id || 0)).filter(Boolean));
+    const vehicleIds = new Set((assignments || []).map((item) => Number(item.vehicle_id || 0)).filter(Boolean));
+    const availableDrivers = (drivers || []).filter((item) => !this.isRetiredStatus(item.status));
+    const availableVehicles = (vehicles || []).filter((item) => !this.isRetiredStatus(item.status || item.vehicle_status));
+    const idleVehicles = availableVehicles.filter((item) => !vehicleIds.has(Number(item.id || 0)));
+    const todayUnassigned = (unassignedRows || []).filter((item) => this.isAssignmentOnDate(item, today));
+    const vehicleTypeRows = this.buildVehicleTypeRows(availableVehicles, idleVehicles);
+    const tenSeat = vehicleTypeRows.find((item) => item.label === '10座') || { total: 0, idle: 0 };
+    const alphard = vehicleTypeRows.find((item) => item.label === 'Alphard') || { total: 0, idle: 0 };
+    return {
+      todayAssigned: (assignments || []).length,
+      todayActive: activeAssignments.length,
+      todayTotal: (assignments || []).length + todayUnassigned.length,
+      unassignedToday: todayUnassigned.length,
+      driverTotal: availableDrivers.length,
+      vehicleTotal: availableVehicles.length,
+      idleDrivers: Math.max(0, availableDrivers.filter((item) => !driverIds.has(Number(item.id || 0))).length),
+      idleVehicles: Math.max(0, idleVehicles.length),
+      hiaceTotal: tenSeat.total,
+      idleHiace: tenSeat.idle,
+      tenSeatTotal: tenSeat.total,
+      idleTenSeat: tenSeat.idle,
+      alphardTotal: alphard.total,
+      idleAlphard: alphard.idle,
+      vehicleTypeRows
     };
+  },
+
+  buildIdleResources(assignments, drivers, vehicles) {
+    const driverIds = new Set((assignments || []).map((item) => Number(item.driver_id || 0)).filter(Boolean));
+    const vehicleIds = new Set((assignments || []).map((item) => Number(item.vehicle_id || 0)).filter(Boolean));
+    const idleDriverRows = (drivers || [])
+      .filter((item) => !this.isRetiredStatus(item.status))
+      .filter((item) => !driverIds.has(Number(item.id || 0)))
+      .map((item) => ({
+        id: `idle-driver-${item.id}`,
+        title: item.name || item.driver_name || '司机',
+        meta: [item.driver_code || '-', item.phone || item.mobile || '-'].filter(Boolean).join(' · ')
+      }));
+    const idleVehicleRows = (vehicles || [])
+      .filter((item) => !this.isRetiredStatus(item.status || item.vehicle_status))
+      .filter((item) => !vehicleIds.has(Number(item.id || 0)))
+      .map((item) => ({
+        id: `idle-vehicle-${item.id}`,
+        title: item.suffix || item.vehicle_code || this.lastDigits(item.plate_number || item.plate || item.vehicle_number) || '车辆',
+        meta: [item.vehicle_type || '-', item.vehicle_color || item.color || '-'].filter(Boolean).join(' · ')
+      }));
+    return { idleDriverRows, idleVehicleRows };
+  },
+
+  resourceDriversForAvailability(rows) {
+    return (rows || []).map((item, index) => ({
+      id: item.resourceId || item.id || `resource-driver-${index}`,
+      name: item.title,
+      driver_name: item.title,
+      driver_code: item.driverCode || '',
+      phone: item.phone || item.meta || '',
+      status: item.status || ''
+    }));
+  },
+
+  resourceVehiclesForAvailability(rows) {
+    return (rows || []).map((item, index) => ({
+      id: item.resourceId || item.id || `resource-vehicle-${index}`,
+      suffix: item.suffix || item.title,
+      vehicle_code: item.title,
+      plate_number: item.plate || item.meta || item.title,
+      vehicle_type: item.vehicleType || item.vehicle_type || item.meta || '',
+      vehicle_status: item.status || ''
+    }));
+  },
+
+  buildResourceOverview(library, apiDrivers, apiVehicles) {
+    const librarySummary = (library && library.summary) || {};
+    const libVehicles = Array.isArray(library && library.vehicles) ? library.vehicles : [];
+    const libDrivers = Array.isArray(library && library.drivers) ? library.drivers : [];
+    const vehicles = libVehicles.length ? libVehicles : (apiVehicles || []);
+    const drivers = libDrivers.length ? libDrivers : (apiDrivers || []);
+    const vehicleRows = vehicles
+      .map((item, index) => this.decorateResourceVehicle(item, index))
+      .filter((item) => !this.isHiddenHomeResourceVehicle(item))
+      .sort((a, b) => this.resourceVehicleRowSort(a, b));
+    const driverRows = drivers
+      .filter((item) => !this.isHiddenDriver(item))
+      .map((item, index) => this.decorateResourceDriver(item, index))
+      .sort((a, b) => this.resourceDriverRowSort(a, b));
+    const vehicleInspectionAlerts = this.resourceVehicleAlerts(vehicleRows, 'vehicleInspectionAlertIso', 'vehicleInspectionAlertText', '车检');
+    const threeMonthAlerts = this.resourceVehicleAlerts(vehicleRows, 'threeMonthIso', 'threeMonthText', '3个月点检');
+    const healthAlerts = this.resourceDriverAlerts(driverRows, 'healthIso', 'healthText', 'healthExamDate', '人员体检');
+    const licenseAlerts = this.resourceDriverAlerts(driverRows, 'licenseIso', 'licenseText', '', '驾照');
+    const residenceAlerts = this.resourceDriverAlerts(driverRows, 'residenceIso', 'residenceText', '', '签证');
+    const pdfTotal = vehicleRows.reduce((sum, item) => sum + Number(item.docCount || 0), 0);
+    const rawVehicleTotal = Number(librarySummary.vehicles || librarySummary.vehicleTotal || 0) || vehicles.length;
+    const rawDriverTotal = Number(librarySummary.drivers || librarySummary.driverTotal || 0) || drivers.length;
+    const rawPdfTotal = Number(librarySummary.pdf_files || librarySummary.pdfTotal || 0) || pdfTotal;
+    const rawCategoryTotal = Number(librarySummary.categories || librarySummary.categoryTotal || 0);
+    const categorySet = {};
+    vehicleRows.forEach((item) => (item.categories || []).forEach((category) => { categorySet[category] = true; }));
+    const alertRows = vehicleInspectionAlerts
+      .concat(threeMonthAlerts)
+      .concat(healthAlerts)
+      .concat(licenseAlerts)
+      .concat(residenceAlerts)
+      .sort((a, b) => {
+        const left = Number(a.sortDays);
+        const right = Number(b.sortDays);
+        return (Number.isFinite(left) ? left : 9999) - (Number.isFinite(right) ? right : 9999);
+      });
+    const pdfRows = vehicleRows
+      .filter((item) => Number(item.docCount || 0) > 0)
+      .map((item) => ({
+        id: `pdf-${item.id}`,
+        title: item.title,
+        meta: `${item.docCount || 0} 个 PDF · ${(item.categories || []).slice(0, 3).join('、') || '车辆资料'}`
+      }));
+    return {
+      summary: {
+        vehicleTotal: rawVehicleTotal,
+        driverTotal: rawDriverTotal,
+        pdfTotal: rawPdfTotal,
+        categoryTotal: rawCategoryTotal || Object.keys(categorySet).length,
+        vehicleInspectionDue: vehicleInspectionAlerts.length,
+        threeMonthDue: threeMonthAlerts.length,
+        healthDue: healthAlerts.length,
+        licenseDue: licenseAlerts.length,
+        residenceDue: residenceAlerts.length,
+        alertTotal: alertRows.length
+      },
+      vehicleInspectionAlerts,
+      threeMonthAlerts,
+      healthAlerts,
+      licenseAlerts,
+      residenceAlerts,
+      vehicleRows,
+      driverRows,
+      pdfRows,
+      alertRows,
+      error: library && library.resourceError ? library.resourceError : ''
+    };
+  },
+
+  lastDigits(value) {
+    const matches = String(value || '').match(/\d+/g);
+    if (!matches || !matches.length) return '';
+    const suffix = matches.join('').slice(-4);
+    return suffix.replace(/^0+(?=\d)/, '');
+  },
+
+  decorateResourceVehicle(vehicle, index) {
+    const docs = Array.isArray(vehicle.docs || vehicle.files) ? (vehicle.docs || vehicle.files) : [];
+    const categories = docs.map((doc) => doc.category || '其他').filter(Boolean);
+    const vehicleInspection = this.normalizeResourceDate(vehicle.vehicle_inspection_due_date || vehicle.shaken_due_date || vehicle['车检到期'] || vehicle['車検満了日']);
+    const latestThreeMonth = this.latestResourceDocDate(docs, '3ヶ月点検')
+      || this.normalizeResourceDate(vehicle.three_month_inspection_date || vehicle.latest_inspection_date || vehicle['3ヶ月点検日期']);
+    const latestVehicleInspection = this.latestResourceDocDate(docs, '車検')
+      || this.latestResourceDocDate(docs, '车检')
+      || this.latestResourceDocDate(docs, '自動車檢查証記録事項')
+      || this.latestResourceDocDate(docs, '自動車検査証記録事項')
+      || this.latestResourceDocDate(docs, '自動車')
+      || this.latestResourceDocDate(docs, '12ヶ月点検')
+      || this.normalizeResourceDate(vehicle.shaken_date || vehicle.annual_inspection_date || vehicle.latest_vehicle_inspection_date || vehicle['車検日期'] || vehicle['12ヶ月点検日期']);
+    const nextRequired = this.nextResourceVehicleNode(vehicleInspection, latestThreeMonth, latestVehicleInspection);
+    const vehicleInspectionAlertIso = nextRequired.type === 'vehicle' && vehicleInspection && nextRequired.date ? nextRequired.date.iso : '';
+    const threeMonthIso = nextRequired.type === 'inspection' && nextRequired.date ? nextRequired.date.iso : '';
+    const riskDays = [this.resourceDaysUntil(vehicleInspectionAlertIso), this.resourceDaysUntil(threeMonthIso)]
+      .filter((value) => value !== null && value <= RESOURCE_VEHICLE_REMINDER_DAYS)
+      .sort((a, b) => a - b)[0];
+    const plate = vehicle.plate_number || vehicle.plate || vehicle['车牌号'] || '';
+    const suffix = vehicle.suffix || vehicle['后四位'] || this.lastDigits(plate);
+    const vehicleType = vehicle.vehicle_type || vehicle.car_model || vehicle['车型'] || '';
+    const officeText = vehicle.office || vehicle.branch || vehicle.sales_office || vehicle.vehicle_group || vehicle['所属営業所'] || vehicle['事务所'] || '';
+    const officeType = this.officeTypeForResource([officeText, plate, suffix, vehicleType].join(' '));
+    return {
+      id: vehicle.id || vehicle.folder || vehicle.plate_number || index,
+      resourceId: vehicle.id || '',
+      title: suffix || plate || '车辆',
+      vehicleKey: suffix || vehicle.id || vehicle.folder || plate || '',
+      suffix,
+      plate,
+      vehicleType,
+      officeText,
+      officeType,
+      officeLabel: this.officeLabel(officeType),
+      meta: [plate, vehicleType]
+        .filter(Boolean).join(' · ') || '车辆资料',
+      docCount: docs.length,
+      categories,
+      vehicleInspectionIso: vehicleInspection ? vehicleInspection.iso : '',
+      vehicleInspectionText: vehicleInspection ? vehicleInspection.text : '',
+      latestVehicleInspectionIso: latestVehicleInspection ? latestVehicleInspection.iso : '',
+      latestVehicleInspectionText: latestVehicleInspection ? latestVehicleInspection.text : '',
+      nextRequiredType: nextRequired.type,
+      nextRequiredLabel: nextRequired.label,
+      nextRequiredIso: nextRequired.date ? nextRequired.date.iso : '',
+      nextRequiredText: nextRequired.date ? nextRequired.date.text : '',
+      vehicleInspectionAlertIso,
+      vehicleInspectionAlertText: vehicleInspectionAlertIso ? nextRequired.date.text : '',
+      threeMonthIso,
+      threeMonthText: nextRequired.type === 'inspection' && nextRequired.date ? nextRequired.date.text : '',
+      latestThreeMonthIso: latestThreeMonth ? latestThreeMonth.iso : '',
+      latestThreeMonthText: latestThreeMonth ? latestThreeMonth.text : '',
+      riskText: riskDays === undefined ? '' : this.resourceDueText(riskDays),
+      riskTone: riskDays === undefined ? '' : (riskDays < 0 ? 'danger' : riskDays <= 7 ? 'warning' : 'normal')
+    };
+  },
+
+  isHiddenHomeResourceVehicle(vehicle) {
+    const text = [
+      vehicle && vehicle.id,
+      vehicle && vehicle.title,
+      vehicle && vehicle.meta
+    ].filter(Boolean).join(' ');
+    return HOME_HIDDEN_RESOURCE_VEHICLE_TAILS.some((tail) => text.indexOf(tail) >= 0);
+  },
+
+  isHiddenDriver(driver) {
+    const text = [
+      driver && driver.name,
+      driver && driver.driver_name,
+      driver && driver.display_name,
+      driver && driver.title,
+      driver && driver['運転手名']
+    ].filter(Boolean).join('');
+    const normalized = this.normalizeHiddenDriverName(text);
+    if (!normalized) return false;
+    return HIDDEN_DRIVER_NAMES.some((name) => {
+      const target = this.normalizeHiddenDriverName(name);
+      return normalized === target || normalized.indexOf(target) >= 0 || target.indexOf(normalized) >= 0;
+    });
+  },
+
+  normalizeHiddenDriverName(value) {
+    return String(value || '').replace(/[\s\u3000()（）·・]/g, '');
+  },
+
+  decorateResourceDriver(driver, index) {
+    const healthDate = driver.health_check_date || driver['健康诊断日期'] || '';
+    const healthDue = driver.health_check_due_date || this.addDays(healthDate, 365);
+    const health = this.normalizeResourceDate(healthDue);
+    const license = this.normalizeResourceDate(driver.license_due_date || driver.license_expiry_date || driver['免许有効期限']);
+    const residence = this.normalizeResourceDate(driver.residence_due_date || driver.residence_expiry_date || driver['再留期限有效日期'] || driver['在留期限有效日期']);
+    const healthDays = health ? this.resourceDaysUntil(health.iso) : null;
+    const rowId = driver.id || driver.driver_code || driver.code || driver.name || index;
+    const officeText = driver.office || driver.branch || driver.sales_office || driver['所属営業所'] || '';
+    const officeType = this.officeTypeForResource([officeText, driver.name, driver.driver_name, driver.driver_code, driver.code].join(' '));
+    return {
+      id: String(rowId),
+      resourceId: driver.id || '',
+      title: driver.name || driver.driver_name || driver['運転手名'] || '人员',
+      driverCode: driver.driver_code || driver.code || driver['運転手ID'] || '',
+      phone: driver.phone || driver.mobile || driver['携帯電話番号'] || '',
+      status: driver.status || driver.driver_status || driver['状態'] || '',
+      healthExamDate: healthDate,
+      officeText,
+      officeType,
+      officeLabel: this.officeLabel(officeType),
+      meta: [driver.driver_code || driver.code || driver['運転手ID'], driver.phone || driver.mobile || driver['携帯電話番号']]
+        .filter(Boolean).join(' · ') || '人员资料',
+      healthIso: health ? health.iso : '',
+      healthText: health ? health.text : '',
+      licenseIso: license ? license.iso : '',
+      licenseText: license ? license.text : '',
+      residenceIso: residence ? residence.iso : '',
+      residenceText: residence ? residence.text : '',
+      riskText: healthDays !== null && healthDays <= RESOURCE_DRIVER_HEALTH_REMINDER_DAYS ? this.resourceDueText(healthDays) : '',
+      riskTone: healthDays !== null && healthDays <= RESOURCE_DRIVER_HEALTH_REMINDER_DAYS ? (healthDays < 0 ? 'danger' : healthDays <= 7 ? 'warning' : 'normal') : ''
+    };
+  },
+
+  officeTypeForResource(value) {
+    const text = String(value || '').toLowerCase();
+    if (text.indexOf('京都') >= 0 || text.indexOf('kyoto') >= 0) return 'kyoto';
+    if (text.indexOf('大阪') >= 0 || text.indexOf('osaka') >= 0 || text.indexOf('なにわ') >= 0) return 'osaka';
+    return '';
+  },
+
+  officeLabel(type) {
+    return { osaka: '大阪', kyoto: '京都' }[type] || '';
+  },
+
+  matchesResourceOfficeFilter(item, officeFilter) {
+    if (!officeFilter || officeFilter === 'all') return true;
+    return String(item && item.officeType || '') === officeFilter;
+  },
+
+  filterResourceRowsByOffice(vehicleRows, driverRows, officeFilter) {
+    return {
+      vehicles: (vehicleRows || []).filter((item) => this.matchesResourceOfficeFilter(item, officeFilter)),
+      drivers: (driverRows || []).filter((item) => this.matchesResourceOfficeFilter(item, officeFilter))
+    };
+  },
+
+  resourceVehicleAlerts(rows, isoKey, textKey, label) {
+    return (rows || [])
+      .map((item) => {
+        const days = this.resourceDaysUntil(item[isoKey]);
+        if (days === null || days > RESOURCE_VEHICLE_REMINDER_DAYS) return null;
+        return {
+          id: `${label}-${item.id}`,
+          title: item.title,
+          vehicleKey: item.vehicleKey || item.suffix || item.title,
+          vehicleInspectionIso: item.vehicleInspectionIso || '',
+          vehicleInspectionText: item.vehicleInspectionText || '',
+          latestVehicleInspectionIso: item.latestVehicleInspectionIso || '',
+          latestVehicleInspectionText: item.latestVehicleInspectionText || '',
+          threeMonthIso: item.threeMonthIso || '',
+          threeMonthText: item.threeMonthText || '',
+          latestThreeMonthIso: item.latestThreeMonthIso || '',
+          latestThreeMonthText: item.latestThreeMonthText || '',
+          alertType: label === '车检' ? 'vehicle' : 'inspection',
+          meta: `${item[textKey] || '-'} · ${label}`,
+          status: this.resourceDueText(days),
+          sortDays: days,
+          tone: days < 0 ? 'danger' : days <= 7 ? 'warning' : 'normal'
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.sortDays - b.sortDays);
+  },
+
+  resourceDriverAlerts(rows, isoKey, textKey, examDateKey, label) {
+    return (rows || [])
+      .map((item) => {
+        const days = this.resourceDaysUntil(item[isoKey]);
+        if (days === null || days > 30) return null;
+        return {
+          id: `${label}-${item.id}`,
+          driverId: item.id,
+          title: item.title,
+          driverCode: item.driverCode || '',
+          healthExamDate: examDateKey ? (item[examDateKey] || '') : (item.healthExamDate || ''),
+          healthText: item.healthText || '',
+          licenseIso: item.licenseIso || '',
+          licenseText: item.licenseText || '',
+          residenceIso: item.residenceIso || '',
+          residenceText: item.residenceText || '',
+          alertType: label === '人员体检' ? 'health' : (label === '签证' ? 'residence' : 'license'),
+          alertLabel: label,
+          meta: `${item[textKey] || '-'} · ${label}`,
+          status: this.resourceDueText(days),
+          sortDays: days,
+          tone: days < 0 ? 'danger' : days <= 7 ? 'warning' : 'normal'
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.sortDays - b.sortDays);
+  },
+
+  resourceVehicleRowSort(a, b) {
+    const left = this.resourceVehicleRowScore(a);
+    const right = this.resourceVehicleRowScore(b);
+    return left - right || String(a.title || '').localeCompare(String(b.title || ''), 'zh-Hans-CN');
+  },
+
+  resourceVehicleRowScore(item) {
+    const days = [
+      this.resourceDaysUntil(item.vehicleInspectionAlertIso),
+      this.resourceDaysUntil(item.threeMonthIso)
+    ].filter((value) => value !== null && value <= RESOURCE_VEHICLE_REMINDER_DAYS);
+    return days.length ? Math.min.apply(null, days) : 9999;
+  },
+
+  resourceDriverRowSort(a, b) {
+    const left = this.resourceDriverRowScore(a);
+    const right = this.resourceDriverRowScore(b);
+    return left - right || String(a.title || '').localeCompare(String(b.title || ''), 'zh-Hans-CN');
+  },
+
+  resourceDriverRowScore(item) {
+    const days = this.resourceDaysUntil(item.healthIso);
+    return days !== null && days <= RESOURCE_DRIVER_HEALTH_REMINDER_DAYS ? days : 9999;
+  },
+
+  latestResourceDocDate(docs, keyword) {
+    const dates = (docs || [])
+      .filter((doc) => String(doc.category || doc.name || '').indexOf(keyword) >= 0)
+      .map((doc) => this.normalizeResourceDate(doc.date || doc.name))
+      .filter(Boolean)
+      .sort((a, b) => String(b.iso).localeCompare(String(a.iso)));
+    return dates[0] || null;
+  },
+
+  nextResourceVehicleNode(vehicleInspectionDue, latestThreeMonthDate, latestVehicleInspectionDate) {
+    const nextVehicleInspection = vehicleInspectionDue
+      || (latestVehicleInspectionDate ? this.addResourceMonths(latestVehicleInspectionDate.iso, 12) : null);
+    const cycleStart = vehicleInspectionDue
+      ? this.addResourceMonths(vehicleInspectionDue.iso, -12)
+      : latestVehicleInspectionDate
+      || (nextVehicleInspection ? this.addResourceMonths(nextVehicleInspection.iso, -12) : null);
+    if (!cycleStart) {
+      const fallback = latestThreeMonthDate ? this.addResourceMonths(latestThreeMonthDate.iso, 3) : nextVehicleInspection;
+      return {
+        type: fallback === nextVehicleInspection ? 'vehicle' : 'inspection',
+        label: fallback === nextVehicleInspection ? '车检' : '3个月点检',
+        date: fallback
+      };
+    }
+    const completedIso = [cycleStart, latestThreeMonthDate]
+      .filter(Boolean)
+      .map((item) => item.iso)
+      .sort()
+      .pop();
+    const nodes = [
+      { type: 'inspection', label: '3个月点检', date: this.addResourceMonths(cycleStart.iso, 3) },
+      { type: 'inspection', label: '3个月点检', date: this.addResourceMonths(cycleStart.iso, 6) },
+      { type: 'inspection', label: '3个月点检', date: this.addResourceMonths(cycleStart.iso, 9) },
+      { type: 'vehicle', label: '车检', date: nextVehicleInspection || this.addResourceMonths(cycleStart.iso, 12) }
+    ]
+      .filter((item) => item.date)
+      .sort((a, b) => String(a.date.iso).localeCompare(String(b.date.iso)));
+    const vehicleNode = nodes.find((item) => item.type === 'vehicle');
+    const vehicleDays = vehicleNode ? this.resourceDaysUntil(vehicleNode.date.iso) : null;
+    if (vehicleNode && vehicleDays !== null && vehicleDays <= RESOURCE_VEHICLE_REMINDER_DAYS) return vehicleNode;
+    const pendingNodes = nodes.filter((item) => !completedIso || item.date.iso > completedIso);
+    const overdueNodes = pendingNodes
+      .map((item) => ({ ...item, days: this.resourceDaysUntil(item.date.iso) }))
+      .filter((item) => item.days !== null && item.days < 0)
+      .sort((a, b) => String(b.date.iso).localeCompare(String(a.date.iso)));
+    if (overdueNodes.length) {
+      const node = overdueNodes[0];
+      return { type: node.type, label: node.label, date: node.date };
+    }
+    const next = pendingNodes.find((item) => {
+      const days = this.resourceDaysUntil(item.date.iso);
+      return days === null || days <= RESOURCE_VEHICLE_REMINDER_DAYS;
+    }) || pendingNodes[0];
+    if (next) return next;
+    const nextCycleBase = nextVehicleInspection || cycleStart;
+    return { type: 'inspection', label: '3个月点检', date: this.addResourceMonths(nextCycleBase.iso, 3) };
+  },
+
+  addResourceMonths(dateText, months) {
+    const normalized = this.normalizeResourceDate(dateText);
+    if (!normalized) return null;
+    const parts = normalized.iso.split('-').map((item) => Number(item));
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    date.setMonth(date.getMonth() + months);
+    return this.resourceDateObject(date.getFullYear(), date.getMonth() + 1, date.getDate());
+  },
+
+  normalizeResourceDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw || raw === '-' || /^\d{1,4}$/.test(raw)) return null;
+    let match = raw.match(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+    if (match) return this.resourceDateObject(Number(match[1]), Number(match[2]), Number(match[3]));
+    match = raw.match(/令和\s*(\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
+    if (match) return this.resourceDateObject(2018 + Number(match[1]), Number(match[2]), Number(match[3]));
+    match = raw.match(/R\s*(\d)(\d{2})(\d{2})/i);
+    if (match) return this.resourceDateObject(2018 + Number(match[1]), Number(match[2]), Number(match[3]));
+    match = raw.match(/20(\d{2})(\d{2})(\d{2})/);
+    if (match) return this.resourceDateObject(2000 + Number(match[1]), Number(match[2]), Number(match[3]));
+    return null;
+  },
+
+  resourceDateObject(year, month, day) {
+    if (!year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return { iso: this.formatDate(date), text: `令和${year - 2018}年${month}月${day}日` };
+  },
+
+  resourceDaysUntil(dateText) {
+    if (!dateText) return null;
+    const target = new Date(`${dateText}T00:00:00`);
+    if (Number.isNaN(target.getTime())) return null;
+    const today = new Date();
+    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return Math.ceil((target.getTime() - base.getTime()) / 86400000);
+  },
+
+  resourceDueText(days) {
+    if (days < 0) return `已过期 ${Math.abs(days)} 天`;
+    if (days === 0) return '今天到期';
+    return `${days} 天后`;
+  },
+
+  addDays(dateText, days) {
+    const normalized = this.normalizeResourceDate(dateText);
+    if (!normalized) return '';
+    const parts = normalized.iso.split('-').map((item) => Number(item));
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    date.setDate(date.getDate() + days);
+    return this.formatDate(date);
+  },
+
+  resourceAlertSort(status) {
+    const match = String(status || '').match(/-?\d+/);
+    return match ? Number(match[0]) : 999;
+  },
+
+  buildVehicleTypeRows(vehicles, idleVehicles) {
+    const groups = {};
+    (vehicles || []).forEach((item) => {
+      const label = this.vehicleTypeBucket(item);
+      if (!groups[label]) groups[label] = { label, idle: 0, total: 0 };
+      groups[label].total += 1;
+    });
+    (idleVehicles || []).forEach((item) => {
+      const label = this.vehicleTypeBucket(item);
+      if (!groups[label]) groups[label] = { label, idle: 0, total: 0 };
+      groups[label].idle += 1;
+    });
+    return Object.keys(groups)
+      .map((key) => groups[key])
+      .filter((item) => item.total > 0)
+      .sort((a, b) => {
+        const order = { '10座': 1, Alphard: 2 };
+        return (order[a.label] || 5) - (order[b.label] || 5) || b.total - a.total;
+      });
+  },
+
+  vehicleTypeBucket(vehicle) {
+    const text = [
+      vehicle.vehicle_type,
+      vehicle.vehicle_model,
+      vehicle.model,
+      vehicle.body_type,
+      vehicle.seat_count,
+      vehicle.capacity,
+      vehicle.note,
+      vehicle.remark
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (text.indexOf('alphard') >= 0 || text.indexOf('アルファ') >= 0 || text.indexOf('阿尔法') >= 0 || text.indexOf('3代') >= 0 || text.indexOf('7座') >= 0) return 'Alphard';
+    return '10座';
+  },
+
+  isRetiredStatus(status) {
+    const text = String(status || '').toLowerCase();
+    return text.indexOf('retired') >= 0 || text.indexOf('deleted') >= 0 || text.indexOf('removed') >= 0 || text.indexOf('减车') >= 0;
+  },
+
+  detectPhoneRegion(phone) {
+    const raw = String(phone || '').trim();
+    if (!raw) return '';
+    const compact = raw.replace(/\s+/g, '');
+    if (compact.indexOf('+81') === 0) return '日本';
+    if (compact.indexOf('+86') === 0) return '中国';
+    if (compact.indexOf('+852') === 0) return '香港';
+    if (compact.indexOf('+853') === 0) return '澳门';
+    if (compact.indexOf('+886') === 0) return '台湾';
+    if (compact.indexOf('+82') === 0) return '韩国';
+    if (compact.indexOf('+60') === 0) return '马来西亚';
+    if (compact.indexOf('+65') === 0) return '新加坡';
+    if (compact.indexOf('+66') === 0) return '泰国';
+    if (compact.indexOf('+1') === 0) return '北美';
+    if (compact.indexOf('+44') === 0) return '英国';
+    if (compact.indexOf('+61') === 0) return '澳大利亚';
+    if (compact.indexOf('+971') === 0) return '阿联酋';
+    return '';
+  },
+
+  decorateUnassignedOrder(item) {
+    const status = item.kind === 'draft' ? 'parsed' : (item.dispatch_status || 'unassigned');
+    return Object.assign({}, item, {
+      id: item.id,
+      title: item.oid || item.order_id || `订单 ${item.id}`,
+      meta: `${item.order_date || '-'} ${item.start_time || '--:--'} · ${this.statusText(status)}`,
+      body: `${item.pickup_location || '-'} -> ${item.dropoff_location || '-'}`,
+      action: 'dispatch',
+      actionText: '委派'
+    });
+  },
+
+  currentTenantId() {
+    const session = this.data.session || api.getSession() || {};
+    return Number(
+      (session.user && session.user.tenant_id)
+      || (session.dispatcher && session.dispatcher.tenant_id)
+      || 0
+    );
+  },
+
+  sortDispatchRows(rows) {
+    return rows.slice().sort((a, b) => {
+      const left = `${a.order_date || ''} ${a.start_time || ''} ${a.pickup_location || ''}`;
+      const right = `${b.order_date || ''} ${b.start_time || ''} ${b.pickup_location || ''}`;
+      return left.localeCompare(right, 'zh-Hans-CN');
+    });
   },
 
   buildDueRows(driver) {
@@ -561,7 +1412,7 @@ Page({
 
   dueRow(title, dateText, kind) {
     const days = this.daysUntil(dateText);
-    if (days === null || days > 30) return null;
+        if (days === null || days > RESOURCE_DRIVER_HEALTH_REMINDER_DAYS) return null;
     return {
       id: `due-${kind}`,
       title,
@@ -607,13 +1458,314 @@ Page({
 
   buildPanel(mode, todayOrders, allOrders, pending, exceptions, unread) {
     const config = {
-      orders: { title: '今日订单', hint: '今天的订单集中显示在这里，点击订单进入任务处理。', rows: todayOrders },
-      all: { title: '全部订单', hint: '已分配给你的订单全部显示在这里，点击订单进入任务处理。', rows: allOrders },
-      pending: { title: '待确认派单', hint: '确认后订单状态会变为已接单。', rows: pending },
-      exceptions: { title: '异常订单', hint: '只显示需要司机关注的异常。', rows: exceptions },
-      unread: { title: '未读通知', hint: '体检、驾照和需要司机处理的通知显示在这里。', rows: unread }
+      orders: { title: '今日订单', hint: '今天的订单集中显示在这里，点击订单进入任务处理。', rows: todayOrders, unit: '条' },
+      all: { title: '全部订单', hint: '已分配给你的订单全部显示在这里，点击订单进入任务处理。', rows: allOrders, unit: '条' },
+      pending: { title: '待确认派单', hint: '确认后订单状态会变为已接单。', rows: pending, unit: '条' },
+      exceptions: { title: '异常订单', hint: '只显示需要司机关注的异常。', rows: exceptions, unit: '条' },
+      unread: { title: '新通知', hint: '只显示还未读的新通知。', rows: this.unreadNotificationRows(unread), unit: '条' }
     };
     return config[mode] || config.orders;
+  },
+
+  buildDispatchPanel(mode, unassignedRows, unread, allRows, driverStats, resourceRows) {
+    const workloadRows = this.buildWorkloadPanelRows(driverStats || []);
+    const config = {
+      orders: { title: '待委派订单', hint: '未派车订单集中显示在这里，点击订单继续处理。', rows: unassignedRows, unit: '条' },
+      all: { title: '全部订单', hint: '已派、待派和待确认的订单集中显示在这里。', rows: allRows || [], unit: '条' },
+      pending: { title: '待委派订单', hint: '请尽快安排司机和车辆。', rows: unassignedRows, unit: '条' },
+      exceptions: { title: '异常订单', hint: '异常订单请到通知或异常中心确认。', rows: [], unit: '条' },
+      unread: { title: '新通知', hint: '只显示大厅成交、派车和运行提醒的新通知。', rows: this.unreadNotificationRows(unread), unit: '条' },
+      workload: { title: '联勤司机排行', hint: '连续出勤超过 10 天的司机，按连续天数从多到少排列。', rows: workloadRows, unit: '人' },
+      idle: { title: '今日空闲', hint: '左侧为空闲司机，右侧为空闲车辆。', rows: [{ id: 'idle-drivers' }, { id: 'idle-vehicles' }], unit: '组' },
+      resources: { title: '车辆 / 人员资料总览', hint: '车辆档案、人员资料、PDF文件和到期提醒集中显示在这里。', rows: resourceRows || [], unit: '项' }
+    };
+    return config[mode] || config.orders;
+  },
+
+  toggleResourceSection(e) {
+    const section = e.currentTarget.dataset.section || '';
+    this.setData({
+      resourceExpandedSection: this.data.resourceExpandedSection === section ? '' : section
+    });
+  },
+
+  switchResourceFocus(e) {
+    const section = e.currentTarget.dataset.section || 'alerts';
+    this.setData({
+      resourceFocus: this.data.resourceFocus === section ? 'alerts' : section,
+      resourceExpandedSection: section,
+      expandedHomeVehicleId: '',
+      expandedHomeDriverId: ''
+    });
+  },
+
+  filterResourceAlertRows(rows, filter) {
+    const selected = String(filter || 'all');
+    if (selected === 'all') return (rows || []).slice();
+    return (rows || []).filter((item) => item && item.alertType === selected);
+  },
+
+  selectResourceAlertFilter(e) {
+    const selected = String((e.currentTarget.dataset || {}).filter || 'all');
+    const resourceAlertFilter = this.data.resourceAlertFilter === selected ? 'all' : selected;
+    this.setData({
+      resourceAlertFilter,
+      visibleResourceAlertRows: this.filterResourceAlertRows(this.data.resourceAlertRows, resourceAlertFilter),
+      expandedHomeVehicleId: '',
+      expandedHomeDriverId: ''
+    });
+  },
+
+  clearResourceAlertFilter() {
+    if (this.data.resourceAlertFilter === 'all') return;
+    this.setData({
+      resourceAlertFilter: 'all',
+      visibleResourceAlertRows: this.filterResourceAlertRows(this.data.resourceAlertRows, 'all'),
+      expandedHomeVehicleId: '',
+      expandedHomeDriverId: ''
+    });
+  },
+
+  switchResourceOffice(e) {
+    const resourceOfficeFilter = (e.currentTarget.dataset || {}).office || 'all';
+    const filtered = this.filterResourceRowsByOffice(
+      this.data.resourceAllVehicleRows || [],
+      this.data.resourceAllDriverRows || [],
+      resourceOfficeFilter
+    );
+    this.setData({
+      resourceOfficeFilter,
+      resourceVehicleRows: filtered.vehicles,
+      resourceDriverRows: filtered.drivers,
+      expandedHomeVehicleId: '',
+      expandedHomeDriverId: ''
+    });
+  },
+
+  toggleHomeResourceVehicle(e) {
+    const id = String((e.currentTarget.dataset || {}).id || '');
+    if (!id) return;
+    this.setData({ expandedHomeVehicleId: this.data.expandedHomeVehicleId === id ? '' : id });
+  },
+
+  toggleHomeResourceDriver(e) {
+    const id = String((e.currentTarget.dataset || {}).id || '');
+    if (!id) return;
+    this.setData({ expandedHomeDriverId: this.data.expandedHomeDriverId === id ? '' : id });
+  },
+
+  noopTap() {},
+
+  updateHomeVehicleInspectionDate(e) {
+    const dataset = e.currentTarget.dataset || {};
+    const vehicleKey = dataset.key || dataset.title || '';
+    const inspectionType = dataset.type || 'inspection';
+    const inspectionDate = e.detail.value || '';
+    if (!vehicleKey || !inspectionDate) return;
+    const label = inspectionType === 'vehicle' ? '车检' : '3个月点检';
+    wx.showModal({
+      title: `更新${label}日期`,
+      content: `${dataset.title || vehicleKey}\n${label}日期更新为 ${inspectionDate}？`,
+      confirmText: '更新',
+      success: (res) => {
+        if (!res.confirm) return;
+        wx.showLoading({ title: '更新中' });
+        api.updateResourceVehicleInspection({
+          vehicle_key: vehicleKey,
+          inspection_type: inspectionType,
+          inspection_date: inspectionDate
+        }).then(() => {
+          wx.hideLoading();
+          wx.showToast({ title: '已更新', icon: 'success' });
+          this.refreshResourceOverview();
+        }).catch((err) => {
+          wx.hideLoading();
+          wx.showToast({ title: err && err.error ? err.error : '更新失败', icon: 'none' });
+        });
+      }
+    });
+  },
+
+  uploadHomeVehicleInspectionDocument(e) {
+    const dataset = e.currentTarget.dataset || {};
+    const vehicleKey = dataset.key || dataset.title || '';
+    const inspectionType = dataset.type || 'inspection';
+    const inspectionDate = dataset.date || '';
+    const label = inspectionType === 'vehicle' ? '车检' : '3个月点检';
+    if (!vehicleKey) return;
+    if (!inspectionDate) {
+      wx.showToast({ title: `请先选择${label}日期`, icon: 'none' });
+      return;
+    }
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'all',
+      success: (chooseRes) => {
+        const file = chooseRes.tempFiles && chooseRes.tempFiles[0];
+        if (!file || !file.path) return;
+        wx.getFileSystemManager().readFile({
+          filePath: file.path,
+          encoding: 'base64',
+          success: (readRes) => {
+            wx.showModal({
+              title: `上传${label}资料`,
+              content: `${dataset.title || vehicleKey}\n${label}日期 ${inspectionDate}\n${file.name || `${label}资料`}`,
+              confirmText: '上传',
+              success: (modalRes) => {
+                if (!modalRes.confirm) return;
+                wx.showLoading({ title: '上传中' });
+                api.updateResourceVehicleInspection({
+                  vehicle_key: vehicleKey,
+                  inspection_type: inspectionType,
+                  inspection_date: inspectionDate,
+                  file_name: file.name || label,
+                  content_type: this.contentTypeForFile(file.name || ''),
+                  file_base64: readRes.data
+                }).then(() => {
+                  wx.hideLoading();
+                  wx.showToast({ title: '已上传', icon: 'success' });
+                  this.refreshResourceOverview();
+                }).catch((err) => {
+                  wx.hideLoading();
+                  wx.showToast({ title: err && err.error ? err.error : '上传失败', icon: 'none' });
+                });
+              }
+            });
+          },
+          fail: () => wx.showToast({ title: '读取文件失败', icon: 'none' })
+        });
+      }
+    });
+  },
+
+  updateHomeDriverHealthDate(e) {
+    const dataset = e.currentTarget.dataset || {};
+    const driverKey = dataset.key || dataset.title || '';
+    const healthCheckDate = e.detail.value || '';
+    if (!driverKey || !healthCheckDate) return;
+    wx.showModal({
+      title: '更新体检日期',
+      content: `${dataset.title || driverKey}\n体检日期更新为 ${healthCheckDate}？`,
+      confirmText: '更新',
+      success: (res) => {
+        if (!res.confirm) return;
+        wx.showLoading({ title: '更新中' });
+        api.updateResourceDriverHealth({
+          driver_key: driverKey,
+          health_check_date: healthCheckDate
+        }).then(() => {
+          wx.hideLoading();
+          wx.showToast({ title: '已更新', icon: 'success' });
+          this.updateHomeDriverHealthLocal(driverKey, healthCheckDate);
+        }).catch((err) => {
+          wx.hideLoading();
+          wx.showToast({ title: err && err.error ? err.error : '更新失败', icon: 'none' });
+        });
+      }
+    });
+  },
+
+  updateHomeDriverHealthLocal(driverKey, healthCheckDate) {
+    const matchesDriver = (item) => {
+      const key = String(driverKey || '');
+      return key && (
+        String(item.driverCode || '') === key ||
+        String(item.title || '') === key ||
+        String(item.id || '') === key ||
+        String(item.driverId || '') === key
+      );
+    };
+    const patchItem = (item) => {
+      if (!matchesDriver(item)) return item;
+      return Object.assign({}, item, {
+        healthExamDate: healthCheckDate,
+        healthText: healthCheckDate
+      });
+    };
+    const resourceAllDriverRows = (this.data.resourceAllDriverRows || []).map(patchItem);
+    const filtered = this.filterResourceRowsByOffice(
+      this.data.resourceAllVehicleRows || [],
+      resourceAllDriverRows,
+      this.data.resourceOfficeFilter
+    );
+    this.setData({
+      resourceAllDriverRows,
+      resourceDriverRows: filtered.drivers,
+      resourceHealthAlerts: (this.data.resourceHealthAlerts || []).map(patchItem)
+    });
+  },
+
+  uploadHomeDriverHealthDocument(e) {
+    const dataset = e.currentTarget.dataset || {};
+    const driverKey = dataset.key || dataset.title || '';
+    const healthCheckDate = dataset.date || '';
+    if (!driverKey) return;
+    if (!healthCheckDate) {
+      wx.showToast({ title: '请先选择体检日期', icon: 'none' });
+      return;
+    }
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'all',
+      success: (chooseRes) => {
+        const file = chooseRes.tempFiles && chooseRes.tempFiles[0];
+        if (!file || !file.path) return;
+        wx.getFileSystemManager().readFile({
+          filePath: file.path,
+          encoding: 'base64',
+          success: (readRes) => {
+            wx.showModal({
+              title: '上传体检资料',
+              content: `${dataset.title || driverKey}\n体检日期 ${healthCheckDate}\n${file.name || '体检资料'}`,
+              confirmText: '上传',
+              success: (modalRes) => {
+                if (!modalRes.confirm) return;
+                wx.showLoading({ title: '上传中' });
+                api.updateResourceDriverHealth({
+                  driver_key: driverKey,
+                  health_check_date: healthCheckDate,
+                  file_name: file.name || 'health-check',
+                  content_type: this.contentTypeForFile(file.name || ''),
+                  file_base64: readRes.data
+                }).then(() => {
+                  wx.hideLoading();
+                  wx.showToast({ title: '已上传', icon: 'success' });
+                  this.refreshResourceOverview();
+                }).catch((err) => {
+                  wx.hideLoading();
+                  wx.showToast({ title: err && err.error ? err.error : '上传失败', icon: 'none' });
+                });
+              }
+            });
+          },
+          fail: () => wx.showToast({ title: '读取文件失败', icon: 'none' })
+        });
+      }
+    });
+  },
+
+  contentTypeForFile(fileName) {
+    const lower = String(fileName || '').toLowerCase();
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  },
+
+  unreadNotificationRows(rows) {
+    return (rows || []).filter((item) => String(item.rawStatus || item.status || 'unread') !== 'read');
+  },
+
+  buildWorkloadPanelRows(driverStats) {
+    return (driverStats || []).map((item, index) => ({
+      id: `workload-${item.driver_id || index}`,
+      kind: 'workload',
+      title: item.driver_name || '司机',
+      meta: `连续 ${item.continuous_days || 0} 天 · 本月 ${item.month_orders || 0} 单`,
+      body: `今日 ${item.today_orders || 0} 单 · 本月休息 ${item.rest_days || 0} 天`,
+      priority: item.continuous_days > 13 ? 'critical' : 'high',
+      actionText: `${item.continuous_days || 0}天`
+    }));
   },
 
   buildOperationsNotificationDetail(notifications) {
@@ -640,7 +1792,7 @@ Page({
   },
 
   statusText(status) {
-    return { assigned: '待确认', confirmed: '已接单', departed: '已出库', arrived: '已到达', in_service: '行驶中', completed: '已完成', returned: '已入库' }[status] || status || '-';
+    return { parsed: '待确认', unassigned: '未派车', assigned: '待确认', confirmed: '已接单', departed: '已出库', arrived: '已到达', in_service: '行驶中', completed: '已完成', returned: '已入库' }[status] || status || '-';
   },
 
   switchOperationsSection(e) {
@@ -665,14 +1817,111 @@ Page({
 
   switchPanel(e) {
     const mode = e.currentTarget.dataset.mode || 'orders';
+    const newNotifications = this.unreadNotificationRows(this.data.notifications || []);
+    if (this.data.canDispatch) {
+      const panel = this.buildDispatchPanel(
+        mode,
+        this.data.unassignedRows || [],
+        newNotifications,
+        this.data.dispatchAllRows || [],
+        this.data.driverStats || [],
+        this.data.resourceAlertRows || []
+      );
+      this.setData({ panelMode: mode, panelTitle: panel.title, panelHint: panel.hint, panelUnit: panel.unit || '条', panelRows: panel.rows });
+      if (mode === 'resources') this.refreshResourceOverview();
+      return;
+    }
     const allOrders = this.data.driverAssignments || [];
     const today = this.formatDate(new Date());
     const todayOrders = allOrders.filter((item) => this.isAssignmentOnDate(item, today));
     const pending = allOrders.filter((item) => item.rawStatus === 'assigned');
     const exceptions = allOrders.filter((item) => ['incident', 'exception', 'delayed'].indexOf(String(item.order_status || item.status || '')) >= 0);
-    const unread = this.data.notifications || [];
+    const unread = newNotifications;
     const panel = this.buildPanel(mode, todayOrders, allOrders, pending, exceptions, unread);
-    this.setData({ panelMode: mode, panelTitle: panel.title, panelHint: panel.hint, panelRows: panel.rows });
+    this.setData({ panelMode: mode, panelTitle: panel.title, panelHint: panel.hint, panelUnit: panel.unit || '条', panelRows: panel.rows });
+    if (mode === 'resources') this.refreshResourceOverview();
+  },
+
+  showHintTip(e) {
+    const tip = (e.currentTarget.dataset || {}).tip || '';
+    if (!tip) return;
+    wx.showModal({
+      title: '说明',
+      content: tip,
+      showCancel: false,
+      confirmText: '知道了'
+    });
+  },
+
+  refreshResourceOverview() {
+    console.info('[dispatch resource refresh start]', {
+      baseUrl: api.getBaseUrl(),
+      role: api.getRole(this.data.session || api.getSession())
+    });
+    api.resourceLibrary()
+      .then((library) => {
+        const summary = (library && library.summary) || {};
+        console.info('[dispatch resource refresh loaded]', {
+          vehicles: Array.isArray(library && library.vehicles) ? library.vehicles.length : 0,
+          drivers: Array.isArray(library && library.drivers) ? library.drivers.length : 0,
+          pdf: summary.pdf_files || summary.pdfTotal || 0
+        });
+        const resourceOverview = this.buildResourceOverview(library || {}, [], []);
+        const visibleResourceAlertRows = this.filterResourceAlertRows(
+          resourceOverview.alertRows,
+          this.data.resourceAlertFilter
+        );
+        const filteredResourceRows = this.filterResourceRowsByOffice(
+          resourceOverview.vehicleRows,
+          resourceOverview.driverRows,
+          this.data.resourceOfficeFilter
+        );
+        const nextData = {
+          resourceSummary: resourceOverview.summary,
+          resourceVehicleAlerts: resourceOverview.vehicleInspectionAlerts,
+          resourceInspectionAlerts: resourceOverview.threeMonthAlerts,
+          resourceHealthAlerts: resourceOverview.healthAlerts,
+          resourceLicenseAlerts: resourceOverview.licenseAlerts,
+          resourceResidenceAlerts: resourceOverview.residenceAlerts,
+          resourceAlertRows: resourceOverview.alertRows,
+          visibleResourceAlertRows,
+          resourceAllVehicleRows: resourceOverview.vehicleRows,
+          resourceAllDriverRows: resourceOverview.driverRows,
+          resourceVehicleRows: filteredResourceRows.vehicles,
+          resourceDriverRows: filteredResourceRows.drivers,
+          resourcePdfRows: resourceOverview.pdfRows,
+          resourceError: resourceOverview.error
+        };
+        if (this.data.panelMode === 'resources') {
+          const panel = this.data.canDispatch
+            ? this.buildDispatchPanel('resources', this.data.unassignedRows || [], this.unreadNotificationRows(this.data.notifications || []), this.data.dispatchAllRows || [], this.data.driverStats || [], resourceOverview.alertRows || [])
+            : this.buildPanel('resources', [], this.data.driverAssignments || [], [], [], []);
+          nextData.panelRows = panel.rows;
+          nextData.panelUnit = panel.unit || this.data.panelUnit;
+        }
+        this.setData(nextData);
+      })
+      .catch((err) => {
+        console.warn('[dispatch resource refresh failed]', err);
+        this.setData({
+          resourceError: err && (err.error || err.detail || err.errMsg) || 'resource_failed'
+        });
+      });
+  },
+
+  onBellTap() {
+    console.info('[dispatch bell tap]');
+    const newNotifications = this.unreadNotificationRows(this.data.notifications || []);
+    const panel = this.data.canDispatch
+      ? this.buildDispatchPanel('unread', this.data.unassignedRows || [], newNotifications, this.data.dispatchAllRows || [], this.data.driverStats || [], this.data.resourceAlertRows || [])
+      : this.buildPanel('unread', [], this.data.driverAssignments || [], [], [], newNotifications);
+    this.setData({
+      panelMode: 'unread',
+      panelTitle: panel.title,
+      panelHint: panel.hint,
+      panelUnit: panel.unit || '条',
+      panelRows: panel.rows
+    });
   },
 
   isAssignmentOnDate(item, date) {
@@ -692,6 +1941,10 @@ Page({
     }
     if (item.action === 'task') {
       this.goTask();
+      return;
+    }
+    if (item.action === 'dispatch') {
+      this.goDispatch();
       return;
     }
     if (item.action === 'profile') {
@@ -786,6 +2039,25 @@ Page({
     });
   },
 
+  onDispatchTaskTap(e) {
+    const index = Number(e.currentTarget.dataset.index || 0);
+    const item = (this.data.dispatchTaskRows || [])[index];
+    if (!item) return;
+    const content = [
+      item.meta,
+      item.body,
+      item.guestLine ? `客人：${item.guestLine}` : '',
+      item.resourceLine ? `执行：${item.resourceLine}` : '',
+      item.remarkPreview ? `备注：${item.remarkPreview}` : ''
+    ].filter(Boolean).join('\n');
+    wx.showModal({
+      title: item.title || '任务详情',
+      content,
+      showCancel: false,
+      confirmText: '知道了'
+    });
+  },
+
   markRelatedAssignmentNotificationsRead(assignment) {
     const session = this.data.session || {};
     const driverId = session.user && session.user.profile_id ? session.user.profile_id : 0;
@@ -840,8 +2112,12 @@ Page({
   },
 
   goInfo(e) {
-    const section = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.section : '';
-    if (section) wx.setStorageSync('operations_info_section', section);
+    const datasetSection = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.section : '';
+    const focusSection = this.data.resourceFocus === 'drivers' || this.data.resourceFocus === 'vehicles'
+      ? this.data.resourceFocus
+      : '';
+    const section = datasetSection || focusSection || 'vehicles';
+    wx.setStorageSync('operations_info_section', section);
     wx.reLaunch({ url: '/package_dispatch/pages/info/index' });
   },
 
@@ -873,23 +2149,38 @@ Page({
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const byDriver = {};
     drivers.forEach((driver) => {
-      byDriver[driver.id] = { driver_id: driver.id, driver_name: driver.name, today_orders: 0, month_orders: 0, active_days: new Set() };
+      byDriver[driver.id] = {
+        driver_id: driver.id,
+        driver_name: driver.name,
+        today_orders: 0,
+        month_orders: 0,
+        month_active_days: new Set(),
+        active_days: new Set()
+      };
     });
     assignments.forEach((item) => {
       const driverId = item.driver_id;
       if (!byDriver[driverId]) return;
-      const day = item.order_date || '';
+      const day = String(item.order_date || '').slice(0, 10);
+      if (!day) return;
+      byDriver[driverId].active_days.add(day);
       if (day === today) byDriver[driverId].today_orders += 1;
       if (day.indexOf(monthPrefix) === 0) {
         byDriver[driverId].month_orders += 1;
-        byDriver[driverId].active_days.add(day);
+        byDriver[driverId].month_active_days.add(day);
       }
     });
-    return Object.values(byDriver)
+    return Object.keys(byDriver)
+      .map((key) => byDriver[key])
       .map((item) => {
         const continuous = this.continuousWorkDays(item.active_days, today);
-        return { ...item, rest_days: Math.max(0, daysInMonth - item.active_days.size), continuous_days: continuous, alert: continuous > 13 };
+        return Object.assign({}, item, {
+          rest_days: Math.max(0, daysInMonth - item.month_active_days.size),
+          continuous_days: continuous,
+          alert: continuous > 10
+        });
       })
+      .filter((item) => item.continuous_days > 10)
       .sort((a, b) => b.continuous_days - a.continuous_days || b.month_orders - a.month_orders || b.today_orders - a.today_orders);
   },
 

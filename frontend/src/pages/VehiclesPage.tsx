@@ -390,11 +390,12 @@ function VehicleTable({
         <p className="text-xs text-slate-500">第一行快速新增；已有单元格双击修改，回车或点击空白处保存。</p>
       </div>
       <div className="max-h-[72vh] overflow-auto">
-        <table className="w-full min-w-[980px] text-center text-sm">
+        <table className="w-full min-w-[1160px] text-center text-sm">
           <thead className="sticky top-0 z-20 bg-slate-50 text-xs font-bold text-slate-500 shadow-[0_1px_0_0_#e5e7eb]">
             <tr>
               <th className="px-4 py-3 text-center">序号</th>
               {cols.map((col) => <th key={col.key} className="px-4 py-3 text-center">{col.label}</th>)}
+              <th className="px-4 py-3 text-center">PDF</th>
               <th className="px-4 py-3 text-center">删除</th>
             </tr>
           </thead>
@@ -415,6 +416,9 @@ function VehicleTable({
                     onSave={(id, field, value) => onSave(id, normalizeVehiclePatch(field, value))}
                   />
                 ))}
+                <td className="px-4 py-3 align-middle">
+                  <ResourceFileLinks row={row} />
+                </td>
                 <td className="px-4 py-3 align-middle">
                   <button
                     type="button"
@@ -460,6 +464,7 @@ function VehicleQuickCreateRow({
       <td className="px-2 py-2"><QuickInput value={draft.vehicle_color || ""} placeholder="白/黑" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, vehicle_color: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.snow_tire || ""} placeholder="普通/雪胎" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, snow_tire: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={statusLabel(draft.status)} placeholder="正常" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, status: parseStatus(value, "vehicle") })} /></td>
+      <td className="px-4 py-3 text-xs text-slate-400">-</td>
       <td className="px-4 py-3">
         <button type="button" disabled={saving || !draft.plate_number?.trim()} onClick={onSave} className="inline-flex h-8 items-center rounded-full bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-40">
           新增
@@ -766,7 +771,7 @@ function DriverTable({
 }) {
   const [editing, setEditing] = useState<EditingCell>(null);
   const [draft, setDraft] = useState<Partial<Driver>>(driverInitial);
-  const cols: Array<{ key: keyof Driver; label: string; render?: (value: string) => ReactNode }> = [
+  const cols: Array<{ key: keyof Driver; label: string; render?: (value: string, row: Driver) => ReactNode }> = [
     { key: "driver_external_id", label: "運転手ID" },
     { key: "office", label: "所属営業所" },
     { key: "name", label: "運転手名" },
@@ -822,7 +827,7 @@ function DriverTable({
                     saving={saving}
                     onStart={setEditing}
                     onSave={(id, field, value) => onSave(id, normalizeDriverPatch(field, value))}
-                    render={(value) => col.render ? col.render(value) : fieldLooksDate(String(col.key)) ? dateWithStatus(value) : value || "-"}
+                    render={(value) => col.render ? col.render(value, row) : fieldLooksDate(String(col.key)) ? dateWithStatus(value) : value || "-"}
                   />
                 ))}
                 <td className="px-4 py-3 align-middle">
@@ -1066,6 +1071,16 @@ function dateWithStatus(value?: string) {
   );
 }
 
+function daysUntil(value?: string) {
+  if (!value) return null;
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  target.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000);
+}
+
 function dateOnly(value?: string) {
   return value || "-";
 }
@@ -1077,6 +1092,97 @@ function fileLinkValue(value?: string) {
       打开
     </a>
   );
+}
+
+type ResourceFileLink = {
+  label: string;
+  url: string;
+};
+
+function ResourceFileLinks({ row }: { row: Vehicle | Driver }) {
+  const files = resourceFiles(row);
+  if (!files.length) return <span className="text-xs text-slate-400">-</span>;
+  return (
+    <div className="flex max-w-[360px] flex-wrap justify-center gap-1.5">
+      {files.map((file, index) => (
+        <a
+          key={`${file.url}-${index}`}
+          className="inline-flex max-w-[170px] items-center rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 transition hover:bg-blue-100 hover:underline"
+          href={file.url}
+          target="_blank"
+          rel="noreferrer"
+          download
+          title={file.label}
+        >
+          <span className="truncate">{shortFileLabel(file.label)}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function resourceFiles(row: Vehicle | Driver): ResourceFileLink[] {
+  const raw = row as Record<string, unknown>;
+  const output: ResourceFileLink[] = [];
+  const lists = [raw.docs, raw.pdf_files, raw.files, raw.documents];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    list.forEach((file, index) => {
+      if (typeof file === "string") {
+        const url = normalizeResourceFileUrl(file);
+        if (url) output.push({ label: `PDF ${index + 1}`, url });
+        return;
+      }
+      if (!file || typeof file !== "object") return;
+      const item = file as Record<string, unknown>;
+      const url = normalizeResourceFileUrl(
+        stringValue(item.download_url) ||
+        stringValue(item.download_path) ||
+        stringValue(item.url) ||
+        stringValue(item.href) ||
+        stringValue(item.file_url) ||
+        stringValue(item.file_key) ||
+        stringValue(item.file_name) ||
+        stringValue(item.name),
+      );
+      if (!url) return;
+      const name = stringValue(item.title) || stringValue(item.file_name) || stringValue(item.name) || `PDF ${index + 1}`;
+      const prefix = [stringValue(item.date), stringValue(item.category)].filter(Boolean).join(" ");
+      output.push({ label: prefix ? `${prefix} ${name}` : name, url });
+    });
+  }
+  [
+    ["免许", raw.license_file_url],
+    ["体检", raw.health_check_file_url],
+    ["PDF", raw.pdf_url],
+    ["资料", raw.file_url],
+    ["下载", raw.download_url],
+  ].forEach(([label, value]) => {
+    const url = normalizeResourceFileUrl(stringValue(value));
+    if (url) output.push({ label: String(label), url });
+  });
+  const seen = new Set<string>();
+  return output.filter((file) => {
+    if (seen.has(file.url)) return false;
+    seen.add(file.url);
+    return true;
+  });
+}
+
+function normalizeResourceFileUrl(value: string) {
+  const raw = stringValue(value);
+  if (!raw || raw === "-") return "";
+  if (/^(https?:|blob:|data:)/i.test(raw) || raw.startsWith("/api/")) return raw;
+  if (raw.startsWith("/")) return raw;
+  return `/api/dispatch-mobile/resource-library/file?file=${encodeURIComponent(raw)}`;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function shortFileLabel(label: string) {
+  return label.length > 24 ? `${label.slice(0, 23)}...` : label;
 }
 
 function recordTextFromDraft(record?: Partial<VehicleInspectionRecord>) {
@@ -1115,9 +1221,24 @@ function maintenanceValue(field: keyof Vehicle, value?: string) {
   return dateWithStatus(value);
 }
 
-function healthCheckDateValue(value?: string) {
+function healthCheckDateValue(value?: string, row?: Driver) {
   if (!value) return "-";
   const expiry = addDays(value, 365);
+  const remaining = typeof row?.health_check_remaining_days === "number" ? row.health_check_remaining_days : daysUntil(expiry);
+  if (remaining !== null) {
+    return (
+      <span className="block text-center">
+        <span className="block">{dateOnly(value)}</span>
+        <span
+          className={`mt-0.5 block text-[11px] font-semibold leading-tight ${
+            remaining < 0 ? "text-red-600" : remaining <= 90 ? "text-emerald-700" : "text-slate-500"
+          }`}
+        >
+          {remaining < 0 ? `已过期 ${Math.abs(remaining)} 天` : `剩余 ${remaining} 天`}
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="block text-center">
       <span className="block">{dateOnly(value)}</span>

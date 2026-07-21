@@ -100,7 +100,7 @@ export function App() {
     orders: <OrdersPage />,
     dispatch: <DispatchPage />,
     auction: <AuctionHallPage />,
-    calendar: <CalendarPage />,
+    calendar: <CalendarPage currentUser={user} />,
     "driver-monitor": <DriverMonitorPage />,
     attendance: <AttendancePage />,
     map: <MapPage />,

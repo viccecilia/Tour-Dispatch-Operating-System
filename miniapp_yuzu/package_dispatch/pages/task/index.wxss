@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .task-page {
   padding-bottom: 150rpx;
@@ -6,47 +6,43 @@
 
 .calendar-panel {
   margin-top: 20rpx;
+  padding: 24rpx;
 }
 
 .calendar-head {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18rpx;
-  min-height: 88rpx;
-  padding-right: 238rpx;
+  gap: 12rpx;
+  margin-bottom: 14rpx;
 }
 
 .calendar-actions {
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: 220rpx;
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8rpx;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .month-toggle {
-  position: absolute;
-  right: 0;
-  top: 58rpx;
-  align-self: flex-end;
   flex: 0 0 auto;
-  min-width: 72rpx;
-  height: 34rpx;
-  line-height: normal;
+  width: 108rpx;
+  min-width: 108rpx;
+  max-width: 108rpx;
+  height: 48rpx;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  border: 0;
   padding: 0 12rpx;
   border-radius: 999rpx;
-  background: #ecfeff;
-  color: #0f766e;
-  font-size: 17rpx;
+  background: var(--c-primary);
+  color: #ffffff;
+  font-size: 20rpx;
   font-weight: 900;
+  line-height: 48rpx;
 }
 
 .month-toggle::after {
@@ -54,19 +50,10 @@
 }
 
 .calendar-month-title {
-  width: 100%;
-  min-height: 48rpx;
-  margin-top: 0;
-  color: #0f766e;
-  font-size: 24rpx;
+  color: #0f172a;
+  font-size: 32rpx;
   font-weight: 950;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  padding: 4rpx 14rpx;
-  border-radius: 999rpx;
-  background: #ecfeff;
+  line-height: 1.1;
   white-space: nowrap;
 }
 
@@ -77,7 +64,7 @@
 .week-strip {
   width: 100%;
   white-space: nowrap;
-  margin-top: 18rpx;
+  margin-top: 12rpx;
 }
 
 .week-row {
@@ -85,29 +72,30 @@
   flex-wrap: nowrap;
   gap: 8rpx;
   min-width: 100%;
-  padding-right: 8rpx;
+  padding: 2rpx 0 4rpx;
 }
 
 .day-pill {
   flex: 0 0 86rpx;
   width: 86rpx;
-  min-height: 112rpx;
+  min-height: 94rpx;
   display: flex;
   flex-direction: column;
   justify-content: center;
   box-sizing: border-box;
-  padding: 12rpx 6rpx;
-  border: 1rpx solid #dbe8f0;
+  padding: 10rpx 6rpx;
+  border: 1rpx solid var(--c-border);
   border-radius: 18rpx;
-  background: #f8fafc;
+  background: #ffffff;
   color: var(--c-text);
   text-align: center;
+  box-shadow: var(--shadow-card);
 }
 
 .day-pill.active {
-  border-color: #14b8a6;
-  background: linear-gradient(180deg, #ecfeff 0%, #ccfbf1 100%);
-  box-shadow: 0 12rpx 26rpx rgba(20, 184, 166, 0.16);
+  border-color: #0f766e;
+  background: #ecfdf5;
+  box-shadow: 0 12rpx 24rpx rgba(15, 118, 110, 0.14);
 }
 
 .day-pill.today {
@@ -137,17 +125,26 @@
 }
 
 .day-count {
+  align-self: center;
+  min-width: 30rpx;
+  height: 30rpx;
   margin-top: 6rpx;
-  color: #0f766e;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: #dcfce7;
+  color: #15803d;
   font-size: 18rpx;
   font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .month-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 10rpx;
-  margin-top: 16rpx;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8rpx;
+  margin-top: 18rpx;
 }
 
 .month-week-label {
@@ -165,44 +162,69 @@
 }
 
 .month-day {
-  min-height: 58rpx;
+  position: relative;
+  min-height: 86rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4rpx;
-  border-radius: 16rpx;
-  background: #f8fafc;
-  color: var(--c-muted);
-  font-size: 22rpx;
-  font-weight: 850;
+  box-sizing: border-box;
+  border: 1rpx solid var(--c-border);
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 950;
+  box-shadow: var(--shadow-card);
 }
 
 .month-day.empty {
   background: transparent;
   border: 0;
+  box-shadow: none;
 }
 
 .month-day.has-task {
-  color: #0f766e;
-  background: #ecfeff;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
 }
 
 .month-day.holiday {
+  border-color: #f4cccc;
+}
+
+.month-day.holiday .month-day-number {
   color: #dc2626;
 }
 
 .month-day.active {
-  color: #ffffff;
+  border-color: #0f766e;
   background: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 12rpx 24rpx rgba(15, 118, 110, 0.16);
+}
+
+.month-day.active .month-day-number {
+  color: #ffffff;
 }
 
 .month-dot {
-  min-width: 24rpx;
-  height: 24rpx;
-  line-height: 24rpx;
+  position: absolute;
+  right: 8rpx;
+  bottom: 8rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  line-height: 30rpx;
+  padding: 0 8rpx;
   border-radius: 999rpx;
-  background: rgba(20, 184, 166, 0.18);
+  background: #dcfce7;
+  color: #15803d;
   font-size: 18rpx;
+  font-weight: 950;
+}
+
+.month-day.active .month-dot {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
 }
 
 .yard-panel {
@@ -229,7 +251,7 @@
   min-width: 0;
 }
 
-.form-field text {
+.form-label {
   display: block;
   margin-bottom: 8rpx;
   color: var(--c-muted);
@@ -237,7 +259,7 @@
   font-weight: 850;
 }
 
-.form-field input {
+.form-input {
   height: 78rpx;
   box-sizing: border-box;
   padding: 0 20rpx;
@@ -284,6 +306,73 @@
   border-color: #10b981;
   background: #10b981;
   box-shadow: 0 0 0 8rpx rgba(16, 185, 129, 0.12);
+}
+
+.yard-material-list {
+  display: grid;
+  gap: 10rpx;
+  margin-top: 18rpx;
+}
+
+.yard-material-row {
+  min-height: 78rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  box-sizing: border-box;
+  padding: 14rpx 16rpx;
+  border: 1rpx solid #cdeee8;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.yard-material-title {
+  color: #0f172a;
+  font-size: 24rpx;
+  font-weight: 950;
+}
+
+.yard-material-file {
+  max-width: 350rpx;
+  margin-top: 4rpx;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yard-material-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.yard-material-upload,
+.yard-material-clear {
+  min-width: 64rpx;
+  height: 42rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.yard-material-upload {
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.yard-material-clear {
+  background: #fff1f2;
+  color: #e11d48;
 }
 
 .task-primary {
@@ -337,6 +426,41 @@
   background: #ffffff;
 }
 
+.ready-time,
+.task-time {
+  color: #0f172a;
+  font-size: 27rpx;
+  font-weight: 950;
+  line-height: 1.32;
+  word-break: break-all;
+}
+
+.ready-route,
+.task-route-head {
+  margin-top: 6rpx;
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 900;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.task-order-no {
+  display: inline-flex;
+  max-width: 100%;
+  margin-top: 8rpx;
+  padding: 3rpx 10rpx;
+  border-radius: 999rpx;
+  background: #eef6ff;
+  color: #64748b;
+  font-size: 19rpx;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .task-card {
   padding: 18rpx;
   border: 1rpx solid var(--c-border);
@@ -369,8 +493,10 @@
 
 .task-route {
   color: var(--c-text);
-  font-size: 26rpx;
+  font-size: 25rpx;
   font-weight: 900;
+  line-height: 1.4;
+  word-break: break-all;
 }
 
 .task-collapsed-route {

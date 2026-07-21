@@ -6,6 +6,7 @@ from typing import Any
 from backend.db.database import get_connection
 from backend.services.auth_service import create_jwt, public_user, authenticate, authenticate_phone, authenticate_wechat, normalize_phone, split_company_account
 from backend.services.dispatch_mobile_audit_service import record_dispatch_mobile_audit
+from backend.services.notification_service import sync_operation_notifications
 from backend.services.parser_service import get_draft, parse_batch_text_to_drafts, parse_text_to_draft, update_draft
 from backend.services.tenant_context import get_current_tenant_id
 
@@ -13,7 +14,7 @@ from backend.services.tenant_context import get_current_tenant_id
 def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
     username = str(payload.get("username") or "").strip()
     company_code, phone_part = split_company_account(username)
-    username_is_phone = bool(company_code and normalize_phone(phone_part))
+    username_is_phone = bool(normalize_phone(phone_part if company_code else username))
     if payload.get("phone") or username_is_phone:
         result = authenticate_phone(
             payload.get("phone") or username,
@@ -120,10 +121,14 @@ def get_dispatcher_dashboard(params: dict[str, str]) -> dict[str, Any]:
     dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
     today = date.today().isoformat()
     tenant_id = get_current_tenant_id()
+    dispatcher = _load_dispatcher(dispatcher_id)
+    owns_all_orders = dispatcher.get("dispatcher_role") == "admin"
     with get_connection() as conn:
+        own_filter = "" if owns_all_orders else " AND created_by_dispatcher_id = ?"
+        own_params: list[Any] = [] if owns_all_orders else [dispatcher_id]
         counts = {
-            "today_orders": _count(conn, "orders", "tenant_id = ? AND COALESCE(is_deleted, 0) = 0 AND order_date = ? AND created_by_dispatcher_id = ?", [tenant_id, today, dispatcher_id]),
-            "unassigned_orders": _count(conn, "orders", "tenant_id = ? AND COALESCE(is_deleted, 0) = 0 AND dispatch_status = 'unassigned' AND created_by_dispatcher_id = ?", [tenant_id, dispatcher_id]),
+            "today_orders": _count(conn, "orders", f"tenant_id = ? AND COALESCE(is_deleted, 0) = 0 AND order_date = ?{own_filter}", [tenant_id, today, *own_params]),
+            "unassigned_orders": _count(conn, "orders", f"tenant_id = ? AND COALESCE(is_deleted, 0) = 0 AND dispatch_status = 'unassigned'{own_filter}", [tenant_id, *own_params]),
             "drafts_pending": _count(conn, "order_drafts", "tenant_id = ? AND parse_status != 'confirmed' AND created_by_dispatcher_id = ?", [tenant_id, dispatcher_id]),
             "active_assignments": _count(conn, "assignments", "tenant_id = ? AND status = 'active'", [tenant_id]),
             "notifications_unread": _count(conn, "notifications", "tenant_id = ? AND status = 'unread'", [tenant_id]),
@@ -135,16 +140,16 @@ def get_dispatcher_dashboard(params: dict[str, str]) -> dict[str, Any]:
         latest_orders = [
             dict(row)
             for row in conn.execute(
-                """
+                f"""
                 SELECT id, oid, order_date, start_time, pickup_location, dropoff_location, dispatch_status,
                        created_by_dispatcher, created_by_dispatcher_code
                 FROM orders
                 WHERE tenant_id = ? AND COALESCE(is_deleted, 0) = 0
-                  AND created_by_dispatcher_id = ?
+                  {own_filter}
                 ORDER BY id DESC
                 LIMIT 5
                 """,
-                (tenant_id, dispatcher_id),
+                (tenant_id, *own_params),
             ).fetchall()
         ]
     return {
@@ -160,40 +165,54 @@ def get_dispatcher_dashboard(params: dict[str, str]) -> dict[str, Any]:
 def list_dispatcher_unassigned_orders(params: dict[str, str]) -> list[dict[str, Any]]:
     dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
     tenant_id = get_current_tenant_id()
+    dispatcher = _load_dispatcher(dispatcher_id)
+    owns_all_orders = dispatcher.get("dispatcher_role") == "admin"
+    own_filter = "" if owns_all_orders else "AND created_by_dispatcher_id = ?"
+    own_params: list[Any] = [] if owns_all_orders else [dispatcher_id]
     with get_connection() as conn:
         return [
             dict(row)
             for row in conn.execute(
-                """
+                f"""
                 SELECT *
                 FROM orders
                 WHERE tenant_id = ?
                   AND COALESCE(is_deleted, 0) = 0
                   AND dispatch_status = 'unassigned'
-                  AND created_by_dispatcher_id = ?
+                  {own_filter}
                 ORDER BY order_date ASC, start_time ASC, id ASC
                 """,
-                (tenant_id, dispatcher_id),
+                (tenant_id, *own_params),
             ).fetchall()
         ]
 
 
 def get_dispatcher_notifications(params: dict[str, str]) -> dict[str, Any]:
+    sync_operation_notifications()
     tenant_id = get_current_tenant_id()
+    dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
+    dispatcher = _load_dispatcher(dispatcher_id)
+    role = dispatcher.get("dispatcher_role") or "dispatcher"
+    allowed_roles = {
+        "admin": ("", "admin", "dispatcher", "finance", "operations_manager"),
+        "dispatcher": ("dispatcher",),
+        "operations_manager": ("operations_manager",),
+    }.get(role, (role,))
+    placeholders = ",".join("?" for _ in allowed_roles)
     with get_connection() as conn:
         rows = [
             dict(row)
             for row in conn.execute(
-                """
+                f"""
                 SELECT *
                 FROM notifications
                 WHERE tenant_id = ?
-                  AND target_role IN ('admin', 'dispatcher', 'finance', 'operations_manager')
+                  AND COALESCE(target_role, '') IN ({placeholders})
                 ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
                          created_at DESC, id DESC
                 LIMIT 100
                 """,
-                (tenant_id,),
+                (tenant_id, *allowed_roles),
             ).fetchall()
         ]
     return {"notifications": rows}

@@ -90,6 +90,9 @@ def list_assignments(status: str | None = "active", tenant_id: int | None | obje
             a.status,
             a.execution_status,
             a.assigned_at,
+            a.published_by_user_id,
+            a.published_by_name,
+            a.published_at,
             a.cancelled_at,
             a.created_at,
             a.updated_at,
@@ -183,13 +186,18 @@ def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: 
             }
 
         assignment_ids: list[int] = []
+        publisher_id = _actor_user_id(actor)
+        publisher_name = _actor_name(actor)
         for order in orders:
             cursor = conn.execute(
                 """
-                INSERT INTO assignments (tenant_id, order_id, driver_id, vehicle_id, status, execution_status, assigned_at, updated_at)
-                VALUES (?, ?, ?, ?, 'active', 'assigned', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO assignments (
+                    tenant_id, order_id, driver_id, vehicle_id, status, execution_status,
+                    assigned_at, published_by_user_id, published_by_name, published_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'active', 'assigned', CURRENT_TIMESTAMP, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
-                (get_current_tenant_id(), order["id"], driver_id_int, vehicle_id_int),
+                (get_current_tenant_id(), order["id"], driver_id_int, vehicle_id_int, publisher_id, publisher_name),
             )
             assignment_ids.append(cursor.lastrowid)
             assigned_oid = _build_assigned_oid(conn, order, vehicle, driver)
@@ -683,3 +691,19 @@ def _to_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _actor_user_id(actor: dict[str, Any] | None) -> int | None:
+    value = (actor or {}).get("id") or (actor or {}).get("user_id")
+    actor_id = _to_int(value)
+    return actor_id or None
+
+
+def _actor_name(actor: dict[str, Any] | None) -> str | None:
+    if not actor:
+        return None
+    for key in ("display_name", "name", "username"):
+        value = str(actor.get(key) or "").strip()
+        if value:
+            return value
+    return None

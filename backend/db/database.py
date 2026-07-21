@@ -145,6 +145,9 @@ VEHICLE_COLUMNS: dict[str, str] = {
 ASSIGNMENT_COLUMNS: dict[str, str] = {
     "execution_status": "TEXT NOT NULL DEFAULT 'assigned'",
     "assigned_at": "TEXT",
+    "published_by_user_id": "INTEGER",
+    "published_by_name": "TEXT",
+    "published_at": "TEXT",
     "cancelled_at": "TEXT",
     "updated_at": "TEXT",
 }

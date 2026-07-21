@@ -27,8 +27,6 @@ Page({
     allAssignments: [],
     assignments: [],
     readyAssignments: [],
-    departAssignment: null,
-    returnAssignment: null,
     today: '',
     selectedDate: '',
     selectedLabel: '',
@@ -36,9 +34,12 @@ Page({
     selectedDayAnchor: '',
     weekDays: [],
     monthDays: [],
-    showMonth: false,
+    weekLabels: ['日', '一', '二', '三', '四', '五', '六'],
+    showMonth: true,
     yardFocus: '',
     vehicleStatusText: '未出库',
+    departSubmitted: false,
+    returnSubmitted: false,
     preflightItems: PREFLIGHT_ITEMS,
     returnItems: RETURN_ITEMS,
     preflightChecked: {},
@@ -50,6 +51,13 @@ Page({
     returnForm: {
       return_time: '',
       rest_hours: ''
+    },
+    departMaterials: {
+      alcohol: { file_name: '', image_base64: '' }
+    },
+    returnMaterials: {
+      alcohol: { file_name: '', image_base64: '' },
+      daily_report: { file_name: '', image_base64: '' }
     },
     message: '',
     loading: false,
@@ -76,6 +84,7 @@ Page({
       today,
       selectedDate: today,
       selectedLabel: this.formatDayLabel(today),
+      ...this.buildCalendarState([], today, today),
       'departForm.depart_time': this.nowTime(),
       'returnForm.return_time': this.nowTime()
     });
@@ -90,7 +99,14 @@ Page({
 
   loadTasks() {
     if (!this.data.driverId) {
-      this.setData({ message: '司机资料未绑定。', assignments: [] });
+      const selectedDate = this.data.selectedDate || this.data.today || this.today();
+      this.setData({
+        message: '司机资料未绑定。',
+        assignments: [],
+        readyAssignments: [],
+        allAssignments: [],
+        ...this.buildCalendarState([], selectedDate, this.data.today || selectedDate)
+      });
       return;
     }
     this.setData({ loading: true, message: '' });
@@ -110,32 +126,57 @@ Page({
         this.setData({
           allAssignments: allRows,
           selectedDate,
-          weekDays: this.buildWeekDays(allRows, selectedDate, this.data.today, selectedDate),
-          monthDays: this.buildMonthDays(allRows, selectedDate, this.data.today, selectedDate),
-          monthLabel: this.formatMonthLabel(selectedDate),
-          selectedDayAnchor: this.dayAnchor(selectedDate),
+          ...this.buildCalendarState(allRows, selectedDate, this.data.today),
           vehicleStatusText,
-          departAssignment: !departed && !returned ? this.pickDepartAssignment(allRows) : null,
-          returnAssignment: !returned ? this.pickReturnAssignment(selectedRows) : null,
+          departSubmitted: departed || returned,
+          returnSubmitted: returned,
           loading: false
         });
         this.applySelectedDate();
       })
-      .catch(() => this.setData({ loading: false, message: '无法加载司机任务。' }));
+      .catch(() => {
+        const selectedDate = this.data.selectedDate || this.data.today || this.today();
+        this.setData({
+          loading: false,
+          message: '无法加载司机任务。',
+          assignments: [],
+          readyAssignments: [],
+          allAssignments: [],
+          ...this.buildCalendarState([], selectedDate, this.data.today || selectedDate)
+        });
+      });
   },
 
   decorateAssignment(item) {
     const status = item.execution_status || item.status || 'assigned';
+    const timeText = this.assignmentTimeText(item);
+    const routeText = this.assignmentRouteText(item);
     return {
       ...item,
       rawStatus: status,
-      routeText: `${item.pickup_location || '-'} -> ${item.dropoff_location || '-'}`,
-      timeText: `${item.order_date || '-'} ${item.start_time || '--:--'}`,
+      orderNoText: item.oid || item.order_id || '任务',
+      routeText,
+      timeText,
       orderStatusText: this.orderStatusText(status),
       orderStatusClass: this.orderStatusClass(status),
       canConfirm: status === 'assigned',
       isExpanded: ACTIVE_STATUSES.indexOf(status) >= 0
     };
+  },
+
+  assignmentTimeText(item) {
+    const startDate = item.order_date || item.start_date || '-';
+    const startTime = item.start_time || '--:--';
+    const endDate = item.end_date || '';
+    const endTime = item.end_time || '';
+    const startText = `${startDate} ${startTime}`;
+    if (!endTime) return startText;
+    if (endDate && endDate !== startDate) return `${startText} - ${endDate} ${endTime}`;
+    return `${startText} - ${endTime}`;
+  },
+
+  assignmentRouteText(item) {
+    return `${item.pickup_location || '-'} → ${item.dropoff_location || '-'}`;
   },
 
   applySelectedDate() {
@@ -199,18 +240,6 @@ Page({
     this.setData({ assignments: rows });
   },
 
-  pickDepartAssignment(rows) {
-    if (rows.some((item) => item.rawStatus === 'assigned')) return null;
-    return rows.find((item) => item.rawStatus === 'confirmed') || null;
-  },
-
-  pickReturnAssignment(rows) {
-    const hasOpen = rows.some((item) => OPEN_STATUSES.indexOf(item.rawStatus) >= 0);
-    if (hasOpen) return null;
-    const completed = rows.filter((item) => item.rawStatus === 'completed');
-    return completed.length ? completed[completed.length - 1] : null;
-  },
-
   orderStatusText(status) {
     if (ACTIVE_STATUSES.indexOf(status) >= 0) return '正在执行';
     if (status === 'completed' || status === 'returned') return '已完成';
@@ -260,9 +289,40 @@ Page({
     this.setData({ returnChecked: { ...this.data.returnChecked, [key]: !this.data.returnChecked[key] } });
   },
 
+  chooseYardMaterial(e) {
+    const section = e.currentTarget.dataset.section;
+    const key = e.currentTarget.dataset.key;
+    if (!section || !key || this.data.submitting) return;
+    wx.chooseMedia({
+      count: 1,
+      mediaType: ['image'],
+      sourceType: ['album', 'camera'],
+      success: (res) => {
+        const file = res.tempFiles && res.tempFiles[0];
+        if (!file || !file.tempFilePath) return;
+        this.readFileBase64(file.tempFilePath)
+          .then((base64) => {
+            const parts = file.tempFilePath.split(/[\\/]/);
+            this.setData({
+              [`${section}Materials.${key}`]: {
+                image_base64: base64,
+                file_name: parts[parts.length - 1] || `${key}.jpg`
+              }
+            });
+          })
+          .catch(() => wx.showToast({ title: '照片读取失败', icon: 'none' }));
+      }
+    });
+  },
+
+  clearYardMaterial(e) {
+    const section = e.currentTarget.dataset.section;
+    const key = e.currentTarget.dataset.key;
+    if (!section || !key || this.data.submitting) return;
+    this.setData({ [`${section}Materials.${key}`]: { file_name: '', image_base64: '' } });
+  },
+
   submitDepart() {
-    const item = this.data.departAssignment;
-    if (!item) return;
     if (!this.allChecked(this.data.preflightItems, this.data.preflightChecked)) {
       wx.showToast({ title: '请先完成全部出库确认项', icon: 'none' });
       return;
@@ -277,21 +337,33 @@ Page({
       wx.showToast({ title: '请填写出库时间', icon: 'none' });
       return;
     }
-    this.submitReport(item, 'depart_yard', {
-      report_time: `${this.data.today} ${departTime}:00`,
+    const alcoholAttachment = this.yardAttachment('depart', 'alcohol', 'alcohol_test_out');
+    const isUpdate = this.data.departSubmitted || this.data.vehicleStatusText === '已出库' || this.data.vehicleStatusText === '已入库';
+    if (!isUpdate && !alcoholAttachment) {
+      wx.showToast({ title: '请上传出库酒精测试', icon: 'none' });
+      return;
+    }
+    this.submitYardEvent('depart_yard', {
+      event_time: `${this.data.today} ${departTime}:00`,
       location_text: '司机端点呼出库',
       note: JSON.stringify({
-        action: 'depart_yard',
+        action: isUpdate ? 'depart_yard_update' : 'depart_yard',
         depart_time: departTime,
         sleep_hours: sleepHours,
         checks: this.checkedKeys(this.data.preflightChecked)
       })
-    }, '已出库', () => this.enterFirstTaskAfterDepart(item));
+    }, isUpdate ? '出库信息已保存' : '已出库', {
+      beforeEvents: alcoholAttachment ? [{
+        event_type: 'alcohol_test_out',
+        event_time: `${this.data.today} ${departTime}:00`,
+        location_text: '司机端出库酒精测试',
+        attachments: [alcoholAttachment],
+        note: JSON.stringify({ action: isUpdate ? 'alcohol_test_out_update' : 'alcohol_test_out' })
+      }] : []
+    });
   },
 
   submitReturn() {
-    const item = this.data.returnAssignment;
-    if (!item) return;
     if (!this.allChecked(this.data.returnItems, this.data.returnChecked)) {
       wx.showToast({ title: '请先完成全部入库确认项', icon: 'none' });
       return;
@@ -311,16 +383,84 @@ Page({
       wx.showToast({ title: '请填写入库时间', icon: 'none' });
       return;
     }
-    this.submitReport(item, 'return_yard', {
-      report_time: `${this.data.today} ${returnTime}:00`,
+    const alcoholAttachment = this.yardAttachment('return', 'alcohol', 'alcohol_test_in');
+    const isUpdate = this.data.returnSubmitted || this.data.vehicleStatusText === '已入库';
+    if (!isUpdate && !alcoholAttachment) {
+      wx.showToast({ title: '请上传入库酒精测试', icon: 'none' });
+      return;
+    }
+    const dailyAttachment = this.yardAttachment('return', 'daily_report', 'daily_report');
+    if (!isUpdate && !dailyAttachment) {
+      wx.showToast({ title: '请上传司机日报', icon: 'none' });
+      return;
+    }
+    this.submitYardEvent('return_yard', {
+      event_time: `${this.data.today} ${returnTime}:00`,
       location_text: '司机端点呼入库',
+      attachments: dailyAttachment ? [dailyAttachment] : [],
       note: JSON.stringify({
-        action: 'return_yard',
+        action: isUpdate ? 'return_yard_update' : 'return_yard',
         return_time: returnTime,
         rest_hours: restHours,
         checks: this.checkedKeys(this.data.returnChecked)
       })
-    }, '已入库，今日工作结束');
+    }, isUpdate ? '入库信息已保存' : '已入库，今日工作结束', {
+      beforeEvents: alcoholAttachment ? [{
+        event_type: 'alcohol_test_in',
+        event_time: `${this.data.today} ${returnTime}:00`,
+        location_text: '司机端入库酒精测试',
+        attachments: [alcoholAttachment],
+        note: JSON.stringify({ action: isUpdate ? 'alcohol_test_in_update' : 'alcohol_test_in' })
+      }] : []
+    });
+  },
+
+  yardAttachment(section, key, kind) {
+    const group = section === 'depart' ? this.data.departMaterials : this.data.returnMaterials;
+    const item = group && group[key];
+    if (!item || !item.image_base64) return null;
+    return {
+      kind,
+      name: item.file_name || `${kind}.jpg`,
+      image_base64: item.image_base64
+    };
+  },
+
+  submitYardEvent(eventType, extra, successTitle, options = {}) {
+    if (this.data.submitting) return;
+    this.setData({ submitting: true, message: '' });
+    const basePayload = {
+      driver_id: this.data.driverId,
+    };
+    const beforeEvents = options.beforeEvents || [];
+    const calls = beforeEvents.map((item) => api.submitDriverWorkflowEvent({
+      ...basePayload,
+      ...item
+    }));
+    calls.push(api.submitDriverWorkflowEvent({
+      ...basePayload,
+      event_type: eventType,
+      ...extra
+    }));
+    Promise.all(calls).then((results) => {
+      this.setData({ submitting: false });
+      const failed = (results || []).find((item) => item && item.success === false);
+      if (failed) {
+        wx.showToast({ title: this.reportError(failed), icon: 'none' });
+        return;
+      }
+      const vehicleStatusText = eventType === 'return_yard' ? '已入库' : '已出库';
+      wx.showToast({ title: successTitle, icon: 'success' });
+      this.setData({
+        vehicleStatusText,
+        departSubmitted: eventType === 'depart_yard' ? true : this.data.departSubmitted,
+        returnSubmitted: eventType === 'return_yard' ? true : this.data.returnSubmitted
+      });
+      this.loadTasks();
+    }).catch(() => {
+      this.setData({ submitting: false });
+      wx.showToast({ title: '提交失败', icon: 'none' });
+    });
   },
 
   submitReport(item, reportType, extra, successTitle, afterSuccess) {
@@ -349,47 +489,12 @@ Page({
     });
   },
 
-  enterFirstTaskAfterDepart(item) {
-    const assignmentId = Number(item.assignment_id || item.id || 0);
-    const targetDate = item.order_date || this.data.selectedDate || this.data.today;
-    const updatedRows = (this.data.allAssignments || []).map((row) => {
-      if (Number(row.assignment_id || row.id || 0) !== assignmentId) return row;
-      return this.decorateAssignment({
-        ...row,
-        execution_status: 'departed',
-        status: row.status || 'active'
-      });
-    });
-    const selectedRows = updatedRows
-      .filter((row) => this.isOnDate(row, targetDate))
-      .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')))
-      .map((row, index) => ({
-        ...row,
-        isExpanded: Number(row.assignment_id || row.id || 0) === assignmentId || (index === 0 && ACTIVE_STATUSES.indexOf(row.rawStatus) >= 0)
-      }));
-    const readyRows = updatedRows
-      .filter((row) => row.rawStatus === 'confirmed')
-      .sort((a, b) => `${a.order_date || ''} ${a.start_time || ''}`.localeCompare(`${b.order_date || ''} ${b.start_time || ''}`));
-    this.setData({
-      allAssignments: updatedRows,
-      assignments: selectedRows,
-      readyAssignments: readyRows,
-      departAssignment: null,
-      returnAssignment: null,
-      selectedDate: targetDate,
-      selectedLabel: this.formatDayLabel(targetDate),
-      monthLabel: this.formatMonthLabel(targetDate),
-      selectedDayAnchor: this.dayAnchor(targetDate),
-      weekDays: this.buildWeekDays(updatedRows, targetDate, this.data.today, targetDate),
-      monthDays: this.buildMonthDays(updatedRows, targetDate, this.data.today, targetDate),
-      vehicleStatusText: '已出库',
-      message: ''
-    });
-    setTimeout(() => this.loadTasks(), 350);
-  },
-
   reportError(result) {
     return {
+      invalid_workflow_attachment: '材料格式不正确',
+      invalid_workflow_attachments: '材料格式不正确',
+      invalid_image_base64: '照片读取失败',
+      image_too_large: '照片超过 5MB',
       execution_status_duplicate_or_regression_not_allowed: '状态已更新，请刷新任务',
       execution_status_skip_not_allowed: '请按流程顺序操作',
       assignment_not_found_for_driver: '未找到司机任务'
@@ -402,6 +507,17 @@ Page({
       const date = this.addDays(base, index - 7);
       return this.decorateCalendarDay(rows, date, today, selectedDate || baseDate || today);
     });
+  },
+
+  buildCalendarState(rows, selectedDate, today) {
+    const safeToday = today || this.today();
+    const safeSelectedDate = selectedDate || safeToday;
+    return {
+      weekDays: this.buildWeekDays(rows || [], safeSelectedDate, safeToday, safeSelectedDate),
+      monthDays: this.buildMonthDays(rows || [], safeSelectedDate, safeToday, safeSelectedDate),
+      monthLabel: this.formatMonthLabel(safeSelectedDate),
+      selectedDayAnchor: this.dayAnchor(safeSelectedDate)
+    };
   },
 
   buildMonthDays(rows, baseDate, today, selectedDate) {
@@ -506,6 +622,17 @@ Page({
   nowTime() {
     const date = new Date();
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  },
+
+  readFileBase64(path) {
+    return new Promise((resolve, reject) => {
+      wx.getFileSystemManager().readFile({
+        filePath: path,
+        encoding: 'base64',
+        success: (res) => resolve(res.data),
+        fail: reject
+      });
+    });
   },
 
   today() {

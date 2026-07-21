@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "首页",
+  "navigationBarTitleText": "日配",
   "usingComponents": {
     "custom-tab-bar": "/custom-tab-bar/index"
   }

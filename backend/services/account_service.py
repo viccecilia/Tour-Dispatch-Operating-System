@@ -4,7 +4,7 @@ from typing import Any
 
 from backend.db.database import get_connection, hash_password
 from backend.services.audit_service import record_audit
-from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail, reset_user_password_to_phone_tail, unbind_user_wechat
+from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -19,11 +19,11 @@ ROLE_LABELS = {
 }
 
 
-def get_account_overview() -> dict[str, Any]:
-    ensure_driver_accounts()
+def get_account_overview(tenant_id: int | None = None) -> dict[str, Any]:
+    ensure_driver_accounts(tenant_id=tenant_id)
     accounts = [
         account
-        for account in list_accounts()
+        for account in list_accounts(tenant_id=tenant_id)
         if not _is_synthetic_account(account)
         and (
             account.get("role") != "driver"
@@ -51,14 +51,16 @@ def get_account_overview() -> dict[str, Any]:
                 "accounts": items,
             }
         )
-    return {"roles": roles, "accounts": accounts}
+    return {"tenant_id": tenant_id, "roles": roles, "accounts": accounts}
 
 
-def list_accounts() -> list[dict[str, Any]]:
-    tenant_id = get_current_tenant_id()
+def list_accounts(tenant_id: int | None = None) -> list[dict[str, Any]]:
+    tenant_filter = _normalize_tenant_id(tenant_id)
+    where = "WHERE u.tenant_id = ?" if tenant_filter else ""
+    values: tuple[Any, ...] = (tenant_filter,) if tenant_filter else ()
     with get_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 u.id,
                 u.tenant_id,
@@ -91,8 +93,9 @@ def list_accounts() -> list[dict[str, Any]]:
             LEFT JOIN tenants t ON t.id = u.tenant_id
             LEFT JOIN drivers d ON d.tenant_id = u.tenant_id AND u.profile_type = 'driver' AND d.id = u.profile_id
             LEFT JOIN operator_profiles p ON p.tenant_id = u.tenant_id AND u.profile_type = 'operator' AND p.id = u.profile_id
-            WHERE u.tenant_id = ?
+            {where}
             ORDER BY
+                t.name ASC,
                 CASE u.role
                     WHEN 'admin' THEN 1
                     WHEN 'dispatcher' THEN 2
@@ -103,65 +106,66 @@ def list_accounts() -> list[dict[str, Any]]:
                 u.is_active DESC,
                 u.id ASC
             """,
-            (tenant_id,),
+            values,
         ).fetchall()
     return [_public_account(dict(row)) for row in rows]
 
 
-def ensure_driver_accounts(actor: str = "system") -> int:
+def ensure_driver_accounts(actor: str = "system", tenant_id: int | None = None) -> int:
     """Create login accounts for preloaded drivers that have a phone number."""
-    tenant_id = get_current_tenant_id()
+    tenant_ids = _target_tenant_ids(tenant_id)
     created = 0
     with get_connection() as conn:
-        tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
-        drivers = conn.execute(
-            """
-            SELECT id, name, phone, driver_code, user_id
-            FROM drivers
-            WHERE tenant_id = ?
-              AND COALESCE(TRIM(phone), '') != ''
-              AND COALESCE(status, '') != 'deleted'
-              AND COALESCE(driver_status, '') != 'deleted'
-            ORDER BY id ASC
-            """,
-            (tenant_id,),
-        ).fetchall()
-        for driver in drivers:
-            if _is_synthetic_name(driver["name"]) or _is_synthetic_name(driver["phone"]):
-                continue
-            normalized = normalize_phone(driver["phone"])
-            if not _looks_like_driver_phone(driver["phone"]):
-                continue
-            existing = _find_user_by_phone(conn, tenant_id, normalized)
-            if existing:
-                if not driver["user_id"] and existing["profile_type"] == "driver":
-                    conn.execute(
-                        "UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
-                        (existing["id"], tenant_id, driver["id"]),
-                    )
-                continue
-            username = _unique_username(conn, tenant_id, company_login_name(normalized, tenant_slug, tenant_name))
-            password = phone_password_tail(driver["phone"])
-            if not password:
-                continue
-            display_name = driver["name"] or driver["driver_code"] or driver["phone"]
-            conn.execute(
+        for target_tenant_id in tenant_ids:
+            tenant_slug, tenant_name = _tenant_identity(conn, target_tenant_id)
+            drivers = conn.execute(
                 """
-                INSERT INTO users (
-                    tenant_id, username, password_hash, role, display_name, phone,
-                    profile_type, profile_id, wx_bind_status, is_active,
-                    password_changed_at, must_change_password, updated_at
-                )
-                VALUES (?, ?, ?, 'driver', ?, ?, 'driver', ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)
+                SELECT id, name, phone, driver_code, user_id
+                FROM drivers
+                WHERE tenant_id = ?
+                  AND COALESCE(TRIM(phone), '') != ''
+                  AND COALESCE(status, '') != 'deleted'
+                  AND COALESCE(driver_status, '') != 'deleted'
+                ORDER BY id ASC
                 """,
-                (tenant_id, username, hash_password(password), display_name, driver["phone"], driver["id"]),
-            )
-            user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-            conn.execute(
-                "UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
-                (user_id, tenant_id, driver["id"]),
-            )
-            created += 1
+                (target_tenant_id,),
+            ).fetchall()
+            for driver in drivers:
+                if _is_synthetic_name(driver["name"]) or _is_synthetic_name(driver["phone"]):
+                    continue
+                normalized = normalize_phone(driver["phone"])
+                if not _looks_like_driver_phone(driver["phone"]):
+                    continue
+                existing = _find_user_by_phone(conn, target_tenant_id, normalized)
+                if existing:
+                    if not driver["user_id"] and existing["profile_type"] == "driver":
+                        conn.execute(
+                            "UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+                            (existing["id"], target_tenant_id, driver["id"]),
+                        )
+                    continue
+                username = _unique_username(conn, target_tenant_id, company_login_name(normalized, tenant_slug, tenant_name))
+                password = phone_password_tail(driver["phone"])
+                if not password:
+                    continue
+                display_name = driver["name"] or driver["driver_code"] or driver["phone"]
+                conn.execute(
+                    """
+                    INSERT INTO users (
+                        tenant_id, username, password_hash, role, display_name, phone,
+                        profile_type, profile_id, wx_bind_status, is_active,
+                        password_changed_at, must_change_password, updated_at
+                    )
+                    VALUES (?, ?, ?, 'driver', ?, ?, 'driver', ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)
+                    """,
+                    (target_tenant_id, username, hash_password(password), display_name, driver["phone"], driver["id"]),
+                )
+                user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+                conn.execute(
+                    "UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+                    (user_id, target_tenant_id, driver["id"]),
+                )
+                created += 1
         conn.commit()
     if created:
         record_audit(
@@ -191,7 +195,7 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
     password = phone_password_tail(phone)
     if not display_name:
         display_name = phone
-    tenant_id = get_current_tenant_id()
+    tenant_id = _normalize_tenant_id(payload.get("tenant_id")) or get_current_tenant_id()
     with get_connection() as conn:
         tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
         existing = _find_user_by_phone(conn, tenant_id, normalized)
@@ -230,13 +234,13 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
             profile_id = _create_operator_profile_shell(conn, tenant_id, user_id, phone, role, operator_code)
             conn.execute("UPDATE users SET profile_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (profile_id, tenant_id, user_id))
         conn.commit()
-    account = get_account(user_id)
+    account = get_account(user_id, tenant_id=tenant_id)
     record_audit("account_create", "user", user_id, after=account, actor=actor, source_path="/api/accounts", summary=f"Created {role} account {display_name}")
     return account or {}
 
 
-def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "system") -> dict[str, Any] | None:
-    tenant_id = get_current_tenant_id()
+def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = _normalize_tenant_id(tenant_id or payload.get("tenant_id")) or get_current_tenant_id()
     with get_connection() as conn:
         tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
         before = _get_account_row(conn, tenant_id, user_id)
@@ -294,13 +298,13 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
                 (str(operator_code).strip().upper(), tenant_id, user_id),
             )
         conn.commit()
-    after = get_account(user_id)
+    after = get_account(user_id, tenant_id=tenant_id)
     record_audit("account_update", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}", summary=f"Updated account {user_id}")
     return after
 
 
-def disable_account(user_id: int | str, actor: str = "system") -> dict[str, Any] | None:
-    tenant_id = get_current_tenant_id()
+def disable_account(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
@@ -315,13 +319,13 @@ def disable_account(user_id: int | str, actor: str = "system") -> dict[str, Any]
             (tenant_id, user_id),
         )
         conn.commit()
-    after = get_account(user_id)
+    after = get_account(user_id, tenant_id=tenant_id)
     record_audit("account_disable", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/disable", summary=f"Disabled account {user_id}")
     return after
 
 
-def enable_account(user_id: int | str, actor: str = "system") -> dict[str, Any] | None:
-    tenant_id = get_current_tenant_id()
+def enable_account(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
@@ -336,21 +340,63 @@ def enable_account(user_id: int | str, actor: str = "system") -> dict[str, Any] 
             (tenant_id, user_id),
         )
         conn.commit()
-    after = get_account(user_id)
+    after = get_account(user_id, tenant_id=tenant_id)
     record_audit("account_enable", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/enable", summary=f"Enabled account {user_id}")
     return after
 
 
-def reset_account_password(user_id: int | str, actor: str = "system") -> dict[str, Any] | None:
-    return reset_user_password_to_phone_tail(user_id, actor)
+def reset_account_password(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
+    with get_connection() as conn:
+        before = _get_account_row(conn, tenant_id, user_id)
+        if not before:
+            return None
+        tail = phone_password_tail(before["phone"] or before["username"])
+        if not tail:
+            raise ValueError("phone_tail_unavailable")
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?,
+                password_changed_at = CURRENT_TIMESTAMP,
+                must_change_password = 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (hash_password(tail), tenant_id, user_id),
+        )
+        conn.commit()
+    after = get_account(user_id, tenant_id=tenant_id)
+    record_audit("password_reset", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/reset-password", summary=f"Reset password for account {user_id}")
+    return after
 
 
-def unbind_account_wechat(user_id: int | str, actor: str = "system") -> dict[str, Any] | None:
-    return unbind_user_wechat(user_id, actor)
+def unbind_account_wechat(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
+    with get_connection() as conn:
+        before = _get_account_row(conn, tenant_id, user_id)
+        if not before:
+            return None
+        conn.execute(
+            """
+            UPDATE users
+            SET wx_openid = NULL,
+                wx_unionid = NULL,
+                wx_bound_at = NULL,
+                wx_bind_status = 'unbound',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (tenant_id, user_id),
+        )
+        conn.commit()
+    after = get_account(user_id, tenant_id=tenant_id)
+    record_audit("wechat_unbind", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/unbind-wechat", summary=f"Unbound WeChat for account {user_id}")
+    return after
 
 
-def get_account(user_id: int | str) -> dict[str, Any] | None:
-    tenant_id = get_current_tenant_id()
+def get_account(user_id: int | str, tenant_id: int | None = None) -> dict[str, Any] | None:
+    tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         row = _get_account_row(conn, tenant_id, user_id)
     return _public_account(dict(row)) if row else None
@@ -452,7 +498,7 @@ def _unique_username(conn: sqlite3.Connection, tenant_id: int, base: str, exclud
     username = base
     suffix = 1
     while True:
-        row = conn.execute("SELECT id FROM users WHERE tenant_id = ? AND username = ?", (tenant_id, username)).fetchone()
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
         if not row or (exclude_user_id is not None and str(row["id"]) == str(exclude_user_id)):
             return username
         suffix += 1
@@ -464,6 +510,25 @@ def _tenant_identity(conn: sqlite3.Connection, tenant_id: int) -> tuple[str | No
     if not row:
         return None, None
     return row["slug"], row["name"]
+
+
+def _target_tenant_ids(tenant_id: int | None = None) -> list[int]:
+    target = _normalize_tenant_id(tenant_id)
+    if target:
+        return [target]
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id FROM tenants WHERE COALESCE(status, 'active') != 'deleted' ORDER BY id").fetchall()
+    return [int(row["id"]) for row in rows]
+
+
+def _normalize_tenant_id(value: Any) -> int | None:
+    if value in (None, "", "all"):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _actor_user_id(conn: sqlite3.Connection, tenant_id: int, actor: str) -> int | None:
@@ -526,6 +591,8 @@ def _public_account(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("id"),
         "tenant_id": row.get("tenant_id"),
+        "tenant_name": tenant_name,
+        "tenant_slug": tenant_slug,
         "username": row.get("username"),
         "account_login": company_login_name(phone or row.get("username"), tenant_slug, tenant_name),
         "display_name": row.get("display_name") or row.get("driver_name") or row.get("username"),

@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "快速派车"
+  "navigationBarTitleText": "快速派车",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
 }

@@ -33,6 +33,8 @@ export type AccountRole = "admin" | "dispatcher" | "operations_manager" | "drive
 export type ManagedAccount = {
   id: number;
   tenant_id?: number;
+  tenant_name?: string;
+  tenant_slug?: string;
   username: string;
   account_login?: string;
   display_name?: string;
@@ -68,6 +70,7 @@ export type AccountRoleGroup = {
 };
 
 export type AccountOverview = {
+  tenant_id?: number | null;
   roles: AccountRoleGroup[];
   accounts: ManagedAccount[];
 };
@@ -166,6 +169,10 @@ export type Order = {
   end_time?: string;
   pickup_location?: string;
   dropoff_location?: string;
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  dropoff_latitude?: number;
+  dropoff_longitude?: number;
   order_type?: string;
   vehicle_type?: string;
   order_note_code?: string;
@@ -304,6 +311,8 @@ export type AuctionListing = {
   dropoff_location?: string;
   order_type?: string;
   vehicle_type?: string;
+  guest_name?: string;
+  guest_contact?: string;
   flight_number?: string;
   flight_date?: string;
   flight_airline?: string;
@@ -327,8 +336,14 @@ export type AuctionListing = {
   remark?: string;
   seller_company_name?: string;
   seller_company_code?: string;
+  seller_contact_name?: string;
+  seller_contact_phone?: string;
+  seller_contact_email?: string;
   buyer_company_name?: string;
   buyer_company_code?: string;
+  buyer_contact_name?: string;
+  buyer_contact_phone?: string;
+  buyer_contact_email?: string;
   execution_status?: string;
   settlement_status?: string;
   agency_settlement_status?: string;
@@ -442,6 +457,10 @@ export type Driver = {
   health_check_due_date?: string;
   license_file_url?: string;
   health_check_file_url?: string;
+  docs?: Array<string | ResourceDocument>;
+  pdf_files?: Array<string | ResourceDocument>;
+  files?: Array<string | ResourceDocument>;
+  documents?: Array<string | ResourceDocument>;
   license_expires_at?: string;
   medical_check_expires_at?: string;
   alerts?: ResourceAlert[];
@@ -474,8 +493,26 @@ export type Vehicle = {
   insurance_expires_at?: string;
   maintenance_status?: string;
   inspection_records?: VehicleInspectionRecord[];
+  docs?: Array<string | ResourceDocument>;
+  pdf_files?: Array<string | ResourceDocument>;
+  files?: Array<string | ResourceDocument>;
+  documents?: Array<string | ResourceDocument>;
   alerts?: ResourceAlert[];
   alert_level?: string;
+};
+
+export type ResourceDocument = {
+  name?: string;
+  title?: string;
+  file_name?: string;
+  category?: string;
+  date?: string;
+  file_key?: string;
+  url?: string;
+  href?: string;
+  file_url?: string;
+  download_url?: string;
+  download_path?: string;
 };
 
 export type VehicleInspectionRecord = {
@@ -531,14 +568,20 @@ export type Assignment = {
   end_time?: string;
   pickup_location?: string;
   dropoff_location?: string;
+  agency_name?: string;
+  guest_name?: string;
+  guest_contact?: string;
+  passenger_count?: number;
+  luggage_count?: number;
+  remark?: string;
   order_type?: string;
   vehicle_type?: string;
   driver_id?: number;
   driver_name?: string;
   vehicle_id?: number;
-    plate_number?: string;
-    vehicle_status?: string;
-    price?: number;
+  plate_number?: string;
+  vehicle_status?: string;
+  price?: number;
   dispatch_status?: string;
   settlement_status?: string;
   execution_status?: string;
@@ -567,6 +610,7 @@ export type CalendarResponse = {
   vehicles: Vehicle[];
   drivers: Driver[];
   legend?: Array<{ key: string; label: string; color: string }>;
+  month_summary?: Array<{ date: string; order_count: number; exception_count?: number; pending_settlement_count?: number }>;
 };
 
 export type AuditLog = {
@@ -649,6 +693,62 @@ export type LocationLog = {
   execution_status?: string;
   order_execution_status?: string;
   online_status?: "online" | "stale" | "unknown";
+};
+
+export type FleetRoutePoint = {
+  id?: number;
+  latitude?: number;
+  longitude?: number;
+  reported_at?: string;
+  location_text?: string;
+  source?: string;
+  assignment_id?: number;
+  order_id?: number;
+};
+
+export type FleetRouteStop = {
+  latitude: number;
+  longitude: number;
+  start_at?: string;
+  end_at?: string;
+  duration_minutes: number;
+  location_text?: string;
+  point_count?: number;
+};
+
+export type FleetRouteTrack = {
+  tenant_id?: number;
+  tenant_name?: string;
+  tenant_slug?: string;
+  driver_id: number;
+  driver_name?: string;
+  driver_phone?: string;
+  vehicle_id?: number;
+  plate_number?: string;
+  vehicle_type?: string;
+  vehicle_status?: string;
+  assignment_id?: number;
+  order_id?: number;
+  oid?: string;
+  pickup_location?: string;
+  dropoff_location?: string;
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  dropoff_latitude?: number;
+  dropoff_longitude?: number;
+  execution_status?: string;
+  depart_yard_at?: string;
+  return_yard_at?: string;
+  direction_degrees?: number | null;
+  distance_km?: number;
+  points: FleetRoutePoint[];
+  stops: FleetRouteStop[];
+};
+
+export type FleetRouteTracksResponse = {
+  date: string;
+  track_count: number;
+  tracks: FleetRouteTrack[];
 };
 
 export type DriverSafetyAlert = {
@@ -950,6 +1050,9 @@ export type CompanyRegistration = {
   business_license_name?: string;
   bank_book_url?: string;
   bank_book_name?: string;
+  initial_login_account?: string;
+  initial_password_hint?: string;
+  initial_login_channel?: string;
   status?: "draft" | "submitted" | "approved" | "rejected" | "inactive" | "archived" | string;
   review_note?: string;
   tenant_name?: string;

@@ -39,8 +39,7 @@ def split_company_account(account: str | None) -> tuple[str | None, str]:
 
 def company_login_name(phone: str | None, tenant_slug: str | None = None, tenant_name: str | None = None) -> str:
     digits = normalize_phone(phone or "")
-    code = company_code_for_tenant(tenant_slug, tenant_name)
-    return f"{code}-{digits}" if digits else code
+    return digits or company_code_for_tenant(tenant_slug, tenant_name)
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:

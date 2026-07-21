@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { formatCurrency, shortRoute } from "@/lib/utils";
+import { shortRoute } from "@/lib/utils";
 import { api } from "@/services/apiClient";
 import type { Agency, AssignmentEvidenceChain, Driver, Order, Vehicle } from "@/types/api";
 
@@ -162,8 +162,6 @@ export function OrdersPage() {
     if (target?.closest("button,a,input,select,textarea")) return;
     void commitEditing();
   }
-
-  const busy = updateOrder.isPending;
 
   return (
     <div className="space-y-4">

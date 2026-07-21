@@ -6,6 +6,7 @@ export type AccountScope = "platform" | "carrier" | "agency" | "driver";
 const PLATFORM_PAGES = new Set<PageKey>([
   "dashboard",
   "notifications",
+  "calendar",
   "company-registration",
   "agencies",
   "vehicles",

@@ -1,4 +1,5 @@
 ﻿import { useMemo, useState } from "react";
+/* eslint-disable @typescript-eslint/no-unused-vars, no-constant-condition, no-constant-binary-expression -- staged portal panels are retained for the follow-up information-architecture pass */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, CalendarDays, CarFront, ChevronLeft, ChevronRight, FilePenLine, Gavel, KeyRound, ListChecks, MapPinned, Plane, Send, Settings, Table2, Undo2, Upload, UserRound } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -2945,7 +2946,7 @@ function chineseNumberToInt(value: string) {
 }
 
 function normalizeAgencyText(value: string) {
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[：]/g, ":").replace(/[　]/g, " ").replace(/[→＞]/g, ">").replace(/緑/g, "绿");
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[：]/g, ":").replace(/[\u3000]/g, " ").replace(/[→＞]/g, ">").replace(/緑/g, "绿");
 }
 
 function normalizeAgencyDate(value: string) {

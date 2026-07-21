@@ -51,7 +51,7 @@ const DISPATCH_TABS = {
   ],
   ops: [
     { key: 'home', label: '首页', url: '/package_dispatch/pages/home/index' },
-    { key: 'dispatch', label: '车辆', url: '/package_dispatch/pages/dispatch/index' },
+    { key: 'vehicles', label: '车辆', url: '/package_dispatch/pages/info/index' },
     { key: 'calendar', label: '日历', url: '/package_dispatch/pages/calendar/index' },
     { key: 'map', label: '地图', url: '/package_dispatch/pages/map/index' },
     { key: 'profile', label: '我的', url: '/package_dispatch/pages/profile/index' }
@@ -68,7 +68,7 @@ const DISPATCH_TABS = {
 const AGENCY_TABS = {
   manager: [
     { key: 'home', label: '首页', url: '/package_agency/pages/home/index' },
-    { key: 'orders', label: '入单', url: '/package_agency/pages/orders/index' },
+    { key: 'orders', label: '订单', url: '/package_agency/pages/orders/index' },
     { key: 'hall', label: '大厅', url: '/package_agency/pages/hall/index' },
     { key: 'tracking', label: '跟踪', url: '/package_agency/pages/tracking/index' },
     { key: 'calendar', label: '日历', url: '/package_agency/pages/calendar/index' },
@@ -76,7 +76,7 @@ const AGENCY_TABS = {
   ],
   customer_service: [
     { key: 'home', label: '首页', url: '/package_agency/pages/home/index' },
-    { key: 'orders', label: '入单', url: '/package_agency/pages/orders/index' },
+    { key: 'orders', label: '订单', url: '/package_agency/pages/orders/index' },
     { key: 'tracking', label: '跟踪', url: '/package_agency/pages/tracking/index' },
     { key: 'calendar', label: '日历', url: '/package_agency/pages/calendar/index' },
     { key: 'profile', label: '我的', url: '/package_agency/pages/profile/index' }
@@ -91,9 +91,9 @@ const AGENCY_TABS = {
 
 function normalizeDispatchRole(rawRole) {
   const role = String(rawRole || '').toLowerCase();
-  if (role.includes('driver') || role === '司机') return 'driver';
-  if (role.includes('dispatch') || role.includes('dispatcher') || role === '调度') return 'dispatcher';
-  if (role.includes('ops') || role.includes('operation') || role.includes('运行')) return 'ops';
+  if (role.includes('driver') || role.includes('司机')) return 'driver';
+  if (role.includes('dispatch') || role.includes('dispatcher') || role.includes('调度')) return 'dispatcher';
+  if (role.includes('ops') || role.includes('operation') || role.includes('运管') || role.includes('运行')) return 'ops';
   return 'admin';
 }
 

@@ -1,4 +1,4 @@
-<view class="page dispatch-page">
+﻿<view class="page dispatch-page">
   <view class="hero quick-hero">
     <view class="preview-copy">
       <view class="hero-eyebrow">DISPATCH WORKBENCH</view>
@@ -14,29 +14,297 @@
   </view>
 
   <view class="toolbar">
-    <button class="tool-button primary" bindtap="toggleImport">{{importOpen ? '收起导入' : '批量导入'}}</button>
-    <button wx:if="{{canAuction}}" class="tool-button auction-top {{selectedKeys.length ? 'ready' : ''}}" loading="{{loading}}" disabled="{{!selectedKeys.length || loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
+    <view class="tool-button daily {{importOpen && importMode === 'daily' ? 'active' : ''}}" data-mode="daily" bindtap="openImport">
+      日配
+    </view>
+    <view class="tool-button primary {{importOpen && importMode === 'batch' ? 'active' : ''}}" data-mode="batch" bindtap="openImport">
+      批量录入
+    </view>
+    <view class="tool-button secondary {{importOpen && importMode === 'single' ? 'active' : ''}}" data-mode="single" bindtap="openImport">
+      单条录入
+    </view>
   </view>
 
   <view wx:if="{{importOpen}}" class="panel import-panel">
     <view class="title-with-help">
-      <view class="panel-title">微信 / LINE 订单文本</view>
+      <view class="panel-title">{{importMode === 'daily' ? '日配录入' : (importMode === 'single' ? '单条订单录入' : '微信 / LINE 订单文本')}}</view>
       <view class="help-dot" data-type="import" bindtap="showHelp">?</view>
     </view>
-    <textarea class="textarea" value="{{importText}}" bindinput="onImportText" placeholder="粘贴订单文本，一次可导入 50-80 单" />
-    <button class="button-primary" loading="{{loading}}" bindtap="parseOrders">解析并分类</button>
+
+    <block wx:if="{{importMode === 'daily'}}">
+      <view class="daily-intro">
+        <view>
+          <view class="daily-intro-title">按司机分组粘贴当天订单</view>
+          <view class="daily-intro-text">司机姓名一行，下面跟订单；可包含车牌尾号、价格、作废标记。</view>
+        </view>
+        <view class="daily-tools">
+          <view class="tap-control daily-tool" bindtap="fillDailyExample">示例</view>
+          <view class="tap-control daily-tool" bindtap="clearDailySource">清空</view>
+        </view>
+      </view>
+
+      <textarea class="textarea daily-textarea {{dailyGroups.length ? 'parsed' : ''}}" maxlength="-1" value="{{dailySourceText}}" bindinput="onDailySourceInput" placeholder="例如：&#10;林泽群 3893&#10;1.31 10:00 京都单送关西酒店 3代 绿800" />
+      <view class="daily-action-row">
+        <view class="tap-control daily-action" bindtap="parseDailyText">解析</view>
+        <view class="tap-control daily-action primary" bindtap="saveDailyDraft">保存草稿</view>
+      </view>
+      <view wx:if="{{dailyMessage}}" class="success-text daily-message">{{dailyMessage}}</view>
+
+      <view class="daily-overview-grid">
+        <view class="daily-summary-card"><text>已分配司机</text><strong>{{dailyOverview.assignedDrivers}}</strong></view>
+        <view class="daily-summary-card"><text>已分配订单</text><strong>{{dailyOverview.assignedOrders}}</strong></view>
+        <view class="daily-summary-card success"><text>空闲司机</text><strong>{{dailyOverview.idleDrivers}}</strong></view>
+        <view class="daily-summary-card success"><text>空闲车辆</text><strong>{{dailyOverview.idleVehicles}}</strong></view>
+      </view>
+
+      <view class="daily-issue-grid">
+        <view class="daily-issue-card {{dailyOverview.missingDriverGroups.length ? 'warning' : 'ok'}}">
+          <view class="daily-issue-title">未分配司机</view>
+          <view wx:if="{{!dailyOverview.missingDriverGroups.length}}" class="daily-issue-empty">全部已填司机</view>
+          <view wx:for="{{dailyOverview.missingDriverGroups}}" wx:key="index" class="daily-issue-line" data-group-index="{{item.index}}" bindtap="focusDailyGroup">
+            {{item.label}} · {{item.orderCount}} 单
+          </view>
+        </view>
+        <view class="daily-issue-card {{dailyOverview.missingVehicleGroups.length ? 'warning' : 'ok'}}">
+          <view class="daily-issue-title">未分配车辆</view>
+          <view wx:if="{{!dailyOverview.missingVehicleGroups.length}}" class="daily-issue-empty">全部已填车辆</view>
+          <view wx:for="{{dailyOverview.missingVehicleGroups}}" wx:key="index" class="daily-issue-line" data-group-index="{{item.index}}" bindtap="focusDailyGroup">
+            {{item.label}} · {{item.orderCount}} 单
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{dailyOverview.driverNav.length}}" class="daily-driver-nav">
+        <view class="daily-driver-nav-title">司机订单定位</view>
+        <view class="daily-driver-chip-row">
+          <view wx:for="{{dailyOverview.driverNav}}" wx:key="index" class="daily-driver-chip" data-group-index="{{item.index}}" bindtap="focusDailyGroup">
+            <text>{{item.name}}</text>
+            <strong>{{item.orderCount}} 单</strong>
+            <em>{{item.vehicleCode}}</em>
+          </view>
+        </view>
+      </view>
+
+      <view class="daily-preview-head">
+        <view>
+          <view class="panel-title mini">分配预览</view>
+          <view class="muted">可修改司机、车辆、订单内容和状态。</view>
+        </view>
+        <view class="tap-control daily-tool add-driver" bindtap="addDailyGroup">加司机</view>
+      </view>
+      <view wx:if="{{!dailyGroups.length}}" class="single-placeholder">暂无解析内容</view>
+      <view wx:for="{{dailyGroups}}" wx:key="id" wx:for-index="groupIndex" id="daily-group-{{groupIndex}}" class="daily-driver-group">
+        <view class="daily-group-head">
+          <view class="daily-driver-meta">
+            <input class="input daily-group-input driver-line" value="{{item.driverVehicleLabel}}" data-group-index="{{groupIndex}}" bindinput="onDailyDriverVehicleInput" placeholder="司机-车辆" />
+            <view class="daily-order-count">{{item.orders.length}} 单</view>
+          </view>
+          <view class="tap-control danger-mini" data-group-index="{{groupIndex}}" bindtap="removeDailyGroup">删除</view>
+        </view>
+
+        <view class="daily-order-table">
+          <view wx:for="{{item.orders}}" wx:key="id" wx:for-item="order" wx:for-index="orderIndex" class="daily-order-line {{order.status === '作废' ? 'voided' : ''}}">
+            <view class="daily-order-index">{{order.displayIndex}}</view>
+            <input class="daily-cell-input time" value="{{order.time}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="time" bindinput="onDailyOrderInput" />
+            <input class="daily-cell-input" value="{{order.type}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="type" bindinput="onDailyOrderInput" />
+            <input class="daily-cell-input" value="{{order.vehicleType}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="vehicleType" bindinput="onDailyOrderInput" />
+            <input class="daily-cell-input route" value="{{order.route}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="route" bindinput="onDailyOrderInput" />
+            <input class="daily-cell-input price" value="{{order.price}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="price" bindinput="onDailyOrderInput" />
+            <input class="daily-cell-input status" value="{{order.status}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="status" bindinput="onDailyOrderInput" />
+            <view class="daily-line-delete" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" bindtap="removeDailyOrder">删</view>
+          </view>
+        </view>
+        <view class="tap-control daily-add-order" data-group-index="{{groupIndex}}" bindtap="addDailyOrder">添加订单</view>
+      </view>
+
+      <view class="daily-submit-row">
+        <view class="tap-control daily-submit" bindtap="saveDailyDraft">保存草稿</view>
+        <view class="tap-control daily-submit primary" bindtap="publishDailyAssignments">确认并发送</view>
+      </view>
+    </block>
+
+    <block wx:elif="{{importMode === 'single'}}">
+      <textarea
+        class="textarea single-textarea"
+        maxlength="-1"
+        value="{{importText}}"
+        bindinput="onImportText"
+        placeholder="粘贴一条完整订单，先解析，再展开字段校对。"
+      />
+      <view class="single-action-row">
+        <button class="small-button single-tool-button" bindtap="clearSingleForm">清空</button>
+        <button class="small-button single-tool-button primary" loading="{{loading}}" bindtap="submitImport">解析</button>
+      </view>
+
+      <view wx:if="{{singleParsed}}" class="single-form-wrap">
+        <view class="single-form-tip">
+          解析完成后在这里校对字段，再保存草稿或确认入池。
+        </view>
+        <view class="single-form-grid">
+          <view class="field">
+            <view class="field-label">开始日期</view>
+            <input class="input" data-field="order_date" value="{{singleForm.order_date}}" bindinput="onSingleField" placeholder="2026-06-18" />
+          </view>
+          <view class="field">
+            <view class="field-label">结束日期</view>
+            <input class="input" data-field="end_date" value="{{singleForm.end_date}}" bindinput="onSingleField" placeholder="2026-06-18" />
+          </view>
+          <view class="field">
+            <view class="field-label">开始时间</view>
+            <input class="input" data-field="start_time" value="{{singleForm.start_time}}" bindinput="onSingleField" placeholder="09:00" />
+          </view>
+          <view class="field">
+            <view class="field-label">结束时间</view>
+            <input class="input" data-field="end_time" value="{{singleForm.end_time}}" bindinput="onSingleField" />
+          </view>
+          <view class="field">
+            <view class="field-label">类型</view>
+            <input class="input" data-field="order_type" value="{{singleForm.order_type}}" bindinput="onSingleField" placeholder="接机 / 送机 / 包车" />
+          </view>
+          <view class="field">
+            <view class="field-label">车型</view>
+            <input class="input" data-field="vehicle_type" value="{{singleForm.vehicle_type}}" bindinput="onSingleField" placeholder="A-3" />
+          </view>
+          <view class="field field-wide">
+            <view class="field-label">起点</view>
+            <input class="input" data-field="pickup_location" value="{{singleForm.pickup_location}}" bindinput="onSingleField" placeholder="大阪市内 / 酒店 / 具体地址" />
+          </view>
+          <view class="field field-wide">
+            <view class="field-label">终点</view>
+            <input class="input" data-field="dropoff_location" value="{{singleForm.dropoff_location}}" bindinput="onSingleField" placeholder="KIX / KIX-T1 / 京都站" />
+          </view>
+          <view class="field">
+            <view class="field-label">旅行社</view>
+            <input class="input" data-field="agency_name" value="{{singleForm.agency_name}}" bindinput="onSingleField" />
+          </view>
+          <view class="field">
+            <view class="field-label">客人姓名</view>
+            <input class="input" data-field="guest_name" value="{{singleForm.guest_name}}" bindinput="onSingleField" />
+          </view>
+          <view class="field">
+            <view class="field-label">联系方式</view>
+            <input class="input" data-field="guest_contact" value="{{singleForm.guest_contact}}" bindinput="onSingleField" />
+          </view>
+          <view class="field">
+            <view class="field-label">人数</view>
+            <input class="input" data-field="passenger_count" value="{{singleForm.passenger_count}}" bindinput="onSingleField" placeholder="3" />
+          </view>
+          <view class="field">
+            <view class="field-label">行李</view>
+            <input class="input" data-field="luggage_count" value="{{singleForm.luggage_count}}" bindinput="onSingleField" />
+          </view>
+          <view class="field">
+            <view class="field-label">价格</view>
+            <input class="input" data-field="price" value="{{singleForm.price}}" bindinput="onSingleField" placeholder="450" />
+          </view>
+          <view class="field field-wide">
+            <view class="field-label">备注</view>
+            <textarea class="mini-textarea" data-field="remark" value="{{singleForm.remark}}" bindinput="onSingleField" placeholder="儿童座椅、语言、附加说明等" />
+          </view>
+        </view>
+
+        <view class="single-submit-row">
+          <button class="small-button single-submit-button" loading="{{loading}}" disabled="{{!singleDraftId || loading}}" bindtap="saveSingleDraft">保存草稿</button>
+          <button class="small-button single-submit-button primary" loading="{{loading}}" disabled="{{!singleDraftId || loading}}" bindtap="confirmSingleDraft">确认入池</button>
+        </view>
+      </view>
+
+      <view wx:elif="{{!loading}}" class="single-placeholder">
+        先点击“解析”，解析成功后再展开下方字段校对。
+      </view>
+    </block>
+
+    <block wx:else>
+      <textarea
+        class="textarea"
+        maxlength="-1"
+        value="{{importText}}"
+        bindinput="onImportText"
+        placeholder="粘贴微信或 LINE 订单文本，一次可批量导入 50-80 条。"
+      />
+      <button class="button-primary" loading="{{loading}}" bindtap="submitImport">解析并分类</button>
+    </block>
   </view>
 
   <view wx:if="{{conflictText}}" class="conflict">{{conflictText}}</view>
   <view wx:elif="{{message}}" class="success-text">{{message}}</view>
 
+  <view class="panel published-panel">
+    <view class="section-head small">
+      <view>
+        <view class="panel-title">已派订单修改测试</view>
+        <view class="muted">点击已发布订单，查看修改履历并保存变更通知司机。</view>
+      </view>
+      <view class="count-pill">{{publishedRows.length}}</view>
+    </view>
+    <scroll-view scroll-y class="published-scroll">
+      <view wx:for="{{publishedRows}}" wx:key="assignmentId" class="published-row {{publishedEditAssignmentId == item.assignmentId ? 'selected' : ''}}" data-order-id="{{item.orderId}}" data-assignment-id="{{item.assignmentId}}" bindtap="selectPublishedOrder">
+        <view class="published-main">
+          <view class="published-time">{{item.displayTime}}</view>
+          <view class="published-route">{{item.displayRoute}}</view>
+          <view class="published-meta">{{item.displayResource}} · {{item.displayPublisher}}</view>
+        </view>
+        <view class="published-side">
+          <view class="published-order-no">{{item.displayOrderNo}}</view>
+          <view class="published-status">{{item.statusText}}</view>
+        </view>
+      </view>
+      <view wx:if="{{!publishedRows.length}}" class="empty-line">暂无已派订单</view>
+    </scroll-view>
+
+    <view wx:if="{{publishedEditOpen}}" class="published-editor">
+      <view class="published-editor-head">
+        <view>
+          <view class="published-editor-title">修改订单</view>
+          <view class="published-editor-sub">{{publishedEditTitle}}</view>
+        </view>
+        <view class="tap-control daily-tool" bindtap="closePublishedEditor">关闭</view>
+      </view>
+
+      <view class="published-form-grid">
+        <input class="input published-input" data-field="order_date" value="{{publishedEditForm.order_date}}" bindinput="onPublishedEditField" placeholder="开始日期" />
+        <input class="input published-input" data-field="start_time" value="{{publishedEditForm.start_time}}" bindinput="onPublishedEditField" placeholder="开始时间" />
+        <input class="input published-input" data-field="end_date" value="{{publishedEditForm.end_date}}" bindinput="onPublishedEditField" placeholder="结束日期" />
+        <input class="input published-input" data-field="end_time" value="{{publishedEditForm.end_time}}" bindinput="onPublishedEditField" placeholder="结束时间" />
+        <input class="input published-input wide" data-field="pickup_location" value="{{publishedEditForm.pickup_location}}" bindinput="onPublishedEditField" placeholder="起点" />
+        <input class="input published-input wide" data-field="dropoff_location" value="{{publishedEditForm.dropoff_location}}" bindinput="onPublishedEditField" placeholder="终点" />
+        <input class="input published-input" data-field="order_type" value="{{publishedEditForm.order_type}}" bindinput="onPublishedEditField" placeholder="类型" />
+        <input class="input published-input" data-field="vehicle_type" value="{{publishedEditForm.vehicle_type}}" bindinput="onPublishedEditField" placeholder="车型" />
+        <input class="input published-input" data-field="price" value="{{publishedEditForm.price}}" bindinput="onPublishedEditField" placeholder="价格" />
+        <input class="input published-input wide" data-field="remark" value="{{publishedEditForm.remark}}" bindinput="onPublishedEditField" placeholder="备注" />
+      </view>
+
+      <view class="published-actions">
+        <view class="tap-control daily-submit" bindtap="refreshPublishedHistory">刷新履历</view>
+        <view class="tap-control daily-submit primary" bindtap="savePublishedOrder">保存并通知司机</view>
+      </view>
+
+      <view class="history-title">修改履历</view>
+      <view wx:if="{{publishedHistoryLoading}}" class="empty-line">履历加载中...</view>
+      <view wx:for="{{publishedHistoryRows}}" wx:key="id" class="history-row">
+        <view class="history-dot"></view>
+        <view class="history-content">
+          <view class="history-top">
+            <text>{{item.actorText}}</text>
+            <text>{{item.timeText}}</text>
+          </view>
+          <view class="history-summary">{{item.title}}</view>
+          <view wx:for="{{item.diffLines}}" wx:for-item="line" wx:key="key" class="history-diff">
+            <text>{{line.label}}</text>
+            <view>{{line.before}} → {{line.after}}</view>
+          </view>
+          <view wx:if="{{!item.diffLines.length}}" class="history-empty">无核心字段变化</view>
+        </view>
+      </view>
+      <view wx:if="{{!publishedHistoryLoading && !publishedHistoryRows.length}}" class="empty-line">暂无修改履历</view>
+    </view>
+  </view>
+
   <view class="panel charter-panel">
     <view class="section-head" bindtap="toggleCharter">
-      <view>
-        <view class="title-with-help">
-          <view class="panel-title">包车</view>
-          <view class="help-dot" data-type="charter" bindtap="showHelp">?</view>
-        </view>
+      <view class="title-with-help">
+        <view class="panel-title">包车</view>
+        <view class="help-dot" data-type="charter" bindtap="showHelp">?</view>
       </view>
       <view class="count-pill">{{charterRows.length}} 单 · {{charterCollapsed ? '展开' : '收起'}}</view>
     </view>
@@ -52,23 +320,6 @@
             </view>
             <view class="compact-line">{{item.timeText}} · {{item.routeText}}</view>
             <view class="compact-meta">{{item.vehicle_type || '车型待确认'}} · {{item.charterDetailText}}</view>
-          </view>
-        </view>
-        <view wx:if="{{editingKey === item.key}}" class="inline-edit" catchtap="noop">
-          <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期" />
-          <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="开始" />
-          <input class="input" data-field="end_time" value="{{editing.end_time}}" bindinput="onEditField" placeholder="结束" />
-          <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
-          <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
-          <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
-          <input class="input" data-field="guest_name" value="{{editing.guest_name}}" bindinput="onEditField" placeholder="客人" />
-          <input class="input" data-field="guest_contact" value="{{editing.guest_contact}}" bindinput="onEditField" placeholder="联系方式" />
-          <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
-          <input class="input" data-field="agency_name" value="{{editing.agency_name}}" bindinput="onEditField" placeholder="旅行社" />
-          <input class="input full" data-field="remark" value="{{editing.remark}}" bindinput="onEditField" placeholder="备注 / 行程点" />
-          <view class="edit-actions">
-            <button class="small-button" bindtap="cancelEdit">取消</button>
-            <button class="small-button primary" bindtap="saveEdit">保存</button>
           </view>
         </view>
       </view>
@@ -95,22 +346,11 @@
               </view>
               <view class="compact-line">{{item.compactTimeText}}</view>
               <view class="compact-meta">{{item.routeText}}</view>
-            </view>
-          </view>
-          <view wx:if="{{editingKey === item.key}}" class="inline-edit compact-edit" catchtap="noop">
-            <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期" />
-            <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="时间" />
-            <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
-            <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
-            <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
-            <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
-            <view class="edit-actions">
-              <button class="small-button" bindtap="cancelEdit">取消</button>
-              <button class="small-button primary" bindtap="saveEdit">保存</button>
+              <view wx:if="{{item.guestSummaryText}}" class="compact-meta">{{item.guestSummaryText}}</view>
             </view>
           </view>
         </view>
-        <view wx:if="{{!pickupRows.length}}" class="empty-line">暂无接机</view>
+        <view wx:if="{{!pickupRows.length}}" class="empty-line">暂无接机订单</view>
       </scroll-view>
     </view>
 
@@ -132,22 +372,11 @@
               </view>
               <view class="compact-line">{{item.compactTimeText}}</view>
               <view class="compact-meta">{{item.routeText}}</view>
-            </view>
-          </view>
-          <view wx:if="{{editingKey === item.key}}" class="inline-edit compact-edit" catchtap="noop">
-            <input class="input" data-field="order_date" value="{{editing.order_date}}" bindinput="onEditField" placeholder="日期" />
-            <input class="input" data-field="start_time" value="{{editing.start_time}}" bindinput="onEditField" placeholder="时间" />
-            <input class="input" data-field="pickup_location" value="{{editing.pickup_location}}" bindinput="onEditField" placeholder="起点" />
-            <input class="input" data-field="dropoff_location" value="{{editing.dropoff_location}}" bindinput="onEditField" placeholder="终点" />
-            <input class="input" data-field="vehicle_type" value="{{editing.vehicle_type}}" bindinput="onEditField" placeholder="车型" />
-            <input class="input" data-field="price" value="{{editing.price}}" type="number" bindinput="onEditField" placeholder="价格" />
-            <view class="edit-actions">
-              <button class="small-button" bindtap="cancelEdit">取消</button>
-              <button class="small-button primary" bindtap="saveEdit">保存</button>
+              <view wx:if="{{item.guestSummaryText}}" class="compact-meta">{{item.guestSummaryText}}</view>
             </view>
           </view>
         </view>
-        <view wx:if="{{!dropoffRows.length}}" class="empty-line">暂无送机</view>
+        <view wx:if="{{!dropoffRows.length}}" class="empty-line">暂无送机订单</view>
       </scroll-view>
     </view>
   </view>
@@ -181,17 +410,19 @@
           <text class="resource-name">{{item.shortPlate || item.plate_number}}</text>
           <text class="resource-sub">{{item.vehicle_type || '-'}}/{{item.seat_count || '-'}}座</text>
         </view>
+        <view wx:if="{{!vehicles.length}}" class="empty-line">暂无车辆</view>
       </scroll-view>
     </view>
   </view>
 
   <view wx:if="{{selectedKeys.length > 0}}" class="dispatch-preview">
-    <view>
-      <view class="preview-title">{{preview.orderCount}} 单 → {{preview.driverName}} → {{preview.vehicleName}}</view>
-      <view class="preview-sub">{{canAssign ? '司机和车辆已选，可以派单。' : '请在下方选择司机和车辆。'}}</view>
+    <view class="preview-info">
+      <view class="preview-title">已选 {{preview.orderCount}} 单</view>
+      <view class="preview-sub {{canAssign ? 'is-ready' : 'is-pending'}}">{{canAssign ? (preview.driverName + ' · ' + preview.vehicleName) : '待选择司机和车辆'}}</view>
     </view>
     <view class="preview-actions">
-      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">派单</button>
+      <button wx:if="{{canAuction}}" class="dispatch-button hall-button" loading="{{loading}}" disabled="{{loading}}" bindtap="publishSelectedToAuction">放入大厅</button>
+      <button class="dispatch-button {{canAssign ? 'ready' : 'disabled'}}" loading="{{loading}}" disabled="{{!canAssign || loading}}" bindtap="assignSelected">派车</button>
     </view>
   </view>
 
@@ -205,3 +436,5 @@
     </view>
   </view>
 </view>
+
+<custom-tab-bar />

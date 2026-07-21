@@ -1,29 +1,72 @@
 <view class="page {{isDriverTheme ? 'driver-theme' : ''}}">
   <view class="hero dashboard-hero">
     <view class="hero-eyebrow">TOURFLOW MOBILE</view>
-    <view class="hero-title">{{session ? session.dispatcher.dispatcher_name : '统一账号登录'}}</view>
-    <view class="hero-meta">{{session ? session.dispatcher.dispatcher_code + ' - ' + session.dispatcher.dispatcher_role : '调度 / 管理 / 司机 / 运行管理统一入口'}}</view>
+    <view class="hero-title">{{heroName}}</view>
+    <view class="hero-meta">{{heroMeta}}</view>
+    <view wx:if="{{session && canDispatch}}" class="hero-bell {{dashboard.counts.notifications_unread ? 'active' : ''}}" hover-class="hero-bell-pressed" hover-stay-time="80" catchtap="onBellTap">
+      <view class="hero-bell-symbol">
+        <view class="hero-bell-cap"></view>
+        <view class="hero-bell-dome"></view>
+        <view class="hero-bell-base"></view>
+        <view class="hero-bell-dot"></view>
+      </view>
+      <view wx:if="{{dashboard.counts.notifications_unread}}" class="hero-bell-count">{{dashboard.counts.notifications_unread}}</view>
+    </view>
   </view>
 
   <view wx:if="{{!session}}" class="panel stack login-panel">
-    <view>
-      <view class="panel-title">账号登录</view>
-      <view class="login-help">使用后台录入的手机号登录，初始密码为手机号后 6 位。</view>
-    </view>
-    <input class="input login-input" value="{{username}}" type="text" confirm-type="next" bindinput="onUsername" placeholder-class="login-placeholder" placeholder="手机号或账号" />
-    <input class="input login-input" value="{{password}}" password confirm-type="done" bindinput="onPassword" placeholder-class="login-placeholder" placeholder="密码" />
-    <button class="button-primary" loading="{{loading}}" bindtap="login">进入系统</button>
-    <view wx:if="{{error}}" class="muted">{{error}}</view>
+    <view class="panel-title">正在返回登录</view>
+    <view class="login-help">未检测到车公司登录状态，正在返回统一登录入口。</view>
   </view>
 
   <view wx:else>
-    <view class="ops-summary">
-      <view wx:if="{{canDispatch}}" class="summary-main" bindtap="goDispatch">
-        <view class="summary-label">未派车订单</view>
-        <view class="summary-number">{{dashboard.counts.unassigned_orders || 0}}</view>
-        <view class="summary-note">点击进入派车工作台</view>
+    <view wx:if="{{canDispatch}}" class="dispatch-command-grid compact-switch-grid">
+      <view class="command-card command-resources info-card {{panelMode === 'resources' ? 'active' : ''}}" data-mode="resources" bindtap="switchPanel">
+        <view class="command-label">车辆 / 人员</view>
+        <view class="resource-command-lines">
+          <view>
+            <text>{{resourceSummary.vehicleInspectionDue || 0}}</text>
+            <text>车检</text>
+          </view>
+          <view>
+            <text>{{resourceSummary.threeMonthDue || 0}}</text>
+            <text>点检</text>
+          </view>
+          <view>
+            <text>{{resourceSummary.healthDue || 0}}</text>
+            <text>体检</text>
+          </view>
+        </view>
       </view>
-      <view wx:elif="{{isOperationsManager}}" class="summary-main ops-main {{operationsStatus.tone}}">
+      <view class="command-card command-idle {{panelMode === 'idle' ? 'active' : ''}}" data-mode="idle" bindtap="switchPanel">
+        <view class="command-label">今日空闲</view>
+        <view class="idle-summary-lines">
+          <view>
+            <text>{{dispatchOverview.idleDrivers}}/{{dispatchOverview.driverTotal}}</text>
+            <text>司机</text>
+          </view>
+          <view>
+            <text>{{dispatchOverview.idleHiace}}/{{dispatchOverview.hiaceTotal}}</text>
+            <text>10座</text>
+          </view>
+          <view>
+            <text>{{dispatchOverview.idleAlphard}}/{{dispatchOverview.alphardTotal}}</text>
+            <text>Alphard</text>
+          </view>
+        </view>
+      </view>
+      <view class="command-card command-small {{panelMode === 'orders' ? 'active' : ''}}" data-mode="orders" bindtap="switchPanel">
+        <view class="command-label">待委派订单</view>
+        <view class="command-number compact-ratio">{{dispatchOverview.unassignedToday}}/{{dispatchOverview.todayTotal}}</view>
+      </view>
+      <view class="command-card command-small {{panelMode === 'workload' ? 'active' : ''}}" data-mode="workload" bindtap="switchPanel">
+        <view class="command-label">联勤</view>
+        <view class="command-number">{{driverStats.length}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{!canDispatch}}" class="ops-summary">
+      <view wx:if="{{isOperationsManager}}" class="summary-main ops-main {{operationsStatus.tone}}">
         <view class="summary-label">今日运力状态</view>
         <view class="summary-number status-text">{{operationsStatus.label}}</view>
         <view class="summary-note">{{operationsStatus.hint}}</view>
@@ -37,50 +80,92 @@
       <view class="summary-side {{!isOperationsManager ? 'driver-summary-side' : ''}}">
         <view wx:if="{{!isOperationsManager}}" class="summary-chip summary-wide {{panelMode === 'orders' ? 'active' : ''}} {{driverOrderChipAlert ? 'danger' : ''}}" data-mode="orders" bindtap="switchPanel">
           <text>{{driverOrderChipLabel}}</text>
-          <strong>{{driverOrderChipCount}}</strong>
+          <text class="metric-strong">{{driverOrderChipCount}}</text>
         </view>
         <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'unread' ? 'active' : ''}}" data-mode="unread" bindtap="switchPanel">
           <text>未读通知</text>
-          <strong>{{dashboard.counts.notifications_unread || 0}}/{{dashboard.counts.notifications_total || 0}}</strong>
+          <text class="metric-strong">{{dashboard.counts.notifications_unread || 0}}/{{dashboard.counts.notifications_total || 0}}</text>
         </view>
         <view wx:if="{{!isOperationsManager}}" class="summary-chip {{panelMode === 'all' ? 'active' : ''}}" data-mode="all" bindtap="switchPanel">
           <text>全部订单</text>
-          <strong>{{driverAssignments.length || 0}}</strong>
+          <text class="metric-strong">{{allOrderChipCount || 0}}</text>
+        </view>
+        <view wx:if="{{canViewDriverWorkload}}" class="summary-chip {{panelMode === 'workload' ? 'active' : ''}}" data-mode="workload" bindtap="switchPanel">
+          <text>联勤</text>
+          <text class="metric-strong">{{driverStats.length || 0}}</text>
         </view>
         <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'tasks' ? 'active' : ''}}" data-section="tasks" bindtap="switchOperationsSection">
           <text>司机任务</text>
-          <strong>{{operationsOverview.taskTotal}}</strong>
+          <text class="metric-strong">{{operationsOverview.taskTotal}}</text>
         </view>
         <view wx:if="{{isOperationsManager}}" class="summary-chip {{operationsSection === 'notifications' ? 'active' : ''}}" data-section="notifications" bindtap="switchOperationsSection">
           <text>通知</text>
-          <strong>{{dashboard.counts.notifications_unread || 0}}</strong>
+          <text class="metric-strong">{{dashboard.counts.notifications_unread || 0}}</text>
         </view>
       </view>
     </view>
 
-    <view wx:if="{{isOperationsManager}}" class="ops-grid ops-grid-compact">
-      <view class="ops-card {{operationsSection === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="goInfo">
-        <text>司机资料</text>
-        <strong>{{operationsOverview.driverTotal}}</strong>
-        <view>联系方式、体检、驾照、在留期限</view>
+    <view wx:if="{{isOperationsManager}}" class="resource-entry ops-resource-entry" data-section="vehicles" bindtap="goInfo">
+      <view class="resource-entry-copy">
+        <view class="resource-entry-title">车辆 / 人员信息总览</view>
+        <view class="resource-entry-meta">车辆档案、司机资料、车检点检 PDF 统一查询下载</view>
       </view>
-      <view class="ops-card {{operationsSection === 'vehicles' ? 'active' : ''}}" data-section="vehicles" bindtap="goInfo">
-        <text>车辆资料</text>
-        <strong>{{operationsOverview.vehicleTotal}}</strong>
-        <view>车型、车牌、点检、年检、维修状态</view>
+      <view class="resource-entry-stats">
+        <view>
+          <text class="resource-entry-stat-value">{{resourceSummary.vehicleTotal || 0}}</text>
+          <text class="resource-entry-stat-label">车辆</text>
+        </view>
+        <view>
+          <text class="resource-entry-stat-value">{{resourceSummary.driverTotal || 0}}</text>
+          <text class="resource-entry-stat-label">人员</text>
+        </view>
+        <view>
+          <text class="resource-entry-stat-value">{{resourceSummary.pdfTotal || 0}}</text>
+          <text class="resource-entry-stat-label">PDF</text>
+        </view>
       </view>
-      <view class="ops-card ops-card-wide {{operationsSection === 'attendance' ? 'active' : ''}}" data-section="attendance" bindtap="goInfo">
-        <text>出勤状态</text>
-        <strong>{{operationsOverview.attendanceWarnings}}</strong>
-        <view>出勤司机、车辆、睡眠、点呼、出入库和休息时间</view>
+      <view class="resource-entry-action">进入</view>
+    </view>
+
+    <view wx:if="{{isOperationsManager}}" class="panel ops-alert-panel">
+      <view class="panel-header-lite">
+        <view>
+          <view class="title-with-help">
+            <view class="panel-title">到期提醒</view>
+            <view class="help-dot" data-tip="显示车辆车检、3个月点检，以及人员体检、签证、驾照 30 天内到期和已过期提醒。" catchtap="showHintTip">?</view>
+          </view>
+        </view>
+        <view class="soft-count {{resourceAlertFilter !== 'all' ? 'filter-active' : ''}}" bindtap="clearResourceAlertFilter">
+          {{visibleResourceAlertRows.length || 0}} 项{{resourceAlertFilter !== 'all' ? ' · 全部' : ''}}
+        </view>
       </view>
+      <view wx:if="{{resourceError}}" class="notice error">资料接口读取失败：{{resourceError}}</view>
+      <view class="ops-alert-summary">
+        <view class="ops-alert-filter {{resourceAlertFilter === 'vehicle' ? 'active' : ''}}" data-filter="vehicle" bindtap="selectResourceAlertFilter" hover-class="ops-alert-filter-hover"><text>{{resourceSummary.vehicleInspectionDue || 0}}</text><text>车检</text></view>
+        <view class="ops-alert-filter {{resourceAlertFilter === 'inspection' ? 'active' : ''}}" data-filter="inspection" bindtap="selectResourceAlertFilter" hover-class="ops-alert-filter-hover"><text>{{resourceSummary.threeMonthDue || 0}}</text><text>点检</text></view>
+        <view class="ops-alert-filter {{resourceAlertFilter === 'health' ? 'active' : ''}}" data-filter="health" bindtap="selectResourceAlertFilter" hover-class="ops-alert-filter-hover"><text>{{resourceSummary.healthDue || 0}}</text><text>体检</text></view>
+        <view class="ops-alert-filter {{resourceAlertFilter === 'residence' ? 'active' : ''}}" data-filter="residence" bindtap="selectResourceAlertFilter" hover-class="ops-alert-filter-hover"><text>{{resourceSummary.residenceDue || 0}}</text><text>签证</text></view>
+        <view class="ops-alert-filter {{resourceAlertFilter === 'license' ? 'active' : ''}}" data-filter="license" bindtap="selectResourceAlertFilter" hover-class="ops-alert-filter-hover"><text>{{resourceSummary.licenseDue || 0}}</text><text>驾照</text></view>
+      </view>
+      <scroll-view wx:if="{{visibleResourceAlertRows.length}}" scroll-y class="ops-alert-scroll">
+        <view wx:for="{{visibleResourceAlertRows}}" wx:key="id" class="ops-alert-row {{item.tone}}">
+          <view class="ops-alert-main">
+            <view class="row-title">{{item.title}}</view>
+            <view class="muted">{{item.meta}}</view>
+          </view>
+          <view class="ops-alert-status">{{item.status}}</view>
+        </view>
+      </scroll-view>
+      <view wx:else class="empty-state compact-empty">{{resourceAlertFilter === 'all' ? '暂无 30 天内到期提醒' : '该分类暂无 30 天内到期提醒'}}</view>
     </view>
 
     <view wx:if="{{isOperationsManager}}" class="panel ops-home-detail">
       <view class="panel-header-lite">
         <view>
-          <view class="panel-title">{{operationsDetailTitle}}</view>
-          <view class="muted">{{operationsDetailHint}}</view>
+          <view class="title-with-help">
+            <view class="panel-title">{{operationsDetailTitle}}</view>
+            <view wx:if="{{operationsDetailHint}}" class="help-dot" data-tip="{{operationsDetailHint}}" catchtap="showHintTip">?</view>
+          </view>
         </view>
         <view class="soft-count">{{operationsDetailRows.length}} {{operationsDetailUnit}}</view>
       </view>
@@ -92,7 +177,7 @@
           <view wx:if="{{item.details && item.details.length}}" class="ops-mini-fields">
             <view wx:for="{{item.details}}" wx:for-item="field" wx:key="label" class="ops-mini-field">
               <text>{{field.label}}</text>
-              <strong>{{field.value}}</strong>
+              <text class="metric-strong">{{field.value}}</text>
             </view>
           </view>
         </view>
@@ -100,39 +185,273 @@
       </view>
     </view>
 
-    <view wx:if="{{canViewDriverWorkload}}" class="panel">
-      <view class="panel-header-lite">
-        <view>
-          <view class="panel-title">司机工作负荷</view>
-          <view class="muted">连续工作超过 13 天会标记为风险。</view>
-        </view>
-        <view class="soft-count">{{driverStats.length}} 人</view>
-      </view>
-      <view class="pressure-list">
-        <view class="pressure-row {{item.alert ? 'danger' : ''}}" wx:for="{{visibleDriverStats}}" wx:key="driver_id">
-          <view>
-            <view class="pressure-name">{{item.driver_name}}</view>
-            <view class="muted">今日 {{item.today_orders}} 单 - 本月 {{item.month_orders}} 单</view>
-          </view>
-          <view class="pressure-badge {{item.alert ? 'danger' : ''}}">连续 {{item.continuous_days}} 天</view>
-        </view>
-      </view>
-      <view wx:if="{{driverStats.length > 3}}" class="pressure-toggle" bindtap="togglePressureList">
-        {{pressureExpanded ? '收起，只看前 3 人' : '展开全部司机'}}
-      </view>
-      <view wx:if="{{!driverStats.length}}" class="empty-state">暂无司机订单统计</view>
-    </view>
-
     <view wx:if="{{!isOperationsManager}}" class="panel notifications-panel">
       <view class="panel-header-lite">
         <view>
-          <view class="panel-title">{{panelTitle}}</view>
-          <view class="muted">{{panelHint}}</view>
+          <view class="title-with-help">
+            <view class="panel-title">{{panelTitle}}</view>
+            <view wx:if="{{panelHint}}" class="help-dot" data-tip="{{panelHint}}" catchtap="showHintTip">?</view>
+          </view>
         </view>
-        <view class="soft-count">{{panelRows.length}} 条</view>
+        <view wx:if="{{panelMode === 'resources'}}" class="soft-count">{{resourceSummary.alertTotal || 0}} 项</view>
+        <view wx:elif="{{panelMode === 'unread'}}" class="soft-count">{{dashboard.counts.notifications_unread || 0}} 条</view>
+        <view wx:else class="soft-count">{{panelRows.length}} {{panelUnit || '条'}}</view>
       </view>
       <view class="list">
-        <view wx:for="{{panelRows}}" wx:key="id" data-index="{{index}}" bindtap="onPanelRowTap" class="row notification-row">
+        <view wx:if="{{panelMode === 'resources'}}" class="home-resource-overview">
+          <view wx:if="{{resourceError}}" class="notice error">资料接口读取失败：{{resourceError}}</view>
+          <view class="home-resource-stats">
+            <view class="home-resource-stat {{resourceFocus === 'vehicles' ? 'active' : ''}}" data-section="vehicles" bindtap="switchResourceFocus">
+              <view class="home-resource-label">车辆台账</view>
+              <view class="home-resource-total">{{resourceSummary.vehicleTotal}}</view>
+              <view class="home-resource-meta">可派 {{dispatchOverview.vehicleTotal}} · PDF {{resourceSummary.pdfTotal}}</view>
+            </view>
+            <view class="home-resource-stat {{resourceFocus === 'drivers' ? 'active' : ''}}" data-section="drivers" bindtap="switchResourceFocus">
+              <view class="home-resource-label">人员台账</view>
+              <view class="home-resource-total">{{resourceSummary.driverTotal}}</view>
+              <view class="home-resource-meta">可派 {{dispatchOverview.driverTotal}} · 体检 {{resourceSummary.healthDue}}</view>
+            </view>
+          </view>
+          <view class="resource-office-tabs">
+            <view wx:for="{{officeFilters}}" wx:key="value" class="resource-office-tab {{resourceOfficeFilter === item.value ? 'active' : ''}}" data-office="{{item.value}}" bindtap="switchResourceOffice">
+              <text>{{item.label}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{resourceFocus === 'vehicles'}}" class="home-resource-window">
+            <view class="home-resource-window-head">
+              <view>
+                <view class="title-with-help">
+                  <view class="fold-title">车辆信息</view>
+                  <view class="help-dot small" data-tip="过期和 30 天内提醒优先显示" catchtap="showHintTip">?</view>
+                </view>
+              </view>
+              <view class="fold-count">{{resourceVehicleRows.length}} 辆</view>
+            </view>
+            <scroll-view scroll-y class="resource-window-scroll">
+              <view wx:for="{{resourceVehicleRows}}" wx:key="id" class="resource-mini-row resource-vehicle-row {{expandedHomeVehicleId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="toggleHomeResourceVehicle">
+                <view class="resource-driver-main">
+                  <view class="row-title">{{item.title}}</view>
+                  <view class="muted">{{item.meta}}</view>
+                </view>
+                <view class="resource-mini-side">
+                  <text wx:if="{{item.riskText}}" class="resource-risk {{item.riskTone}}">{{item.riskText}}</text>
+                  <text>车检 {{item.vehicleInspectionText || '-'}}</text>
+                  <text>点检 {{item.threeMonthText || '-'}}</text>
+                </view>
+                <view wx:if="{{expandedHomeVehicleId === item.id}}" class="home-driver-health-edit vehicle-inspection-edit">
+                  <view class="vehicle-inspection-date-grid">
+                    <view class="vehicle-inspection-date-card">
+                      <text>车检日期</text>
+                      <strong>{{item.latestVehicleInspectionText || '-'}}</strong>
+                    </view>
+                    <view class="vehicle-inspection-date-card">
+                      <text>点检日期</text>
+                      <strong>{{item.latestThreeMonthText || item.threeMonthText || '-'}}</strong>
+                    </view>
+                  </view>
+                  <view class="vehicle-inspection-section-title">资料更新</view>
+                  <view class="home-driver-health-actions vehicle-inspection-actions">
+                    <view class="vehicle-inspection-action-card">
+                      <view class="vehicle-inspection-action-title">车检</view>
+                      <view class="vehicle-inspection-action-buttons">
+                        <picker catchtap="noopTap" mode="date" value="{{item.latestVehicleInspectionIso}}" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="vehicle" bindchange="updateHomeVehicleInspectionDate">
+                          <view class="health-edit-button">选日期</view>
+                        </picker>
+                        <view class="health-upload-button" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="vehicle" data-date="{{item.latestVehicleInspectionIso}}" catchtap="uploadHomeVehicleInspectionDocument">上传资料</view>
+                      </view>
+                    </view>
+                    <view class="vehicle-inspection-action-card">
+                      <view class="vehicle-inspection-action-title">3个月点检</view>
+                      <view class="vehicle-inspection-action-buttons">
+                        <picker catchtap="noopTap" mode="date" value="{{item.latestThreeMonthIso || item.threeMonthIso}}" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="inspection" bindchange="updateHomeVehicleInspectionDate">
+                          <view class="health-edit-button">选日期</view>
+                        </picker>
+                        <view class="health-upload-button" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="inspection" data-date="{{item.latestThreeMonthIso || item.threeMonthIso}}" catchtap="uploadHomeVehicleInspectionDocument">上传资料</view>
+                      </view>
+                    </view>
+                  </view>
+                </view>
+              </view>
+              <view wx:if="{{!resourceVehicleRows.length}}" class="empty-state compact-empty">暂无车辆资料</view>
+            </scroll-view>
+            <view class="home-resource-more" bindtap="goInfo">进入完整资料页</view>
+          </view>
+
+          <view wx:elif="{{resourceFocus === 'drivers'}}" class="home-resource-window">
+            <view class="home-resource-window-head">
+              <view>
+                <view class="title-with-help">
+                  <view class="fold-title">人员信息</view>
+                  <view class="help-dot small" data-tip="体检过期和 30 天内提醒优先显示" catchtap="showHintTip">?</view>
+                </view>
+              </view>
+              <view class="fold-count">{{resourceDriverRows.length}} 人</view>
+            </view>
+            <scroll-view scroll-y class="resource-window-scroll">
+              <view wx:for="{{resourceDriverRows}}" wx:key="id" class="resource-mini-row resource-driver-row {{expandedHomeDriverId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="toggleHomeResourceDriver">
+                <view class="resource-driver-main">
+                  <view class="row-title">{{item.title}}</view>
+                  <view class="muted">{{item.meta}}</view>
+                </view>
+                <view class="resource-mini-side">
+                  <text wx:if="{{item.riskText}}" class="resource-risk {{item.riskTone}}">{{item.riskText}}</text>
+                  <text>体检 {{item.healthText || '-'}}</text>
+                  <text>驾照 {{item.licenseIso || '-'}}</text>
+                </view>
+                <view wx:if="{{expandedHomeDriverId === item.id}}" class="home-driver-health-edit">
+                  <view>
+                    <text>体检日期</text>
+                    <strong>{{item.healthExamDate || '-'}}</strong>
+                  </view>
+                  <view class="home-driver-health-actions">
+                    <picker catchtap="noopTap" mode="date" value="{{item.healthExamDate}}" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" bindchange="updateHomeDriverHealthDate">
+                      <view class="health-edit-button">更新体检</view>
+                    </picker>
+                    <view class="health-upload-button" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" catchtap="uploadHomeDriverHealthDocument">上传资料</view>
+                  </view>
+                </view>
+              </view>
+              <view wx:if="{{!resourceDriverRows.length}}" class="empty-state compact-empty">暂无人员资料</view>
+            </scroll-view>
+            <view class="home-resource-more" bindtap="goInfo">进入完整资料页</view>
+          </view>
+
+          <view wx:else class="home-alert-grid">
+            <view class="home-alert-card vehicle">
+              <view class="home-alert-title">车检 30 天内</view>
+              <view class="home-alert-number">{{resourceSummary.vehicleInspectionDue}}</view>
+              <view wx:if="{{resourceVehicleAlerts.length}}" class="home-alert-list">
+                <view wx:for="{{resourceVehicleAlerts}}" wx:key="id" class="home-alert-row vehicle-action-row {{item.tone}} {{expandedHomeVehicleId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="toggleHomeResourceVehicle">
+                  <text>{{item.title}}</text>
+                  <strong>{{item.status}}</strong>
+                  <view>{{item.meta}}</view>
+                  <view wx:if="{{expandedHomeVehicleId === item.id}}" class="home-driver-health-edit vehicle-inspection-edit">
+                    <view class="vehicle-inspection-date-grid">
+                      <view>
+                        <text>车检日期</text>
+                        <strong>{{item.latestVehicleInspectionText || '-'}}</strong>
+                      </view>
+                      <view>
+                        <text>到期日期</text>
+                        <strong>{{item.vehicleInspectionText || '-'}}</strong>
+                      </view>
+                    </view>
+                    <view class="home-driver-health-actions vehicle-inspection-actions">
+                      <picker catchtap="noopTap" mode="date" value="{{item.latestVehicleInspectionIso}}" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="vehicle" bindchange="updateHomeVehicleInspectionDate">
+                        <view class="health-edit-button">更新车检</view>
+                      </picker>
+                      <view class="health-upload-button" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="vehicle" data-date="{{item.latestVehicleInspectionIso}}" catchtap="uploadHomeVehicleInspectionDocument">上传资料</view>
+                    </view>
+                  </view>
+                </view>
+              </view>
+              <view wx:else class="compact-empty">暂无临近到期车辆</view>
+            </view>
+            <view class="home-alert-card inspection">
+              <view class="home-alert-title">3个月点检 30 天内</view>
+              <view class="home-alert-number">{{resourceSummary.threeMonthDue}}</view>
+              <view wx:if="{{resourceInspectionAlerts.length}}" class="home-alert-list">
+                <view wx:for="{{resourceInspectionAlerts}}" wx:key="id" class="home-alert-row vehicle-action-row {{item.tone}} {{expandedHomeVehicleId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="toggleHomeResourceVehicle">
+                  <text>{{item.title}}</text>
+                  <strong>{{item.status}}</strong>
+                  <view>{{item.meta}}</view>
+                  <view wx:if="{{expandedHomeVehicleId === item.id}}" class="home-driver-health-edit vehicle-inspection-edit">
+                    <view class="vehicle-inspection-date-grid">
+                      <view>
+                        <text>点检日期</text>
+                        <strong>{{item.latestThreeMonthText || '-'}}</strong>
+                      </view>
+                      <view>
+                        <text>提醒节点</text>
+                        <strong>{{item.threeMonthText || '-'}}</strong>
+                      </view>
+                    </view>
+                    <view class="home-driver-health-actions vehicle-inspection-actions">
+                      <picker catchtap="noopTap" mode="date" value="{{item.latestThreeMonthIso || item.threeMonthIso}}" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="inspection" bindchange="updateHomeVehicleInspectionDate">
+                        <view class="health-edit-button">更新点检</view>
+                      </picker>
+                      <view class="health-upload-button" data-key="{{item.vehicleKey || item.title}}" data-title="{{item.title}}" data-type="inspection" data-date="{{item.latestThreeMonthIso || item.threeMonthIso}}" catchtap="uploadHomeVehicleInspectionDocument">上传资料</view>
+                    </view>
+                  </view>
+                </view>
+              </view>
+              <view wx:else class="compact-empty">暂无临近到期车辆</view>
+            </view>
+            <view class="home-alert-card health">
+              <view class="home-alert-title">人员体检 30 天内</view>
+              <view class="home-alert-number">{{resourceSummary.healthDue}}</view>
+              <view wx:if="{{resourceHealthAlerts.length}}" class="home-alert-list">
+                <view wx:for="{{resourceHealthAlerts}}" wx:key="id" class="home-alert-row health-action-row {{item.tone}} {{expandedHomeDriverId === item.id ? 'expanded' : ''}}">
+                  <text data-id="{{item.id}}" bindtap="toggleHomeResourceDriver">{{item.title}}</text>
+                  <strong data-id="{{item.id}}" bindtap="toggleHomeResourceDriver">{{item.status}}</strong>
+                  <view data-id="{{item.id}}" bindtap="toggleHomeResourceDriver">{{item.meta}}</view>
+                  <view wx:if="{{expandedHomeDriverId === item.id}}" class="home-driver-health-edit">
+                    <view>
+                      <text>体检日期</text>
+                      <strong>{{item.healthExamDate || '-'}}</strong>
+                    </view>
+                    <view class="home-driver-health-actions">
+                      <picker catchtap="noopTap" mode="date" value="{{item.healthExamDate}}" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" bindchange="updateHomeDriverHealthDate">
+                        <view class="health-edit-button">更新体检</view>
+                      </picker>
+                      <view class="health-upload-button" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" catchtap="uploadHomeDriverHealthDocument">上传资料</view>
+                    </view>
+                  </view>
+                </view>
+              </view>
+              <view wx:else class="compact-empty">暂无临近到期人员</view>
+            </view>
+            <view class="home-alert-card health">
+              <view class="home-alert-title">签证 30 天内</view>
+              <view class="home-alert-number">{{resourceSummary.residenceDue || 0}}</view>
+              <view wx:if="{{resourceResidenceAlerts.length}}" class="home-alert-list">
+                <view wx:for="{{resourceResidenceAlerts}}" wx:key="id" class="home-alert-row {{item.tone}}">
+                  <text>{{item.title}}</text>
+                  <strong>{{item.status}}</strong>
+                  <view>{{item.meta}}</view>
+                </view>
+              </view>
+              <view wx:else class="compact-empty">暂无临近到期人员</view>
+            </view>
+            <view class="home-alert-card health">
+              <view class="home-alert-title">驾照 30 天内</view>
+              <view class="home-alert-number">{{resourceSummary.licenseDue || 0}}</view>
+              <view wx:if="{{resourceLicenseAlerts.length}}" class="home-alert-list">
+                <view wx:for="{{resourceLicenseAlerts}}" wx:key="id" class="home-alert-row {{item.tone}}">
+                  <text>{{item.title}}</text>
+                  <strong>{{item.status}}</strong>
+                  <view>{{item.meta}}</view>
+                </view>
+              </view>
+              <view wx:else class="compact-empty">暂无临近到期人员</view>
+            </view>
+          </view>
+        </view>
+        <view wx:elif="{{panelMode === 'idle'}}" class="idle-panel-grid">
+          <view class="idle-panel">
+            <view class="dispatch-resource-title">空闲司机</view>
+            <scroll-view scroll-y class="idle-scroll">
+              <view wx:for="{{idleDriverRows}}" wx:key="id" class="dispatch-resource-row">
+                <view class="row-title">{{item.title}}</view>
+                <view class="muted">{{item.meta}}</view>
+              </view>
+            </scroll-view>
+            <view wx:if="{{!idleDriverRows.length}}" class="empty-state compact-empty">今天暂无空闲司机</view>
+          </view>
+          <view class="idle-panel">
+            <view class="dispatch-resource-title">空闲车辆</view>
+            <scroll-view scroll-y class="idle-scroll">
+              <view wx:for="{{idleVehicleRows}}" wx:key="id" class="dispatch-resource-row">
+                <view class="row-title">{{item.title}}</view>
+                <view class="muted">{{item.meta}}</view>
+              </view>
+            </scroll-view>
+            <view wx:if="{{!idleVehicleRows.length}}" class="empty-state compact-empty">今天暂无空闲车辆</view>
+          </view>
+        </view>
+        <view wx:else>
+          <view wx:for="{{panelRows}}" wx:key="id" data-index="{{index}}" bindtap="onPanelRowTap" class="row notification-row">
           <view class="notification-dot {{item.priority || 'normal'}}"></view>
           <view class="notification-main">
             <view class="row-title">{{item.title}}</view>
@@ -141,11 +460,12 @@
           </view>
           <view class="notification-action">{{item.actionText || '查看'}}</view>
         </view>
-        <view wx:if="{{!panelRows.length}}" class="empty-state">暂无内容</view>
+        </view>
+        <view wx:if="{{panelMode !== 'idle' && panelMode !== 'resources' && !panelRows.length}}" class="empty-state">暂无内容</view>
       </view>
     </view>
 
   </view>
 
-  <custom-tab-bar />
+  <custom-tab-bar wx:if="{{session}}" />
 </view>

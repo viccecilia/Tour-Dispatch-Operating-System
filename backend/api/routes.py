@@ -142,7 +142,7 @@ from backend.services.finance_service import (
     update_settlement,
 )
 from backend.services.incident_service import close_incident, create_incident, get_incident_summary, list_incidents
-from backend.services.location_service import get_fleet_location_summary, get_latest_locations, list_location_logs
+from backend.services.location_service import get_fleet_location_summary, get_fleet_route_tracks, get_latest_locations, list_location_logs
 from backend.services.order_service import create_order, get_order, list_orders, soft_delete_order, update_order
 from backend.services.operation_log_service import log_operation
 from backend.services.notification_service import (
@@ -180,6 +180,7 @@ from backend.services.parser_service import (
     update_draft,
 )
 from backend.services.permission_service import has_permission
+from backend.services.permission_service import account_scope
 from backend.services.resource_service import (
     create_driver,
     create_vehicle,
@@ -194,6 +195,7 @@ from backend.services.resource_service import (
     update_vehicle,
     update_vehicle_inspection_record,
 )
+from backend.services.resource_library_service import list_resource_library, resolve_resource_pdf, update_driver_health_check_date, update_driver_resource_status, update_vehicle_inspection_date, update_vehicle_resource_status
 from backend.services.flight_info_service import build_flight_update, query_flight_info
 from backend.services.settings_service import (
     get_platform_auth_settings,
@@ -370,7 +372,23 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"drivers": list_available_drivers()})
             return
         if path == "/api/dispatch-mobile/vehicles":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
             self.send_json({"vehicles": list_available_vehicles()})
+            return
+        if path == "/api/dispatch-mobile/resource-library":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json(list_resource_library())
+            return
+        if path == "/api/dispatch-mobile/resource-library/file":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            target = resolve_resource_pdf(params.get("file") or "")
+            if not target:
+                self.send_json({"error": "resource_file_not_found"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_pdf(target)
             return
         if path == "/api/dispatch-mobile/assignments":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -521,9 +539,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"role_permissions": get_role_permissions()})
             return
         if path == "/api/accounts/overview":
-            if not self.require_role({"admin"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.send_json(get_account_overview())
+            self.send_json(get_account_overview(resolve_tenant_filter(user, params.get("tenant_id"))))
             return
         if path == "/api/system/status":
             if not self.require_role({"admin"}):
@@ -753,6 +772,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 )
             })
             return
+        if path == "/api/fleet/route-tracks":
+            user = self.require_api_user()
+            if not user:
+                return
+            self.send_json(get_fleet_route_tracks(params.get("date"), resolve_tenant_filter(user, params.get("tenant_id"))))
+            return
         if path == "/api/fleet/location-summary":
             self.send_json(get_fleet_location_summary())
             return
@@ -822,7 +847,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = self.query_params(parsed.query)
         payload = self.read_json()
         if path == "/api/agency-portal/login":
             result = agency_portal_login(payload)
@@ -1013,9 +1040,64 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             self.send_json({"user": changed} if changed else {"error": "user_not_found"}, HTTPStatus.OK if changed else HTTPStatus.NOT_FOUND)
             return
-        if path == "/api/accounts":
-            if not self.require_role({"admin"}):
+        if path == "/api/dispatch-mobile/resource-library/driver-health":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
+            try:
+                result = update_driver_health_check_date(payload.get("driver_key") or payload.get("name") or payload.get("driver_code"), payload.get("health_check_date"), payload)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
+            return
+        if path == "/api/dispatch-mobile/resource-library/driver-status":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            try:
+                result = update_driver_resource_status(
+                    payload.get("driver_key") or payload.get("name") or payload.get("driver_code") or payload.get("phone"),
+                    payload.get("status") or payload.get("driver_status"),
+                    payload,
+                )
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
+            return
+        if path == "/api/dispatch-mobile/resource-library/vehicle-inspection":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            try:
+                result = update_vehicle_inspection_date(
+                    payload.get("vehicle_key") or payload.get("vehicle_code") or payload.get("plate") or payload.get("suffix"),
+                    payload.get("inspection_type"),
+                    payload.get("inspection_date"),
+                    payload,
+                )
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
+            return
+        if path == "/api/dispatch-mobile/resource-library/vehicle-status":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            try:
+                result = update_vehicle_resource_status(
+                    payload.get("vehicle_key") or payload.get("vehicle_code") or payload.get("plate") or payload.get("suffix"),
+                    payload.get("status") or payload.get("vehicle_status"),
+                    payload,
+                )
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
+            return
+        if path == "/api/accounts":
+            user = self.require_role({"admin"})
+            if not user:
+                return
+            payload["tenant_id"] = resolve_write_tenant(user, payload.get("tenant_id"))
             self.safe_create(lambda: {"account": create_account(payload, self.actor_label())}, HTTPStatus.CREATED)
             return
         if path == "/api/system/backup":
@@ -1036,27 +1118,31 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         account_disable_id = self._match_action_path(path, "/api/accounts/", "/disable")
         if account_disable_id:
-            if not self.require_role({"admin"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.safe_update(lambda: disable_account(account_disable_id, self.actor_label()), "account", "account_not_found")
+            self.safe_update(lambda: disable_account(account_disable_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         account_enable_id = self._match_action_path(path, "/api/accounts/", "/enable")
         if account_enable_id:
-            if not self.require_role({"admin"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.safe_update(lambda: enable_account(account_enable_id, self.actor_label()), "account", "account_not_found")
+            self.safe_update(lambda: enable_account(account_enable_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         account_reset_id = self._match_action_path(path, "/api/accounts/", "/reset-password")
         if account_reset_id:
-            if not self.require_role({"admin"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.safe_update(lambda: reset_account_password(account_reset_id, self.actor_label()), "account", "account_not_found")
+            self.safe_update(lambda: reset_account_password(account_reset_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         account_unbind_id = self._match_action_path(path, "/api/accounts/", "/unbind-wechat")
         if account_unbind_id:
-            if not self.require_role({"admin"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.safe_update(lambda: unbind_account_wechat(account_unbind_id, self.actor_label()), "account", "account_not_found")
+            self.safe_update(lambda: unbind_account_wechat(account_unbind_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         if path == "/api/orders":
             self.create_order_with_audit(payload, path)
@@ -1360,6 +1446,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             order = update_order(mobile_order_update_id, payload)
             if order:
                 mark_order_dispatcher_context(order["id"], payload, True)
+                record_audit(
+                    "order_update",
+                    "order",
+                    order.get("id") or mobile_order_update_id,
+                    before=before,
+                    after=order,
+                    actor=self.actor_label(),
+                    source_path=path,
+                    summary=f"Mobile updated order {order.get('oid') or order.get('id')}",
+                )
                 record_dispatch_mobile_audit(
                     "mobile_order_update",
                     payload,
@@ -1370,6 +1466,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     summary=f"Mobile updated order {order.get('oid') or order.get('id')}",
                     source_path=path,
                 )
+                notify_order_changed_for_driver(before or {}, order, self.actor_label())
             self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/driver/report":
@@ -1427,7 +1524,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def do_PUT(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = self.query_params(parsed.query)
         payload = self.read_json()
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
@@ -1456,9 +1555,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         account_id = self._match_prefixed_id(path, "/api/accounts/")
         if account_id:
-            if not self.require_role({"admin"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.safe_update(lambda: update_account(account_id, payload, self.actor_label()), "account", "account_not_found")
+            self.safe_update(lambda: update_account(account_id, payload, self.actor_label(), resolve_write_tenant(user, payload.get("tenant_id") or params.get("tenant_id"))), "account", "account_not_found")
             return
         driver_id = self.match_resource_path(path, "drivers")
         if driver_id:
@@ -1534,7 +1634,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
     def do_DELETE(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = self.query_params(parsed.query)
         user = self.require_api_user()
         if not user:
             return
@@ -1678,10 +1780,16 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def sanitize_notifications(self, notifications: list[dict], user: dict | None) -> list[dict]:
         role = (user or {}).get("role")
+        if account_scope(user) == "platform":
+            notifications = [
+                item for item in notifications
+                if str(item.get("notification_type") or item.get("type") or "").lower() != "resource_reminder"
+                and str(item.get("source_type") or "").lower() != "resource_alert"
+            ]
         if role in {"admin", "dispatcher"}:
             return notifications
         if role == "operations_manager":
-            allowed_types = {"resource_reminder", "incident"}
+            allowed_types = {"resource_reminder", "incident", "driver_confirm_overdue"}
             return [
                 item for item in notifications
                 if str(item.get("notification_type") or item.get("type") or "").lower() in allowed_types
@@ -2109,6 +2217,15 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_response(status.value)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_pdf(self, path: Path) -> None:
+        body = path.read_bytes()
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'attachment; filename="{quote(path.name)}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

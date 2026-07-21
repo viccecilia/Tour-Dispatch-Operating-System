@@ -29,6 +29,7 @@ import type {
   FinanceLedger,
   FinanceOrder,
   FinanceSummary,
+  FleetRouteTracksResponse,
   Incident,
   IncidentSummary,
   LocationLog,
@@ -50,10 +51,9 @@ import type {
   WorkflowRunResult,
 } from "@/types/api";
 
-const DEFAULT_API_BASE_URL =
-  typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname)
-    ? "http://127.0.0.1:18765"
-    : "https://api-trial.taxi-airport.jp";
+const DEFAULT_API_BASE_URL = import.meta.env.DEV
+  ? "http://127.0.0.1:18765"
+  : "https://api-trial.taxi-airport.jp";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL;
 const TOKEN_KEY = "wx_dispatch_token";
@@ -395,7 +395,12 @@ export const api = {
       body: JSON.stringify({ plan_code: planCode, status: "active" }),
     }),
   orgOverview: () => request<OrgOverview>("/api/org/overview"),
-  accountOverview: () => request<AccountOverview>("/api/accounts/overview"),
+  accountOverview: (params?: { tenant_id?: number | string }) => {
+    const search = new URLSearchParams();
+    if (params?.tenant_id) search.set("tenant_id", String(params.tenant_id));
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return request<AccountOverview>(`/api/accounts/overview${suffix}`);
+  },
   systemStatus: () => request<Record<string, unknown>>("/api/system/status"),
   systemHealth: () => request<{ ok: boolean; checks: Array<{ name: string; ok: boolean; detail?: string }> }>("/api/system/health"),
   systemLogs: (lines = 120) => request<{ ok: boolean; log_file: string; lines: string[] }>(`/api/system/logs?lines=${lines}`),
@@ -407,30 +412,30 @@ export const api = {
     request<{ ok: boolean; scheduled: boolean; service: string; message: string }>("/api/system/restart-api", {
       method: "POST",
     }),
-  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; operator_code?: string; password?: string }) =>
+  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; operator_code?: string; password?: string; tenant_id?: number }) =>
     request<{ account: ManagedAccount }>("/api/accounts", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   updateAccount: (id: number, payload: Partial<ManagedAccount> & { confirm_driver_role_change?: boolean }) =>
-    request<{ account: ManagedAccount }>(`/api/accounts/${id}`, {
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}${payload.tenant_id ? `?tenant_id=${payload.tenant_id}` : ""}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
-  disableAccount: (id: number) =>
-    request<{ account: ManagedAccount }>(`/api/accounts/${id}/disable`, {
+  disableAccount: (id: number, tenantId?: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/disable${tenantId ? `?tenant_id=${tenantId}` : ""}`, {
       method: "POST",
     }),
-  enableAccount: (id: number) =>
-    request<{ account: ManagedAccount }>(`/api/accounts/${id}/enable`, {
+  enableAccount: (id: number, tenantId?: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/enable${tenantId ? `?tenant_id=${tenantId}` : ""}`, {
       method: "POST",
     }),
-  resetAccountPassword: (id: number) =>
-    request<{ account: ManagedAccount }>(`/api/accounts/${id}/reset-password`, {
+  resetAccountPassword: (id: number, tenantId?: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/reset-password${tenantId ? `?tenant_id=${tenantId}` : ""}`, {
       method: "POST",
     }),
-  unbindAccountWechat: (id: number) =>
-    request<{ account: ManagedAccount }>(`/api/accounts/${id}/unbind-wechat`, {
+  unbindAccountWechat: (id: number, tenantId?: number) =>
+    request<{ account: ManagedAccount }>(`/api/accounts/${id}/unbind-wechat${tenantId ? `?tenant_id=${tenantId}` : ""}`, {
       method: "POST",
     }),
   inviteMember: (payload: {
@@ -712,8 +717,13 @@ export const api = {
     request<{ orders: Order[]; links: Array<{ from_order_id: number; to_order_id: number; handoff: string }> }>(
       `/api/dispatch/route-suggestion?order_ids=${orderIds.join(",")}`,
     ),
-  calendar: (view: "day" | "week" | "month", date: string) =>
-    request<CalendarResponse>(`/api/calendar/dispatch?view=${view}&date=${date}`),
+  calendar: (view: "day" | "week" | "month", date: string, params?: { include_unassigned?: boolean; driver_id?: number; vehicle_id?: number }) => {
+    const search = new URLSearchParams({ view, date });
+    if (params?.include_unassigned !== undefined) search.set("include_unassigned", params.include_unassigned ? "1" : "0");
+    if (params?.driver_id) search.set("driver_id", String(params.driver_id));
+    if (params?.vehicle_id) search.set("vehicle_id", String(params.vehicle_id));
+    return request<CalendarResponse>(`/api/calendar/dispatch?${search.toString()}`);
+  },
   driverReports: async () =>
     listFrom<DriverReport>(await request<unknown>("/api/driver/reports?driver_id=1"), ["reports", "items", "data"]),
   driverAssignments: async (driverId: number) =>
@@ -731,5 +741,9 @@ export const api = {
   fleetLatestLocations: async (params?: unknown) => {
     const search = searchFrom(params, ["driver_id", "online_status", "vehicle_status", "limit", "tenant_id"]);
     return listFrom<LocationLog>(await request<unknown>(`/api/fleet/latest-locations${search.toString() ? `?${search}` : ""}`), ["locations", "items", "data"]);
+  },
+  fleetRouteTracks: async (params?: unknown) => {
+    const search = searchFrom(params, ["date", "tenant_id"]);
+    return request<FleetRouteTracksResponse>(`/api/fleet/route-tracks${search.toString() ? `?${search}` : ""}`);
   },
 };

@@ -10,6 +10,7 @@
       "pages": [
         "pages/home/index",
         "pages/dispatch/index",
+        "pages/daily/index",
         "pages/import/index",
         "pages/search/index",
         "pages/auction/index",

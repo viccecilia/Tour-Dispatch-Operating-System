@@ -53,6 +53,25 @@ VEHICLE_FIELDS = [
     "maintenance_status",
 ]
 
+VEHICLE_RETIRED_STATUSES = {"retired", "removed", "decommissioned"}
+
+
+def _is_retired_vehicle_status(status: Any) -> bool:
+    raw = str(status or "").strip().lower()
+    return raw in VEHICLE_RETIRED_STATUSES or raw in {"已减车", "减车", "已出售", "出售", "报废"}
+
+
+def _normalize_vehicle_status(status: Any) -> str:
+    raw = str(status or "").strip()
+    lowered = raw.lower()
+    if lowered in VEHICLE_RETIRED_STATUSES or raw in {"已减车", "减车", "已出售", "出售", "报废"}:
+        return "retired"
+    if lowered in {"maintenance", "repair"} or raw in {"维修", "修理", "临时停用", "停用"}:
+        return "maintenance"
+    if lowered in {"available", "active", ""} or raw in {"运营中", "正常", "可用"}:
+        return "available"
+    return "available"
+
 RESOURCE_COLUMNS = {
     "drivers": {
         "driver_status": "TEXT",
@@ -90,6 +109,7 @@ RESOURCE_COLUMNS = {
 
 def list_drivers(status: str | None = None, tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
     _ensure_resource_columns()
+    include_archived = status in {"deleted", "retired"}
     sql = [
         """
         SELECT d.id, d.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
@@ -100,7 +120,7 @@ def list_drivers(status: str | None = None, tenant_id: int | None | object = _DE
                d.created_at, d.updated_at
         FROM drivers d
         LEFT JOIN tenants t ON t.id = d.tenant_id
-        WHERE COALESCE(d.status, '') NOT IN ('deleted', 'retired')
+        WHERE 1 = 1
         """
     ]
     params: list[Any] = []
@@ -113,6 +133,8 @@ def list_drivers(status: str | None = None, tenant_id: int | None | object = _DE
     if status:
         sql.append("AND d.status = ?")
         params.append(status)
+    elif not include_archived:
+        sql.append("AND COALESCE(d.status, '') NOT IN ('deleted', 'retired')")
     sql.append("ORDER BY t.name, CASE d.status WHEN 'available' THEN 0 WHEN 'busy' THEN 1 WHEN 'resting' THEN 2 ELSE 3 END, d.id")
     with get_connection() as conn:
         return [_with_resource_alert(dict(row), "driver") for row in conn.execute(" ".join(sql), params).fetchall()]
@@ -237,7 +259,7 @@ def list_vehicles(status: str | None = None, tenant_id: int | None | object = _D
                v.created_at, v.updated_at
         FROM vehicles v
         LEFT JOIN tenants t ON t.id = v.tenant_id
-        WHERE COALESCE(v.status, '') NOT IN ('deleted', 'retired')
+        WHERE COALESCE(v.status, '') NOT IN ('deleted')
         """
     ]
     params: list[Any] = []
@@ -476,15 +498,15 @@ def get_resource_reminders() -> dict[str, Any]:
             if alert:
                 alerts.append({"type": "driver", "id": driver["id"], "name": driver["name"], "field": field, "label": label, **alert})
     for vehicle in vehicles:
-        if vehicle.get("status") == "retired":
+        if _is_retired_vehicle_status(vehicle.get("status")):
             continue
-        for field, label, days_key in (
-            ("next_inspection_due_date", "三个月点检到期", "vehicle_inspection_days"),
-            ("shaken_due_date", "一年车检到期", "vehicle_shaken_days"),
-        ):
-            alert = _expiry_alert(vehicle.get(field), int(settings[days_key]))
+        required = _next_vehicle_required_node(vehicle, vehicle.get("inspection_records"))
+        if required.get("date"):
+            field = "shaken_due_date" if required.get("type") == "shaken" else "next_inspection_due_date"
+            days_key = "vehicle_shaken_days" if required.get("type") == "shaken" else "vehicle_inspection_days"
+            alert = _expiry_alert(required.get("date"), int(settings[days_key]))
             if alert:
-                alerts.append({"type": "vehicle", "id": vehicle["id"], "name": vehicle["plate_number"], "field": field, "label": label, **alert})
+                alerts.append({"type": "vehicle", "id": vehicle["id"], "name": vehicle["plate_number"], "field": field, "label": required["label"], **alert})
         if vehicle.get("maintenance_status") or vehicle.get("status") == "maintenance":
             alerts.append(
                 {
@@ -555,9 +577,7 @@ def _normalize_vehicle(payload: dict[str, Any], partial: bool) -> dict[str, Any]
     data = {field: mapped.get(field) for field in VEHICLE_FIELDS if field in mapped}
     if not partial and not str(data.get("plate_number", "")).strip():
         raise ValueError("missing_plate_number")
-    data.setdefault("status", "available")
-    if data.get("status") not in {"available", "maintenance", "retired"}:
-        data["status"] = "available"
+    data["status"] = _normalize_vehicle_status(data.get("status", "available"))
     if "seat_count" in data:
         data["seat_count"] = 0 if data["seat_count"] in ("", None) else int(data["seat_count"])
     for field in (
@@ -663,10 +683,10 @@ def _derive_vehicle_dates(mapped: dict[str, Any], records: list[dict[str, Any]] 
         return {}
     latest_any = max(date_value for date_value, _ in dates)
     latest_shaken = max((date_value for date_value, kind in dates if kind == "shaken"), default=None)
-    # 车检本身也算一次点检，所以最近一次记录不区分点检/车检。
+    next_required = _next_vehicle_required_node(mapped, valid_records)
     return {
         "last_inspection_date": latest_any.isoformat(),
-        "next_inspection_due_date": (latest_any + timedelta(days=90)).isoformat(),
+        "next_inspection_due_date": next_required.get("date") if next_required.get("type") == "inspection" else mapped.get("next_inspection_due_date"),
         "shaken_due_date": _add_years(latest_shaken, 1).isoformat() if latest_shaken else mapped.get("shaken_due_date"),
     }
 
@@ -789,17 +809,26 @@ def _with_resource_alert(row: dict[str, Any], resource_type: str) -> dict[str, A
             _named_alert("health_check_due_date", "健康体检到期", row.get("medical_check_expires_at"), int(settings["driver_health_check_days"])),
         ]
     else:
-        row["next_inspection_due_date"] = _inspection_due_90_days(row.get("last_inspection_date")) or row.get("next_inspection_due_date") or row.get("inspection_expires_at")
         row["insurance_due_date"] = row.get("insurance_due_date") or row.get("insurance_expires_at")
         row["inspection_records"] = _vehicle_records(int(row["id"]))
-        if row.get("status") == "retired":
+        if _is_retired_vehicle_status(row.get("status")):
+            row["status"] = "retired"
             row["alerts"] = []
             row["alert_level"] = "ok"
             return row
-        alerts = [
-            _named_alert("next_inspection_due_date", "三个月点检到期", row.get("next_inspection_due_date"), int(settings["vehicle_inspection_days"])),
-            _named_alert("shaken_due_date", "一年车检到期", row.get("shaken_due_date"), int(settings["vehicle_shaken_days"])),
-        ]
+        required = _next_vehicle_required_node(row, row.get("inspection_records"))
+        row["next_required_inspection_type"] = required.get("type")
+        row["next_required_inspection_label"] = required.get("label")
+        row["next_required_inspection_date"] = required.get("date")
+        if required.get("type") == "inspection":
+            row["next_inspection_due_date"] = required.get("date")
+        alerts = []
+        if required.get("date"):
+            field = "shaken_due_date" if required.get("type") == "shaken" else "next_inspection_due_date"
+            days_key = "vehicle_shaken_days" if required.get("type") == "shaken" else "vehicle_inspection_days"
+            alert = _named_alert(field, required.get("label") or "车辆检查到期", required.get("date"), int(settings[days_key]))
+            if alert:
+                alerts.append(alert)
         if row.get("maintenance_status") or row.get("status") == "maintenance":
             alerts.append(
                 {
@@ -835,6 +864,49 @@ def _expiry_alert(value: Any, days: int) -> dict[str, Any] | None:
     if days_left <= days:
         return {"status": "upcoming", "date": expiry.isoformat(), "days_left": days_left, "message": f"{days_left} 天后到期"}
     return None
+
+
+def _next_vehicle_required_node(row: dict[str, Any], records: list[dict[str, Any]] | None = None) -> dict[str, str | None]:
+    record_dates: list[tuple[date, str]] = []
+    for record in records or []:
+        parsed = _parse_iso_date(record.get("inspection_date"))
+        if parsed:
+            kind = "shaken" if record.get("inspection_type") == "shaken" else "inspection"
+            record_dates.append((parsed, kind))
+
+    latest_shaken = max((date_value for date_value, kind in record_dates if kind == "shaken"), default=None)
+    latest_inspection = max((date_value for date_value, kind in record_dates if kind == "inspection"), default=None)
+    latest_any = max((date_value for date_value, _ in record_dates), default=None)
+    mapped_latest = _parse_iso_date(row.get("last_inspection_date"))
+    if mapped_latest and (latest_any is None or mapped_latest > latest_any):
+        latest_any = mapped_latest
+    next_shaken = _parse_iso_date(row.get("shaken_due_date"))
+    last_shaken = latest_shaken or (_add_years(next_shaken, -1) if next_shaken else None)
+    if latest_shaken and (not next_shaken or next_shaken <= latest_shaken):
+        next_shaken = _add_years(latest_shaken, 1)
+
+    if not last_shaken:
+        if latest_any:
+            return {"type": "inspection", "label": "三个月点检到期", "date": (latest_any + timedelta(days=90)).isoformat()}
+        if next_shaken:
+            return {"type": "shaken", "label": "一年车检到期", "date": next_shaken.isoformat()}
+        return {"type": None, "label": None, "date": None}
+
+    completed = max((value for value in (last_shaken, latest_inspection, latest_any) if value), default=last_shaken)
+    nodes = [
+        {"type": "inspection", "label": "三个月点检到期", "date": _add_months(last_shaken, 3)},
+        {"type": "inspection", "label": "三个月点检到期", "date": _add_months(last_shaken, 6)},
+        {"type": "inspection", "label": "三个月点检到期", "date": _add_months(last_shaken, 9)},
+        {"type": "shaken", "label": "一年车检到期", "date": next_shaken or _add_years(last_shaken, 1)},
+    ]
+    nodes = sorted(nodes, key=lambda item: item["date"])
+    shaken_node = next((node for node in nodes if node["type"] == "shaken"), None)
+    if shaken_node and (shaken_node["date"] - date.today()).days <= int(get_reminder_settings()["vehicle_shaken_days"]):
+        return {**shaken_node, "date": shaken_node["date"].isoformat()}
+    for node in nodes:
+        if node["date"] > completed:
+            return {**node, "date": node["date"].isoformat()}
+    return {"type": "inspection", "label": "三个月点检到期", "date": _add_months(nodes[-1]["date"], 3).isoformat()}
 
 
 def _inspection_due_90_days(value: Any) -> str:
