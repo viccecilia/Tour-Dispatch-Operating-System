@@ -161,9 +161,54 @@ def _first(row: dict, *keys: str) -> str:
     return ""
 
 
+def _current_online_driver_table(rows: list[dict]) -> list[dict]:
+    """Apply the current online roster state to the older local CSV snapshot."""
+    if not rows:
+        return rows
+    fields = list(rows[0])
+    if len(fields) < 15:
+        return rows
+    id_key, name_key, license_key, license_number_key = fields[1], fields[3], fields[4], fields[5]
+    residence_status_key, residence_due_key = fields[6], fields[7]
+    phone_key, status_key = fields[10], fields[13]
+    current_codes = {
+        "周政": "12361",
+        "叢枝佳": "kyoto-1",
+        "林澤群": "kyoto-2",
+        "矢口萱": "kyoto-3",
+        "董星": "kyoto-4",
+        "刘晓丽": "12363",
+        "权永住": "12365",
+        "菜卫平": "12360",
+    }
+    current_overrides = {
+        "刘晓丽": ("080-4647-1999", "2028-03-25", "621606948020", "永住者", "2027-02-17"),
+        "权永住": ("080-3106-9666", "2029-01-27", "621104983445", "永住者", "2031-12-09"),
+        "菜卫平": ("060-6971-8890", "2027-06-27", "621103645000", "日本の国籍", ""),
+    }
+    result = []
+    for original in rows:
+        row = dict(original)
+        name = str(row.get(name_key) or "").strip()
+        if name == "王爽":
+            row[status_key] = "离职"
+        if name in current_codes:
+            row[id_key] = current_codes[name]
+        if name in current_overrides:
+            phone, license_due, license_number, residence_status, residence_due = current_overrides[name]
+            row[phone_key] = phone
+            row[license_key] = license_due
+            row[license_number_key] = license_number
+            row[residence_status_key] = residence_status
+            row[residence_due_key] = residence_due
+        result.append(row)
+    return result
+
+
 def list_resource_library() -> dict:
     vehicle_table = _read_csv_rows("车辆信息总表.csv")
     driver_table = _read_csv_rows("司机信息表.csv")
+    driver_table = _current_online_driver_table(driver_table)
     vehicle_updates = _load_vehicle_inspection_updates()
     vehicle_meta_by_suffix = {
         _plate_suffix(_first(row, "后四位", "车牌号", "车辆ナンバー", "車両ナンバー")): row
@@ -336,14 +381,14 @@ def update_driver_health_check_date(driver_key: str, health_check_date: str, pay
     path = root / "司机信息表.csv"
     if not path.exists():
         raise ValueError("driver_resource_not_found")
-    rows = _read_csv_rows("司机信息表.csv")
+    rows = _current_online_driver_table(_read_csv_rows("司机信息表.csv"))
     if not rows:
         raise ValueError("driver_resource_empty")
     fields = list(rows[0].keys())
     name_keys = ("運転手名", "司机姓名", "姓名", "name", "driver_name")
     code_keys = ("運転手ID", "司机编号", "driver_code", "code", "序号")
     phone_keys = ("携帯電話番号", "电话", "phone")
-    normalized_key = _digits(key) or key
+    normalized_key = _digits(key) if re.fullmatch(r"[\d\s()+-]+", key) else key
     target = None
     for row in rows:
         candidates = []
@@ -395,14 +440,14 @@ def update_driver_resource_status(driver_key: str, status: str, payload: dict | 
     if not key:
         raise ValueError("driver_key_required")
     normalized_status = str(status or "").strip() or "available"
-    rows = _read_csv_rows("司机信息表.csv")
+    rows = _current_online_driver_table(_read_csv_rows("司机信息表.csv"))
     if not rows:
         raise ValueError("driver_resource_empty")
     fields = list(rows[0].keys())
     name_keys = ("運転手名", "司机姓名", "姓名", "name", "driver_name")
     code_keys = ("運転手ID", "司机编号", "driver_code", "code", "序号")
     phone_keys = ("携帯電話番号", "电话", "phone")
-    normalized_key = _digits(key) or key
+    normalized_key = _digits(key) if re.fullmatch(r"[\d\s()+-]+", key) else key
     target = None
     for row in rows:
         candidates = []
@@ -418,9 +463,10 @@ def update_driver_resource_status(driver_key: str, status: str, payload: dict | 
             break
     if target is None:
         raise ValueError("driver_not_found")
-    for extra_field in ("状态", "driver_status", "status", "资料更新时间"):
+    for extra_field in ("状態", "状态", "driver_status", "status", "资料更新时间"):
         if extra_field not in fields:
             fields.append(extra_field)
+    target["状態"] = normalized_status
     target["状态"] = normalized_status
     target["driver_status"] = normalized_status
     target["status"] = normalized_status
@@ -466,6 +512,47 @@ def _save_vehicle_inspection_document(vehicle_key: str, inspection_type: str, in
         "file_name": file_name or stored_name,
         "file_size": len(data),
     }
+
+
+def upload_vehicle_resource_document(vehicle_key: str, category: str, document_date: str, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    key = str(vehicle_key or "").strip()
+    suffix = _plate_suffix(key) or key
+    if not suffix:
+        raise ValueError("vehicle_key_required")
+    normalized_category = str(category or "").strip()
+    if not normalized_category:
+        raise ValueError("resource_category_required")
+    file_data = str(payload.get("file_base64") or payload.get("document_base64") or "").strip()
+    if not file_data:
+        raise ValueError("resource_document_required")
+    data = _decode_upload_payload(file_data)
+    if not data.startswith(b"%PDF-"):
+        raise ValueError("resource_document_must_be_pdf")
+    original_name = str(payload.get("file_name") or "vehicle-resource.pdf").strip()
+    custom_title = str(payload.get("custom_title") or payload.get("title") or "").strip()
+    display_name = custom_title or original_name
+    if not display_name.lower().endswith(".pdf"):
+        display_name = f"{display_name}.pdf"
+    safe_vehicle = re.sub(r"[^A-Za-z0-9_-]+", "_", suffix).strip("_") or "vehicle"
+    stored_name = f"{safe_vehicle}_{uuid.uuid4().hex[:12]}.pdf"
+    folder = _library_root() / "mobile-resource-library" / safe_vehicle
+    folder.mkdir(parents=True, exist_ok=True)
+    target_path = folder / stored_name
+    target_path.write_bytes(data)
+    document = {
+        "file_key": f"mobile-resource-library/{safe_vehicle}/{stored_name}",
+        "file_name": display_name,
+        "file_size": len(data),
+        "category": normalized_category,
+        "date": str(document_date or "").strip(),
+        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    updates = _load_vehicle_inspection_updates()
+    target = updates.setdefault(suffix, {"docs": []})
+    target.setdefault("docs", []).append(document)
+    _write_vehicle_inspection_updates(updates)
+    return {"vehicle_key": suffix, "document": document}
 
 
 def update_vehicle_inspection_date(vehicle_key: str, inspection_type: str, inspection_date: str, payload: dict | None = None) -> dict:

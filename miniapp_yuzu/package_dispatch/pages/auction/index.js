@@ -2,11 +2,31 @@
 
 const AUCTION_DRAFT_KEY = 'auction_publish_draft';
 const ACTIVE_LISTING_STATUSES = ['listed', 'bidding'];
+const PHONE_REGION_MAP = [
+  [/^\+86\b/, '中国'],
+  [/^\+81\b/, '日本'],
+  [/^\+852\b/, '香港'],
+  [/^\+853\b/, '澳门'],
+  [/^\+886\b/, '台湾'],
+  [/^\+971\b/, '阿联酋'],
+  [/^\+60\b/, '马来西亚'],
+  [/^\+91\b/, '印度'],
+  [/^\+65\b/, '新加坡'],
+  [/^\+66\b/, '泰国'],
+  [/^\+82\b/, '韩国'],
+  [/^\+1\b/, '美国/加拿大'],
+  [/^\+44\b/, '英国'],
+  [/^\+33\b/, '法国'],
+  [/^\+49\b/, '德国']
+];
 
 Page({
   data: {
+    hallTab: 'market',
     draft: null,
     listings: [],
+    soldByMe: [],
+    claimedByMe: [],
     startPrice: '',
     buyoutPrice: '',
     durationHours: 1,
@@ -28,6 +48,46 @@ Page({
     }
     this.loadDraft();
     this.loadListings();
+    this.startAutoRefresh();
+    this.startCountdown();
+  },
+
+  onHide() {
+    this.stopAutoRefresh();
+    this.stopCountdown();
+  },
+
+  onUnload() {
+    this.stopAutoRefresh();
+    this.stopCountdown();
+  },
+
+  startAutoRefresh() {
+    this.stopAutoRefresh();
+    this.autoRefreshTimer = setInterval(() => {
+      this.loadListings({ silent: true });
+    }, 5000);
+  },
+
+  stopAutoRefresh() {
+    if (this.autoRefreshTimer) {
+      clearInterval(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+  },
+
+  startCountdown() {
+    this.stopCountdown();
+    this.countdownTimer = setInterval(() => {
+      this.updateListingCountdowns();
+    }, 1000);
+  },
+
+  stopCountdown() {
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
   },
 
   refreshTabBar() {
@@ -41,11 +101,12 @@ Page({
     const contentMap = {
       hero: '订单大厅用于把本公司暂时无法执行的订单开放给其他车公司。其他公司可以竞拍降价，也可以一口价直接接单。',
       publish: '从派车页选择订单后会来到这里。起拍价是订单放出的起始价格，一口价是最低成交价。选择拍卖时间后即可发布。',
-      list: '这里只显示可竞拍或可一口价接单的大厅订单。每次竞拍会把当前价降低 20，达到一口价后不再继续降低。'
+      list: '这里只显示可竞拍或可一口价接单的大厅订单。每次竞拍会把当前价降低 20，达到一口价后不再继续降低。',
+      deal: '这里显示本公司发布后被其他公司接走的订单，以及本公司接到后等待派车的订单。'
     };
     this.setData({
       helpTip: {
-        title: type === 'publish' ? '发布到大厅' : (type === 'list' ? '大厅订单' : '订单大厅'),
+        title: type === 'publish' ? '发布到大厅' : (type === 'list' ? '大厅订单' : (type === 'deal' ? '成交动态' : '订单大厅')),
         content: contentMap[type] || '暂无说明'
       }
     });
@@ -56,6 +117,10 @@ Page({
   },
 
   noop() {},
+
+  switchHallTab(e) {
+    this.setData({ hallTab: e.currentTarget.dataset.tab || 'market' });
+  },
 
   loadDraft() {
     const draft = wx.getStorageSync(AUCTION_DRAFT_KEY);
@@ -72,8 +137,9 @@ Page({
     });
   },
 
-  loadListings() {
-    this.setData({ loading: true });
+  loadListings(options = {}) {
+    const silent = !!options.silent;
+    if (!silent) this.setData({ loading: true });
     const session = api.getSession() || {};
     const currentTenantId = Number(
       (session.user && session.user.tenant_id)
@@ -82,14 +148,42 @@ Page({
     );
     api.auctionListings()
       .then((res) => {
-        const listings = (res.listings || [])
-          .filter((item) => ACTIVE_LISTING_STATUSES.indexOf(item.status) >= 0)
-          .map((item) => this.decorateListing(item, currentTenantId));
-        this.setData({ listings, loading: false });
+        const decorated = (res.listings || []).map((item) => this.decorateListing(item, currentTenantId));
+        const listings = decorated.filter((item) => ACTIVE_LISTING_STATUSES.indexOf(item.status) >= 0);
+        const soldByMe = decorated.filter((item) => item.isOwnListing && item.isClaimed);
+        const claimedByMe = decorated.filter((item) => item.isClaimedByMe);
+        this.noticeDealChanges(soldByMe, claimedByMe);
+        this.setData({ listings, soldByMe, claimedByMe, loading: false });
+        this.updateListingCountdowns();
       })
       .catch(() => {
-        this.setData({ loading: false, message: '订单大厅加载失败，请确认后端服务在线。' });
+        if (!silent) this.setData({ loading: false, message: '订单大厅加载失败，请确认后端服务在线。' });
       });
+  },
+
+  noticeDealChanges(soldByMe, claimedByMe) {
+    const nextSoldIds = soldByMe.map((item) => String(item.id));
+    const nextClaimedIds = claimedByMe.map((item) => String(item.id));
+    if (!this.dealSnapshotReady) {
+      this.dealSnapshotReady = true;
+      this.soldDealIds = nextSoldIds;
+      this.claimedDealIds = nextClaimedIds;
+      return;
+    }
+    const oldSold = this.soldDealIds || [];
+    const oldClaimed = this.claimedDealIds || [];
+    const newSold = nextSoldIds.filter((id) => oldSold.indexOf(id) < 0);
+    const newClaimed = nextClaimedIds.filter((id) => oldClaimed.indexOf(id) < 0);
+    this.soldDealIds = nextSoldIds;
+    this.claimedDealIds = nextClaimedIds;
+    if (newSold.length) {
+      wx.showToast({ title: `${newSold.length} 单已被接走`, icon: 'none' });
+      if (this.data.hallTab !== 'mine') this.setData({ message: '有订单被其他车公司接走，已同步到“我的订单”。' });
+      return;
+    }
+    if (newClaimed.length) {
+      wx.showToast({ title: `${newClaimed.length} 单已进入待派车`, icon: 'none' });
+    }
   },
 
   onInput(e) {
@@ -248,6 +342,56 @@ Page({
     return `￥${number.toLocaleString()}`;
   },
 
+  updateListingCountdowns() {
+    const decorate = (rows) => (rows || []).map((item) => this.withCountdown(item));
+    this.setData({
+      listings: decorate(this.data.listings),
+      soldByMe: decorate(this.data.soldByMe),
+      claimedByMe: decorate(this.data.claimedByMe)
+    });
+  },
+
+  withCountdown(item) {
+    const remaining = this.remainingMs(item.expires_at);
+    const isExpired = remaining !== null && remaining <= 0;
+    const countdownText = remaining === null ? '剩余 -' : (isExpired ? '已到期' : `剩余 ${this.formatRemaining(remaining)}`);
+    const buyout = Number(item.buyout_price_jpy || 0);
+    const current = Number(item.current_bid_jpy || item.start_price_jpy || 0);
+    const isAtBuyout = Boolean(buyout && current <= buyout);
+    const canBid = !item.isOwnListing && !item.isLeadingBid && !isAtBuyout && !isExpired;
+    return {
+      ...item,
+      isExpired,
+      countdownText,
+      canBid,
+      canClaim: !item.isOwnListing && !isExpired,
+      bidActionText: item.isLeadingBid ? `领先 ${this.formatMoney(current)}` : (isExpired ? '已到期' : (isAtBuyout ? '已到一口价' : '竞拍'))
+    };
+  },
+
+  remainingMs(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const normalized = /[zZ]|[+-]\d\d:?\d\d$/.test(text)
+      ? text.replace(' ', 'T')
+      : `${text.replace(' ', 'T')}Z`;
+    const target = new Date(normalized);
+    if (Number.isNaN(target.getTime())) return null;
+    return target.getTime() - Date.now();
+  },
+
+  formatRemaining(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  },
+
   cleanLocation(value) {
     const text = String(value || '').trim();
     if (!text || /^[-?？\s]+$/.test(text) || text.includes('????')) return '地点待确认';
@@ -257,24 +401,56 @@ Page({
   decorateListing(item, currentTenantId) {
     const current = Number(item.current_bid_jpy || item.start_price_jpy || 0);
     const buyout = Number(item.buyout_price_jpy || 0);
+    const status = String(item.status || '');
+    const buyerTenantId = Number(item.buyer_tenant_id || 0);
     const isOwnListing = Boolean(currentTenantId && Number(item.seller_tenant_id || item.owner_tenant_id || 0) === currentTenantId);
     const isLeadingBid = Boolean(currentTenantId && Number(item.current_bidder_tenant_id || 0) === currentTenantId);
+    const isClaimed = status === 'claimed' || status === 'sold';
+    const isClaimedByMe = Boolean(currentTenantId && buyerTenantId === currentTenantId && isClaimed);
     const isAtBuyout = Boolean(buyout && current <= buyout);
-    const canBid = !isOwnListing && !isLeadingBid && !isAtBuyout;
-    return {
+    const remaining = this.remainingMs(item.expires_at);
+    const isExpired = remaining !== null && remaining <= 0;
+    const canBid = !isOwnListing && !isLeadingBid && !isAtBuyout && !isExpired;
+    const buyerName = item.buyer_company_name || item.buyer_company_code || '接单车公司';
+    const sellerName = item.seller_company_name || item.seller_company_code || '发布车公司';
+    const guestSummaryParts = [];
+    if (item.guest_name) guestSummaryParts.push(item.guest_name);
+    if (item.guest_contact) guestSummaryParts.push(this.formatGuestContact(item.guest_contact));
+    return this.withCountdown({
       ...item,
       isOwnListing,
       isLeadingBid,
+      isClaimed,
+      isClaimedByMe,
       isAtBuyout,
+      isExpired,
       canBid,
-      bidActionText: isLeadingBid ? `领先 ${this.formatMoney(current)}` : (isAtBuyout ? '已到一口价' : '竞拍'),
+      canClaim: !isOwnListing && !isExpired,
+      buyerName,
+      sellerName,
+      bidActionText: isLeadingBid ? `领先 ${this.formatMoney(current)}` : (isExpired ? '已到期' : (isAtBuyout ? '已到一口价' : '竞拍')),
       routeText: `${this.cleanLocation(item.pickup_location)} -> ${this.cleanLocation(item.dropoff_location)}`,
       timeText: `${item.order_date || '-'} ${item.start_time || ''}`,
+      guestSummaryText: guestSummaryParts.join(' · '),
       startPriceText: this.formatMoney(item.start_price_jpy),
       buyoutPriceText: this.formatMoney(item.buyout_price_jpy),
       currentPriceText: this.formatMoney(current),
       durationText: `${item.auction_duration_hours || 1}小时`
-    };
+    });
+  },
+
+  detectPhoneRegion(value) {
+    const text = String(value || '').trim();
+    if (!text || text.indexOf('+') !== 0) return '';
+    const matched = PHONE_REGION_MAP.find((entry) => entry[0].test(text));
+    return matched ? matched[1] : '';
+  },
+
+  formatGuestContact(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const region = this.detectPhoneRegion(text);
+    return region ? `${text} (${region})` : text;
   }
 });
 

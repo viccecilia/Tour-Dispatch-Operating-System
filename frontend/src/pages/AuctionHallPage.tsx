@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Gavel, Plane, Plus, RefreshCw, X } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -6,9 +6,44 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { formatCurrency, shortRoute } from "@/lib/utils";
 import { api } from "@/services/apiClient";
-import type { AgencyOrderChangeRequest, AuctionListing, Order } from "@/types/api";
+import type {
+  AgencyOrderChangeRequest,
+  AuctionListing,
+  Order,
+} from "@/types/api";
 
 const AUCTION_DRAFT_KEY = "tourflow_auction_publish_draft";
+
+function detectPhoneRegion(value?: string | null) {
+  const text = String(value || "").trim();
+  if (!text.startsWith("+")) return "";
+  const mapping: Array<[RegExp, string]> = [
+    [/^\+86\b/, "中国"],
+    [/^\+81\b/, "日本"],
+    [/^\+852\b/, "香港"],
+    [/^\+853\b/, "澳门"],
+    [/^\+886\b/, "台湾"],
+    [/^\+971\b/, "阿联酋"],
+    [/^\+60\b/, "马来西亚"],
+    [/^\+91\b/, "印度"],
+    [/^\+65\b/, "新加坡"],
+    [/^\+66\b/, "泰国"],
+    [/^\+82\b/, "韩国"],
+    [/^\+1\b/, "美国/加拿大"],
+    [/^\+44\b/, "英国"],
+    [/^\+33\b/, "法国"],
+    [/^\+49\b/, "德国"],
+  ];
+  const matched = mapping.find(([pattern]) => pattern.test(text));
+  return matched?.[1] || "";
+}
+
+function formatGuestContact(value?: string | null) {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  const region = detectPhoneRegion(text);
+  return region ? `${text} (${region})` : text;
+}
 
 type AuctionDraft = {
   order_ids: number[];
@@ -55,7 +90,10 @@ export function AuctionHallPage() {
       const parsed = JSON.parse(raw) as AuctionDraft;
       if (parsed.order_ids?.length) {
         setDraft(parsed);
-        const total = (parsed.orders || []).reduce((sum, order) => sum + Number(order.price || 0), 0);
+        const total = (parsed.orders || []).reduce(
+          (sum, order) => sum + Number(order.price || 0),
+          0,
+        );
         if (total > 0) {
           setStartPrice(String(Math.round(total)));
           setBuyoutPrice(String(Math.round(total * 0.8)));
@@ -99,11 +137,18 @@ export function AuctionHallPage() {
   });
 
   const reviewMutation = useMutation({
-    mutationFn: ({ requestId, decision }: { requestId: number; decision: "approved" | "rejected" }) =>
-      api.reviewAuctionChangeRequest(requestId, { decision }),
+    mutationFn: ({
+      requestId,
+      decision,
+    }: {
+      requestId: number;
+      decision: "approved" | "rejected";
+    }) => api.reviewAuctionChangeRequest(requestId, { decision }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["auction-change-requests"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["auction-change-requests"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["auction-listings"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
         queryClient.invalidateQueries({ queryKey: ["dispatch-unassigned"] }),
@@ -112,10 +157,20 @@ export function AuctionHallPage() {
   });
 
   const paymentRequestMutation = useMutation({
-    mutationFn: ({ orderId, amount, note }: { orderId: number; amount?: number; note?: string }) => api.requestAuctionPayment(orderId, { amount_jpy: amount, note }),
+    mutationFn: ({
+      orderId,
+      amount,
+      note,
+    }: {
+      orderId: number;
+      amount?: number;
+      note?: string;
+    }) => api.requestAuctionPayment(orderId, { amount_jpy: amount, note }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["auction-carrier-settlement-listings"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["auction-carrier-settlement-listings"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["auction-listings"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
@@ -123,10 +178,13 @@ export function AuctionHallPage() {
   });
 
   const paymentConfirmMutation = useMutation({
-    mutationFn: ({ orderId }: { orderId: number }) => api.confirmAuctionPayment(orderId, {}),
+    mutationFn: ({ orderId }: { orderId: number }) =>
+      api.confirmAuctionPayment(orderId, {}),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["auction-carrier-settlement-listings"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["auction-carrier-settlement-listings"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["auction-listings"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
@@ -134,7 +192,15 @@ export function AuctionHallPage() {
   });
 
   const claimMutation = useMutation({
-    mutationFn: ({ listingId, price, mode }: { listingId: number; price: number; mode: "bid" | "buyout" }) =>
+    mutationFn: ({
+      listingId,
+      price,
+      mode,
+    }: {
+      listingId: number;
+      price: number;
+      mode: "bid" | "buyout";
+    }) =>
       api.claimAuctionListing(listingId, {
         claim_price_jpy: price,
         buyout_price_jpy: mode === "buyout" ? price : undefined,
@@ -144,7 +210,9 @@ export function AuctionHallPage() {
       setMessage("已接单，订单会进入本公司后续派车和结算流程。");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["auction-listings"] }),
-        queryClient.invalidateQueries({ queryKey: ["auction-carrier-settlement-listings"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["auction-carrier-settlement-listings"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["dispatch-unassigned"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] }),
@@ -152,9 +220,22 @@ export function AuctionHallPage() {
     },
   });
 
-  const draftTotal = useMemo(() => (draft?.orders || []).reduce((sum, order) => sum + Number(order.price || 0), 0), [draft]);
-  const airportListings = useMemo(() => (listings.data || []).filter(isAirportListing), [listings.data]);
-  const charterListings = useMemo(() => (listings.data || []).filter((item) => !isAirportListing(item)), [listings.data]);
+  const draftTotal = useMemo(
+    () =>
+      (draft?.orders || []).reduce(
+        (sum, order) => sum + Number(order.price || 0),
+        0,
+      ),
+    [draft],
+  );
+  const airportListings = useMemo(
+    () => (listings.data || []).filter(isAirportListing),
+    [listings.data],
+  );
+  const charterListings = useMemo(
+    () => (listings.data || []).filter((item) => !isAirportListing(item)),
+    [listings.data],
+  );
 
   return (
     <div className="space-y-5">
@@ -163,7 +244,9 @@ export function AuctionHallPage() {
           <div>
             <p className="runtime-eyebrow">AUCTION HALL</p>
             <h2 className="runtime-title">订单拍卖大厅</h2>
-            <p className="runtime-subtitle">公司把无法执行的订单发布到大厅，其他车公司后续可以报价或一口价接单。</p>
+            <p className="runtime-subtitle">
+              公司把无法执行的订单发布到大厅，其他车公司后续可以报价或一口价接单。
+            </p>
           </div>
           <Button variant="secondary" onClick={() => listings.refetch()}>
             <RefreshCw size={16} />
@@ -178,7 +261,9 @@ export function AuctionHallPage() {
             <Gavel size={18} className="text-amber-700" />
             <div>
               <h2 className="text-base font-bold text-slate-950">发布确认</h2>
-              <p className="mt-1 text-sm text-slate-600">从配单界面选中订单后会跳到这里，填写起拍价和一口价后发布。</p>
+              <p className="mt-1 text-sm text-slate-600">
+                从配单界面选中订单后会跳到这里，填写起拍价和一口价后发布。
+              </p>
             </div>
           </div>
         </CardHeader>
@@ -187,13 +272,26 @@ export function AuctionHallPage() {
             <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
               <div className="space-y-2">
                 {draft.orders.map((order) => (
-                  <div key={order.id} className="rounded-lg border border-amber-100 bg-white p-3">
+                  <div
+                    key={order.id}
+                    className="rounded-lg border border-amber-100 bg-white p-3"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <p className="font-bold text-slate-950">{order.oid || `#${order.id}`}</p>
-                        <p className="mt-1 text-sm text-slate-600">{order.order_date || "-"} {order.start_time || ""} · {shortRoute(order.pickup_location, order.dropoff_location)}</p>
+                        <p className="font-bold text-slate-950">
+                          {order.oid || `#${order.id}`}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {order.order_date || "-"} {order.start_time || ""} ·{" "}
+                          {shortRoute(
+                            order.pickup_location,
+                            order.dropoff_location,
+                          )}
+                        </p>
                       </div>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{formatCurrency(order.price)}</span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                        {formatCurrency(order.price)}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -202,17 +300,33 @@ export function AuctionHallPage() {
                 <div className="grid gap-3">
                   <label className="grid gap-1 text-sm font-semibold text-slate-700">
                     起拍价
-                    <input className="h-11 rounded-md border border-border px-3 text-base outline-none focus:border-amber-500" value={startPrice} onChange={(event) => setStartPrice(event.target.value)} placeholder="JPY" type="number" />
+                    <input
+                      className="h-11 rounded-md border border-border px-3 text-base outline-none focus:border-amber-500"
+                      value={startPrice}
+                      onChange={(event) => setStartPrice(event.target.value)}
+                      placeholder="JPY"
+                      type="number"
+                    />
                   </label>
                   <label className="grid gap-1 text-sm font-semibold text-slate-700">
                     一口价
-                    <input className="h-11 rounded-md border border-border px-3 text-base outline-none focus:border-amber-500" value={buyoutPrice} onChange={(event) => setBuyoutPrice(event.target.value)} placeholder="JPY" type="number" />
+                    <input
+                      className="h-11 rounded-md border border-border px-3 text-base outline-none focus:border-amber-500"
+                      value={buyoutPrice}
+                      onChange={(event) => setBuyoutPrice(event.target.value)}
+                      placeholder="JPY"
+                      type="number"
+                    />
                   </label>
                   <div className="grid gap-1 text-sm font-semibold text-slate-700">
                     拍卖时间
                     <div className="flex gap-2">
                       {[1, 2, 4].map((hour) => (
-                        <button key={hour} className={`h-9 rounded-md px-3 text-sm font-bold ${duration === hour ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setDuration(hour as 1 | 2 | 4)}>
+                        <button
+                          key={hour}
+                          className={`h-9 rounded-md px-3 text-sm font-bold ${duration === hour ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-600"}`}
+                          onClick={() => setDuration(hour as 1 | 2 | 4)}
+                        >
                           {hour} 小时
                         </button>
                       ))}
@@ -220,29 +334,56 @@ export function AuctionHallPage() {
                   </div>
                   <label className="grid gap-1 text-sm font-semibold text-slate-700">
                     发布备注
-                    <textarea className="min-h-20 rounded-md border border-border px-3 py-2 outline-none focus:border-amber-500" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：限大阪本地车队、需要中文司机等" />
+                    <textarea
+                      className="min-h-20 rounded-md border border-border px-3 py-2 outline-none focus:border-amber-500"
+                      value={note}
+                      onChange={(event) => setNote(event.target.value)}
+                      placeholder="例如：限大阪本地车队、需要中文司机等"
+                    />
                   </label>
                   <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-                    <p>选中 {draft.orders.length} 单，原订单合计 {formatCurrency(draftTotal)}。</p>
-                    <p className="mt-1">发布后订单会从本公司未派车池移出，状态变为拍卖大厅中。</p>
+                    <p>
+                      选中 {draft.orders.length} 单，原订单合计{" "}
+                      {formatCurrency(draftTotal)}。
+                    </p>
+                    <p className="mt-1">
+                      发布后订单会从本公司未派车池移出，状态变为拍卖大厅中。
+                    </p>
                   </div>
-                  <Button onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending}>
+                  <Button
+                    onClick={() => publishMutation.mutate()}
+                    disabled={publishMutation.isPending}
+                  >
                     <Plus size={16} />
                     确认发布
                   </Button>
-                  {publishMutation.error instanceof Error ? <p className="text-sm font-semibold text-red-700">{publishMutation.error.message}</p> : null}
+                  {publishMutation.error instanceof Error ? (
+                    <p className="text-sm font-semibold text-red-700">
+                      {publishMutation.error.message}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
           ) : (
-            <EmptyState title="暂无待发布订单" detail="请先回到配单界面，选中订单后点击“放入拍卖大厅”。" />
+            <EmptyState
+              title="暂无待发布订单"
+              detail="请先回到配单界面，选中订单后点击“放入拍卖大厅”。"
+            />
           )}
         </CardContent>
       </Card>
 
-      {message ? <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</div> : null}
+      {message ? (
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+          {message}
+        </div>
+      ) : null}
 
-      <CarrierRequestPanel requests={changeRequests.data || []} reviewMutation={reviewMutation} />
+      <CarrierRequestPanel
+        requests={changeRequests.data || []}
+        reviewMutation={reviewMutation}
+      />
 
       <CarrierSettlementPanel
         rows={carrierSettlementListings.data || []}
@@ -253,16 +394,29 @@ export function AuctionHallPage() {
       <Card>
         <CardHeader>
           <h2 className="text-base font-bold text-slate-950">大厅订单</h2>
-          <p className="mt-1 text-sm text-slate-500">当前只做发布和展示，接单/竞价/成交转单下一步接上。</p>
+          <p className="mt-1 text-sm text-slate-500">
+            当前只做发布和展示，接单/竞价/成交转单下一步接上。
+          </p>
         </CardHeader>
         <CardContent>
           {listings.data?.length ? (
             <div className="space-y-5">
-              <AuctionListingTable title="机场接送" rows={airportListings} claimMutation={claimMutation} />
-              <AuctionListingTable title="包车 / 复杂行程" rows={charterListings} claimMutation={claimMutation} />
+              <AuctionListingTable
+                title="机场接送"
+                rows={airportListings}
+                claimMutation={claimMutation}
+              />
+              <AuctionListingTable
+                title="包车 / 复杂行程"
+                rows={charterListings}
+                claimMutation={claimMutation}
+              />
             </div>
           ) : (
-            <EmptyState title="大厅暂无订单" detail="发布成功后会显示在这里。" />
+            <EmptyState
+              title="大厅暂无订单"
+              detail="发布成功后会显示在这里。"
+            />
           )}
         </CardContent>
       </Card>
@@ -277,17 +431,26 @@ function AuctionListingTable({
 }: {
   title: string;
   rows: AuctionListing[];
-  claimMutation: ReturnType<typeof useMutation<{ listing: AuctionListing }, Error, { listingId: number; price: number; mode: "bid" | "buyout" }>>;
+  claimMutation: ReturnType<
+    typeof useMutation<
+      { listing: AuctionListing },
+      Error,
+      { listingId: number; price: number; mode: "bid" | "buyout" }
+    >
+  >;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border">
-      <div className="bg-slate-50 px-3 py-2 text-sm font-bold text-slate-950">{title}</div>
+      <div className="bg-slate-50 px-3 py-2 text-sm font-bold text-slate-950">
+        {title}
+      </div>
       <table className="w-full min-w-[980px] border-collapse text-left text-sm">
         <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-3 py-3">订单</th>
             <th className="px-3 py-3">时间</th>
             <th className="px-3 py-3">路线</th>
+            <th className="px-3 py-3">客人</th>
             <th className="px-3 py-3">车型</th>
             <th className="px-3 py-3">航班</th>
             <th className="px-3 py-3">行程PDF</th>
@@ -299,57 +462,115 @@ function AuctionListingTable({
           </tr>
         </thead>
         <tbody>
-          {rows.length ? rows.map((item) => {
-            const bidPrice = Number(item.current_bid_jpy || item.start_price_jpy || 0);
-            const buyoutPrice = Number(item.buyout_price_jpy || bidPrice || 0);
-            return (
-              <tr key={item.id} className="border-t border-border">
-                <td className="px-3 py-3 font-bold text-slate-900">
-                  {item.oid || `#${item.order_id}`}
-                  <div className="mt-1 text-xs font-semibold text-slate-500">{item.listing_code || "未生成发布号"}</div>
-                </td>
-                <td className="px-3 py-3">{item.order_date || "-"} {item.start_time || ""}</td>
-                <td className="px-3 py-3">{shortRoute(item.pickup_location, item.dropoff_location)}</td>
-                <td className="px-3 py-3">{item.vehicle_type || "-"}</td>
-                <td className="px-3 py-3"><FlightSummary item={item} /></td>
-                <td className="px-3 py-3">{item.has_itinerary_pdf ? "有 PDF" : "-"}</td>
-                <td className="px-3 py-3">{formatCurrency(item.start_price_jpy)}</td>
-                <td className="px-3 py-3">{formatCurrency(item.buyout_price_jpy)}</td>
-                <td className="px-3 py-3">{item.expires_at || "-"}</td>
-                <td className="px-3 py-3"><span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">发布中</span></td>
-                <td className="px-3 py-3">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      className="h-8 px-2"
-                      variant="secondary"
-                      disabled={claimMutation.isPending || !bidPrice}
-                      onClick={() => {
-                        if (window.confirm(`确认以 ${formatCurrency(bidPrice)} 竞拍接单？`)) {
-                          claimMutation.mutate({ listingId: item.id, price: bidPrice, mode: "bid" });
-                        }
-                      }}
-                    >
-                      竞拍
-                    </Button>
-                    <Button
-                      className="h-8 px-2"
-                      disabled={claimMutation.isPending || !buyoutPrice}
-                      onClick={() => {
-                        if (window.confirm(`确认以一口价 ${formatCurrency(buyoutPrice)} 接单？`)) {
-                          claimMutation.mutate({ listingId: item.id, price: buyoutPrice, mode: "buyout" });
-                        }
-                      }}
-                    >
-                      一口价
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            );
-          }) : <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={11}>暂无订单</td></tr>}
+          {rows.length ? (
+            rows.map((item) => {
+              const bidPrice = Number(
+                item.current_bid_jpy || item.start_price_jpy || 0,
+              );
+              const buyoutPrice = Number(
+                item.buyout_price_jpy || bidPrice || 0,
+              );
+              return (
+                <tr key={item.id} className="border-t border-border">
+                  <td className="px-3 py-3 font-bold text-slate-900">
+                    {item.oid || `#${item.order_id}`}
+                    <div className="mt-1 text-xs font-semibold text-slate-500">
+                      {item.listing_code || "未生成发布号"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    {item.order_date || "-"} {item.start_time || ""}
+                  </td>
+                  <td className="px-3 py-3">
+                    {shortRoute(item.pickup_location, item.dropoff_location)}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="font-medium text-slate-900">
+                      {item.guest_name || "-"}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {formatGuestContact(item.guest_contact)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">{item.vehicle_type || "-"}</td>
+                  <td className="px-3 py-3">
+                    <FlightSummary item={item} />
+                  </td>
+                  <td className="px-3 py-3">
+                    {item.has_itinerary_pdf ? "有 PDF" : "-"}
+                  </td>
+                  <td className="px-3 py-3">
+                    {formatCurrency(item.start_price_jpy)}
+                  </td>
+                  <td className="px-3 py-3">
+                    {formatCurrency(item.buyout_price_jpy)}
+                  </td>
+                  <td className="px-3 py-3">{item.expires_at || "-"}</td>
+                  <td className="px-3 py-3">
+                    <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">
+                      发布中
+                    </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        className="h-8 px-2"
+                        variant="secondary"
+                        disabled={claimMutation.isPending || !bidPrice}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `确认以 ${formatCurrency(bidPrice)} 竞拍接单？`,
+                            )
+                          ) {
+                            claimMutation.mutate({
+                              listingId: item.id,
+                              price: bidPrice,
+                              mode: "bid",
+                            });
+                          }
+                        }}
+                      >
+                        竞拍
+                      </Button>
+                      <Button
+                        className="h-8 px-2"
+                        disabled={claimMutation.isPending || !buyoutPrice}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `确认以一口价 ${formatCurrency(buyoutPrice)} 接单？`,
+                            )
+                          ) {
+                            claimMutation.mutate({
+                              listingId: item.id,
+                              price: buyoutPrice,
+                              mode: "buyout",
+                            });
+                          }
+                        }}
+                      >
+                        一口价
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          ) : (
+            <tr>
+              <td className="px-3 py-8 text-center text-slate-500" colSpan={12}>
+                暂无订单
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
-      {claimMutation.error instanceof Error ? <div className="border-t border-border bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{claimMutation.error.message}</div> : null}
+      {claimMutation.error instanceof Error ? (
+        <div className="border-t border-border bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+          {claimMutation.error.message}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -358,22 +579,45 @@ function FlightSummary({ item }: { item: Partial<AuctionListing & Order> }) {
   if (!item.flight_number) {
     return <span className="text-slate-400">-</span>;
   }
-  const time = item.flight_estimated_arrival || item.flight_scheduled_arrival || item.flight_estimated_departure || item.flight_scheduled_departure;
+  const time =
+    item.flight_estimated_arrival ||
+    item.flight_scheduled_arrival ||
+    item.flight_estimated_departure ||
+    item.flight_scheduled_departure;
   return (
     <div className="min-w-40 space-y-1 text-xs">
       <div className="inline-flex items-center gap-1 font-bold text-slate-900">
         <Plane size={14} />
         {item.flight_number}
       </div>
-      <div className="text-slate-600">{item.flight_status || "待确认"}{time ? ` / ${time}` : ""}</div>
-      <div className="text-slate-500">{[item.flight_airline, item.flight_terminal, item.flight_gate].filter(Boolean).join(" / ")}</div>
+      <div className="text-slate-600">
+        {item.flight_status || "待确认"}
+        {time ? ` / ${time}` : ""}
+      </div>
+      <div className="text-slate-500">
+        {[item.flight_airline, item.flight_terminal, item.flight_gate]
+          .filter(Boolean)
+          .join(" / ")}
+      </div>
     </div>
   );
 }
 
-function isAirportListing(item: { order_type?: string; pickup_location?: string; dropoff_location?: string }) {
-  const text = `${item.order_type || ""} ${item.pickup_location || ""} ${item.dropoff_location || ""}`.toLowerCase();
-  return text.includes("airport") || text.includes("空港") || text.includes("机场") || text.includes("羽田") || text.includes("成田") || text.includes("kansai");
+function isAirportListing(item: {
+  order_type?: string;
+  pickup_location?: string;
+  dropoff_location?: string;
+}) {
+  const text =
+    `${item.order_type || ""} ${item.pickup_location || ""} ${item.dropoff_location || ""}`.toLowerCase();
+  return (
+    text.includes("airport") ||
+    text.includes("空港") ||
+    text.includes("机场") ||
+    text.includes("羽田") ||
+    text.includes("成田") ||
+    text.includes("kansai")
+  );
 }
 
 function CarrierRequestPanel({
@@ -381,13 +625,23 @@ function CarrierRequestPanel({
   reviewMutation,
 }: {
   requests: AgencyOrderChangeRequest[];
-  reviewMutation: ReturnType<typeof useMutation<{ request: AgencyOrderChangeRequest }, Error, { requestId: number; decision: "approved" | "rejected" }>>;
+  reviewMutation: ReturnType<
+    typeof useMutation<
+      { request: AgencyOrderChangeRequest },
+      Error,
+      { requestId: number; decision: "approved" | "rejected" }
+    >
+  >;
 }) {
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-base font-bold text-slate-950">旅行社变更/撤销确认</h2>
-        <p className="mt-1 text-sm text-slate-500">旅行社订单被接单或派单后，关键变更和撤销必须由车公司确认。</p>
+        <h2 className="text-base font-bold text-slate-950">
+          旅行社变更/撤销确认
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          旅行社订单被接单或派单后，关键变更和撤销必须由车公司确认。
+        </p>
       </CardHeader>
       <CardContent>
         {requests.length ? (
@@ -406,20 +660,57 @@ function CarrierRequestPanel({
               </thead>
               <tbody>
                 {requests.map((item) => (
-                  <tr key={item.id} className="border-t border-border align-top">
-                    <td className="px-3 py-3 font-bold text-slate-900">{item.oid || `#${item.order_id}`}</td>
+                  <tr
+                    key={item.id}
+                    className="border-t border-border align-top"
+                  >
+                    <td className="px-3 py-3 font-bold text-slate-900">
+                      {item.oid || `#${item.order_id}`}
+                    </td>
                     <td className="px-3 py-3">{item.agency_name || "-"}</td>
-                    <td className="px-3 py-3">{item.request_type === "cancel" ? "撤销订单" : "修改订单"}</td>
-                    <td className="px-3 py-3">{item.order_date || "-"} {item.start_time || ""}<br />{shortRoute(item.pickup_location, item.dropoff_location)}</td>
-                    <td className="px-3 py-3">{item.fee_percent || 0}% / {formatCurrency(item.fee_amount_jpy || 0)}<br /><span className="text-xs text-slate-500">{item.policy_message || "-"}</span></td>
+                    <td className="px-3 py-3">
+                      {item.request_type === "cancel" ? "撤销订单" : "修改订单"}
+                    </td>
+                    <td className="px-3 py-3">
+                      {item.order_date || "-"} {item.start_time || ""}
+                      <br />
+                      {shortRoute(item.pickup_location, item.dropoff_location)}
+                    </td>
+                    <td className="px-3 py-3">
+                      {item.fee_percent || 0}% /{" "}
+                      {formatCurrency(item.fee_amount_jpy || 0)}
+                      <br />
+                      <span className="text-xs text-slate-500">
+                        {item.policy_message || "-"}
+                      </span>
+                    </td>
                     <td className="px-3 py-3">{formatRequestChanges(item)}</td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <Button className="h-8 px-2" disabled={reviewMutation.isPending} onClick={() => reviewMutation.mutate({ requestId: item.id, decision: "approved" })}>
+                        <Button
+                          className="h-8 px-2"
+                          disabled={reviewMutation.isPending}
+                          onClick={() =>
+                            reviewMutation.mutate({
+                              requestId: item.id,
+                              decision: "approved",
+                            })
+                          }
+                        >
                           <Check size={14} />
                           同意
                         </Button>
-                        <Button variant="secondary" className="h-8 px-2 text-red-600" disabled={reviewMutation.isPending} onClick={() => reviewMutation.mutate({ requestId: item.id, decision: "rejected" })}>
+                        <Button
+                          variant="secondary"
+                          className="h-8 px-2 text-red-600"
+                          disabled={reviewMutation.isPending}
+                          onClick={() =>
+                            reviewMutation.mutate({
+                              requestId: item.id,
+                              decision: "rejected",
+                            })
+                          }
+                        >
                           <X size={14} />
                           拒绝
                         </Button>
@@ -431,7 +722,10 @@ function CarrierRequestPanel({
             </table>
           </div>
         ) : (
-          <EmptyState title="暂无待确认申请" detail="旅行社提交撤销或关键字段修改后，会显示在这里。" />
+          <EmptyState
+            title="暂无待确认申请"
+            detail="旅行社提交撤销或关键字段修改后，会显示在这里。"
+          />
         )}
       </CardContent>
     </Card>
@@ -444,25 +738,46 @@ function CarrierSettlementPanel({
   paymentConfirmMutation,
 }: {
   rows: AuctionListing[];
-  paymentRequestMutation: ReturnType<typeof useMutation<{ order: Order }, Error, { orderId: number; amount?: number; note?: string }>>;
-  paymentConfirmMutation: ReturnType<typeof useMutation<{ order: Order }, Error, { orderId: number }>>;
+  paymentRequestMutation: ReturnType<
+    typeof useMutation<
+      { order: Order },
+      Error,
+      { orderId: number; amount?: number; note?: string }
+    >
+  >;
+  paymentConfirmMutation: ReturnType<
+    typeof useMutation<{ order: Order }, Error, { orderId: number }>
+  >;
 }) {
-  const settlementRows = rows.filter((item) =>
-    ["claimed", "sold"].includes(item.status || "") ||
-    ["payment_requested", "receipt_uploaded", "paid"].includes(item.settlement_status || item.agency_settlement_status || ""),
+  const settlementRows = rows.filter(
+    (item) =>
+      ["claimed", "sold"].includes(item.status || "") ||
+      ["payment_requested", "receipt_uploaded", "paid"].includes(
+        item.settlement_status || item.agency_settlement_status || "",
+      ),
   );
   return (
     <Card>
       <CardHeader>
         <h2 className="text-base font-bold text-slate-950">车公司结算联动</h2>
-        <p className="mt-1 text-sm text-slate-500">订单跑完后发起付款请求；旅行社上传回执后，车公司确认收款，本订单完成。</p>
+        <p className="mt-1 text-sm text-slate-500">
+          订单跑完后发起付款请求；旅行社上传回执后，车公司确认收款，本订单完成。
+        </p>
       </CardHeader>
       <CardContent>
-        {paymentRequestMutation.error instanceof Error ? <div className="mb-3 text-sm font-semibold text-red-600">{paymentRequestMutation.error.message}</div> : null}
-        {paymentConfirmMutation.error instanceof Error ? <div className="mb-3 text-sm font-semibold text-red-600">{paymentConfirmMutation.error.message}</div> : null}
+        {paymentRequestMutation.error instanceof Error ? (
+          <div className="mb-3 text-sm font-semibold text-red-600">
+            {paymentRequestMutation.error.message}
+          </div>
+        ) : null}
+        {paymentConfirmMutation.error instanceof Error ? (
+          <div className="mb-3 text-sm font-semibold text-red-600">
+            {paymentConfirmMutation.error.message}
+          </div>
+        ) : null}
         {settlementRows.length ? (
           <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[1280px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-3">订单</th>
@@ -475,30 +790,92 @@ function CarrierSettlementPanel({
               </thead>
               <tbody>
                 {settlementRows.map((item) => {
-                  const settlement = item.settlement_status || item.agency_settlement_status || "pending";
-                  const amount = item.payment_amount_jpy || item.current_bid_jpy || item.buyout_price_jpy || item.price_jpy || item.price || 0;
-                  const canRequest = !["payment_requested", "receipt_uploaded", "paid", "settled"].includes(settlement);
+                  const settlement =
+                    item.settlement_status ||
+                    item.agency_settlement_status ||
+                    "pending";
+                  const amount =
+                    item.payment_amount_jpy ||
+                    item.current_bid_jpy ||
+                    item.buyout_price_jpy ||
+                    item.price_jpy ||
+                    item.price ||
+                    0;
+                  const canRequest = ![
+                    "payment_requested",
+                    "receipt_uploaded",
+                    "paid",
+                    "settled",
+                  ].includes(settlement);
                   const canConfirm = settlement === "receipt_uploaded";
                   return (
-                    <tr key={`${item.id}-${item.order_id}`} className="border-t border-border align-top">
-                      <td className="px-3 py-3 font-bold text-slate-900">{item.oid || `#${item.order_id}`}</td>
+                    <tr
+                      key={`${item.id}-${item.order_id}`}
+                      className="border-t border-border align-top"
+                    >
+                      <td className="px-3 py-3 font-bold text-slate-900">
+                        {item.oid || `#${item.order_id}`}
+                      </td>
                       <td className="px-3 py-3">
-                        {item.order_date || "-"} {item.start_time || ""}<br />
-                        {shortRoute(item.pickup_location, item.dropoff_location)}
-                        <div className="mt-2"><FlightSummary item={item} /></div>
+                        {item.order_date || "-"} {item.start_time || ""}
+                        <br />
+                        {shortRoute(
+                          item.pickup_location,
+                          item.dropoff_location,
+                        )}
+                        <div className="mt-2">
+                          <FlightSummary item={item} />
+                        </div>
+                        <div className="mt-2">
+                          <AuctionCounterpartyContacts item={item} />
+                        </div>
                       </td>
                       <td className="px-3 py-3">{formatCurrency(amount)}</td>
-                      <td className="px-3 py-3"><StatusText status={settlement} /></td>
+                      <td className="px-3 py-3">
+                        <StatusText status={settlement} />
+                      </td>
                       <td className="px-3 py-3">
                         {item.agency_payment_receipt_name || "-"}
-                        {item.agency_payment_receipt_url ? <a className="ml-2 text-blue-700 hover:underline" href={assetUrl(item.agency_payment_receipt_url)} target="_blank" rel="noreferrer">查看</a> : null}
+                        {item.agency_payment_receipt_url ? (
+                          <a
+                            className="ml-2 text-blue-700 hover:underline"
+                            href={assetUrl(item.agency_payment_receipt_url)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            查看
+                          </a>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap gap-2">
-                          <Button className="h-8 px-2" disabled={!canRequest || paymentRequestMutation.isPending} onClick={() => paymentRequestMutation.mutate({ orderId: item.order_id, amount, note: "车公司完成订单，发起付款请求" })}>
+                          <Button
+                            className="h-8 px-2"
+                            disabled={
+                              !canRequest || paymentRequestMutation.isPending
+                            }
+                            onClick={() =>
+                              paymentRequestMutation.mutate({
+                                orderId: item.order_id,
+                                amount,
+                                note: "车公司完成订单，发起付款请求",
+                              })
+                            }
+                          >
                             发起付款请求
                           </Button>
-                          <Button className="h-8 px-2" variant="secondary" disabled={!canConfirm || paymentConfirmMutation.isPending} onClick={() => paymentConfirmMutation.mutate({ orderId: item.order_id })}>
+                          <Button
+                            className="h-8 px-2"
+                            variant="secondary"
+                            disabled={
+                              !canConfirm || paymentConfirmMutation.isPending
+                            }
+                            onClick={() =>
+                              paymentConfirmMutation.mutate({
+                                orderId: item.order_id,
+                              })
+                            }
+                          >
                             <Check size={14} />
                             确认收款
                           </Button>
@@ -511,11 +888,72 @@ function CarrierSettlementPanel({
             </table>
           </div>
         ) : (
-          <EmptyState title="暂无待结算订单" detail="接单并完成服务后，订单会进入车公司结算联动区。" />
+          <EmptyState
+            title="暂无待结算订单"
+            detail="接单并完成服务后，订单会进入车公司结算联动区。"
+          />
         )}
       </CardContent>
     </Card>
   );
+}
+
+function AuctionCounterpartyContacts({ item }: { item: AuctionListing }) {
+  const seller = formatContact(
+    item.seller_contact_name,
+    item.seller_contact_phone,
+    item.seller_contact_email,
+  );
+  const buyer = formatContact(
+    item.buyer_contact_name,
+    item.buyer_contact_phone,
+    item.buyer_contact_email,
+  );
+  if (!seller && !buyer)
+    return (
+      <div className="text-xs font-semibold text-slate-400">联系方式：-</div>
+    );
+  return (
+    <div className="space-y-1 rounded-xl border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">
+      <ContactRow
+        label="发布方"
+        company={item.seller_company_name || item.seller_company_code}
+        contact={seller}
+      />
+      <ContactRow
+        label="接单方"
+        company={item.buyer_company_name || item.buyer_company_code}
+        contact={buyer}
+      />
+    </div>
+  );
+}
+
+function ContactRow({
+  label,
+  company,
+  contact,
+}: {
+  label: string;
+  company?: string;
+  contact?: string;
+}) {
+  if (!company && !contact) return null;
+  return (
+    <div className="grid grid-cols-[48px_1fr] gap-2">
+      <span className="font-black text-slate-500">{label}</span>
+      <span className="min-w-0">
+        <span className="font-bold text-slate-800">{company || "-"}</span>
+        {contact ? (
+          <span className="ml-1 text-slate-500">{contact}</span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+function formatContact(name?: string, phone?: string, email?: string) {
+  return [name, phone, email].filter(Boolean).join(" / ");
 }
 
 function StatusText({ status }: { status?: string }) {
@@ -526,7 +964,11 @@ function StatusText({ status }: { status?: string }) {
     paid: "已收款完成",
     settled: "已结算",
   };
-  return <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">{labels[status || "pending"] || status}</span>;
+  return (
+    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
+      {labels[status || "pending"] || status}
+    </span>
+  );
 }
 
 function assetUrl(path: string) {

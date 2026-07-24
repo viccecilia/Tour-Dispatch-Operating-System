@@ -25,7 +25,7 @@ const permissionLabels: Record<string, string> = {
   parser: "订单解析",
   dispatch: "派车",
   calendar: "日历",
-  driver_monitor: "司机监控",
+  driver_monitor: "任务监控",
   vehicles: "车辆/司机",
   finance: "财务",
   settings: "设置",

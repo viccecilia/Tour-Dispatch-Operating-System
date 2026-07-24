@@ -84,7 +84,10 @@ Page({
       api.financeLedger().catch(() => ({ orders: [] })),
       api.financeDriverExpenses().catch(() => ({ expenses: [], summary: {} }))
     ])
-      .then(([summary, ledger, expenseResult]) => {
+      .then((results) => {
+        const summary = results && results[0] || {};
+        const ledger = results && results[1] || { orders: [] };
+        const expenseResult = results && results[2] || { expenses: [], summary: {} };
         const expenseSummary = {
           ...(summary.driver_expense_summary || {}),
           ...(expenseResult.summary || {})

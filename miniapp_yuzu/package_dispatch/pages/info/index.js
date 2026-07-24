@@ -43,7 +43,7 @@ Page({
     healthAlerts: [],
     visibleRows: [],
     expandedDriverId: '',
-    driverStatusLabels: ['在职', '休假', '离职'],
+    driverStatusLabels: ['出勤', '休假', '离职'],
     driverStatusValues: ['available', 'resting', 'retired'],
     vehicleStatusLabels: ['运行中', '修理中', '废车'],
     vehicleStatusValues: ['available', 'maintenance', 'retired'],
@@ -57,7 +57,7 @@ Page({
     vehicleListModeLabel: '运行',
     driverListMode: 'active',
     driverListFilters: [
-      { label: '在职', value: 'active' },
+      { label: '出勤', value: 'active' },
       { label: '休假', value: 'resting' },
       { label: '离职', value: 'retired' }
     ],
@@ -70,7 +70,7 @@ Page({
       { label: '京都', value: 'kyoto' }
     ],
     driverListModeIndex: 0,
-    driverListModeLabel: '在职',
+    driverListModeLabel: '出勤',
     title: '车辆信息',
     hint: '查看全部车辆基础资料、车检点检记录，并下载车辆 PDF。'
   },
@@ -248,13 +248,14 @@ Page({
     const residenceDue = driver.residence_due_date || driver.residence_expiry_date || driver['再留期限有效日期'] || '';
     const statusValue = this.normalizeResourceDriverStatus(driver.status || driver.driver_status || driver.driverStatus || '');
     const officeText = driver.office || driver.branch || driver.sales_office || driver['所属営業所'] || '';
-    const officeType = this.officeTypeForResource([officeText, name, code].join(' '));
+    const officeType = this.driverOfficeTypeForResource(officeText);
     return {
       id: driver.id || code || name,
       resourceId: driver.id || '',
       type: 'driver',
       title: name,
       driverCode: code,
+      phone,
       healthExamDate: healthDate,
       status: driver.status || driver.driver_status || '',
       driverStatus: driver.driver_status || driver.driverStatus || driver.status || '',
@@ -520,7 +521,7 @@ Page({
 
   onDriverListModeChange(e) {
     const driverListModeIndex = Number(e.detail.value || 0);
-    const driverListModeItem = this.data.driverListFilters[driverListModeIndex] || this.data.driverListFilters[0] || { label: '在职', value: 'active' };
+    const driverListModeItem = this.data.driverListFilters[driverListModeIndex] || this.data.driverListFilters[0] || { label: '出勤', value: 'active' };
     this.setData({
       driverListModeIndex,
       driverListMode: driverListModeItem.value,
@@ -569,7 +570,7 @@ Page({
   updateDriverStatus(e) {
     const dataset = e.currentTarget.dataset || {};
     const resourceId = dataset.resourceId || dataset.id || '';
-    const driverKey = dataset.driverCode || dataset.phone || dataset.title || '';
+    const driverKey = dataset.title || dataset.driverCode || dataset.phone || '';
     const index = Number(e.detail.value || 0);
     const status = this.data.driverStatusValues[index] || 'available';
     const label = this.driverStatusLabel(status);
@@ -855,7 +856,7 @@ Page({
 
   driverStatusLabel(status) {
     const value = this.normalizeResourceDriverStatus(status);
-    return { available: '在职', resting: '休假', retired: '离职' }[value] || '在职';
+    return { available: '出勤', resting: '休假', retired: '离职' }[value] || '出勤';
   },
 
   driverStatusIndex(status) {
@@ -884,6 +885,12 @@ Page({
     const text = String(value || '').toLowerCase();
     if (text.indexOf('京都') >= 0 || text.indexOf('kyoto') >= 0) return 'kyoto';
     if (text.indexOf('大阪') >= 0 || text.indexOf('osaka') >= 0 || text.indexOf('なにわ') >= 0) return 'osaka';
+    return 'osaka';
+  },
+
+  driverOfficeTypeForResource(value) {
+    const text = String(value || '').toLowerCase();
+    if (text.indexOf('京都') >= 0 || text.indexOf('kyoto') >= 0) return 'kyoto';
     return 'osaka';
   },
 

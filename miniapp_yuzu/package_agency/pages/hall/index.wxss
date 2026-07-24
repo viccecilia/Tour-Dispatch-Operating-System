@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .hall-tabs {
   display: grid;
@@ -6,13 +6,13 @@
   gap: 10rpx;
   margin-top: 14rpx;
   padding: 8rpx;
-  border-radius: 22rpx;
-  background: #eaf2f8;
+  border-radius: 18rpx;
+  background: #eaf3f9;
 }
 
 .hall-tab {
   height: 62rpx;
-  border-radius: 16rpx;
+  border-radius: 14rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,7 +24,7 @@
 .hall-tab-active {
   background: #fff;
   color: var(--c-primary-dark);
-  box-shadow: 0 8rpx 20rpx rgba(30, 54, 92, 0.1);
+  box-shadow: 0 8rpx 18rpx rgba(30, 54, 92, 0.08);
 }
 
 .compact-panel {
@@ -53,11 +53,13 @@
   flex: 0 0 auto;
   min-width: 92rpx;
   max-width: 168rpx;
-  height: 50rpx;
+  height: 54rpx;
   padding: 0 14rpx;
   border-radius: 999rpx;
   font-size: 21rpx;
-  line-height: 50rpx;
+  background: #eef5ff;
+  color: var(--c-accent);
+  line-height: 54rpx;
 }
 
 .hall-filter-grid {
@@ -71,7 +73,7 @@
   height: 54rpx;
   min-height: 54rpx;
   padding: 0 12rpx;
-  border-radius: 14rpx;
+  border-radius: 12rpx;
   box-sizing: border-box;
   font-size: 21rpx;
   line-height: 54rpx;
@@ -83,6 +85,13 @@
 
 .hall-listing-card .row-title {
   color: var(--c-primary-dark);
+}
+
+.hall-listing-card,
+.my-order-card {
+  border-radius: 16rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 20rpx rgba(30, 54, 92, 0.04);
 }
 
 .my-order-card {
@@ -97,7 +106,7 @@
 .inline-actions {
   padding: 14rpx 18rpx 18rpx;
   border-top: 1rpx solid var(--c-border);
-  background: #f8fafc;
+  background: #f7fbff;
 }
 
 .driver-box {

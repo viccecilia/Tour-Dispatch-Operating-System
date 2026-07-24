@@ -8,6 +8,13 @@ Page({
 
   onShow() {
     const currentSession = session.getSession();
+    if (currentSession && currentSession.token && currentSession.port) {
+      const homeUrl = router.homeForSession(currentSession);
+      if (homeUrl && homeUrl !== '/pages/entry/index') {
+        wx.redirectTo({ url: homeUrl });
+        return;
+      }
+    }
     this.setData({ currentSession });
   },
 

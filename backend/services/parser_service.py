@@ -103,6 +103,82 @@ EDITABLE_FIELDS = [
 
 _AGENCY_PARSER_OVERLAY_ACTIVE = False
 
+REAL_LOCATION_ALIASES = {
+    "关西国际机场t1": "KIX-T1",
+    "关西国际空港t1": "KIX-T1",
+    "関西国際空港t1": "KIX-T1",
+    "kix-t1": "KIX-T1",
+    "kix t1": "KIX-T1",
+    "关西国际机场t2": "KIX-T2",
+    "关西国际空港t2": "KIX-T2",
+    "関西国際空港t2": "KIX-T2",
+    "kix-t2": "KIX-T2",
+    "kix t2": "KIX-T2",
+    "关西国际机场": "KIX",
+    "关西国际空港": "KIX",
+    "関西国際空港": "KIX",
+    "kansai international airport": "KIX",
+    "关西机场": "KIX",
+    "关西空港": "KIX",
+    "关空": "KIX",
+    "kix": "KIX",
+    "关西酒店": "关西酒店",
+    "大阪伊丹机场": "ITM",
+    "伊丹机场": "ITM",
+    "大阪国际机场": "ITM",
+    "itami airport": "ITM",
+    "itm": "ITM",
+    "神户机场": "UKB",
+    "神戸空港": "UKB",
+    "ukb": "UKB",
+    "成田机场": "NRT",
+    "成田空港": "NRT",
+    "nrt": "NRT",
+    "羽田机场": "HND",
+    "羽田空港": "HND",
+    "hnd": "HND",
+    "大阪市内": "大阪市内",
+    "大阪难波": "大阪市内",
+    "大阪難波": "大阪市内",
+    "心斋桥": "大阪市内",
+    "心斎橋": "大阪市内",
+    "梅田": "大阪市内",
+    "日本桥": "大阪市内",
+    "大阪": "大阪市内",
+    "京都站": "京都站",
+    "京都車站": "京都站",
+    "京都駅": "京都站",
+    "京都市内": "京都市内",
+    "京都": "京都市内",
+    "新大阪": "新大阪",
+    "奈良": "奈良",
+    "宇治": "宇治",
+    "名古屋": "名古屋",
+    "神户": "神户",
+    "神戸": "神户",
+    "环球": "环球影城",
+    "环球影城": "环球影城",
+    "铃鹿": "铃鹿",
+    "大津": "大津",
+    "胜尾寺": "胜尾寺",
+    "天桥立": "天桥立",
+    "美山": "美山",
+    "龟岗": "龟冈",
+    "龟冈": "龟冈",
+}
+
+REAL_NOTE_PATTERNS = [
+    ("儿童座椅", r"(?:儿童座椅|儿童椅|安全座椅|婴儿座椅|baby\s*seat|child\s*seat)\s*[*xX×]?\s*(\d+)?"),
+    ("儿童坐垫", r"(?:儿童坐垫|增高垫|booster)"),
+    ("雪胎", r"(?:雪胎|雪地胎|snow\s*tire)"),
+    ("举牌", r"(?:举牌|接机牌|name\s*board)"),
+    ("绿牌", r"(?:绿牌|绿车)"),
+    ("白牌", r"(?:白牌|白车)"),
+    ("中文", r"(?:中文|国语|普通话)"),
+    ("日语", r"(?:日语|日文)"),
+    ("英语", r"(?:英语|英文)"),
+]
+
 
 def parse_text_to_draft(raw_text: str, source_type: str = "text") -> dict[str, Any]:
     raw_text = normalize_parser_input(raw_text)
@@ -209,9 +285,17 @@ def split_batch_order_text(raw_text: str) -> list[str]:
     real_order_lines = _split_real_order_text(str(raw_text or ""))
     if real_order_lines:
         return real_order_lines
-    text = normalize_parser_input(raw_text).replace("。", "。\n")
-    text = re.sub(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\b\d{1,2}[./-]\d{1,2}\s)", "\n", text)
-    text = re.sub(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\d{1,2}月\d{1,2}日?\s)", "\n", text)
+
+    date_boundary_pattern = r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n]{1,24}:\s*)?\b\d{1,2}[./-]\d{1,2}\s)"
+    month_day_boundary_pattern = r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n]{1,24}:\s*)?\d{1,2}\u6708\d{1,2}\u65e5?\s)"
+    explicit_boundary_pattern = r"(?:^|\n)(?:\[[^\]]+\]\s*)?(?:[^:\n]{1,24}:\s*)?(?:\d{1,2}[./-]\d{1,2}|\d{1,2}\u6708\d{1,2}\u65e5?)\s"
+
+    text = normalize_parser_input(raw_text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("??", "??\n")
+    text = re.sub(date_boundary_pattern, "\n", text)
+    text = re.sub(month_day_boundary_pattern, "\n", text)
+
     order_lines: list[str] = []
     customer_context: str | None = None
     for line in (part.strip() for part in text.splitlines()):
@@ -219,7 +303,9 @@ def split_batch_order_text(raw_text: str) -> list[str]:
             continue
         if _is_separator_or_caption(line):
             continue
-        chunks = [chunk.strip() for chunk in re.split(r"(?<!^)(?=(?:\[[^\]]+\]\s*)?(?:[^:\n：]{1,24}[:：]\s*)?\b\d{1,2}[./-]\d{1,2}\s)", line) if chunk.strip()]
+        chunks = [chunk.strip() for chunk in re.split(date_boundary_pattern, line) if chunk.strip()]
+        if len(chunks) == 1:
+            chunks = [chunk.strip() for chunk in re.split(month_day_boundary_pattern, line) if chunk.strip()]
         for chunk in chunks:
             chunk = _strip_chat_prefix(chunk)
             if _looks_like_order_line(chunk):
@@ -232,7 +318,22 @@ def split_batch_order_text(raw_text: str) -> list[str]:
                 order_lines[-1] = f"{order_lines[-1]} {chunk}".strip()
             else:
                 order_lines.append(chunk)
-    return [line for line in order_lines if line]
+
+    order_lines = [line for line in order_lines if line]
+    if len(order_lines) <= 1:
+        return order_lines
+
+    explicit_boundary_count = len(re.findall(explicit_boundary_pattern, text))
+    if explicit_boundary_count <= 1:
+        merged_lines = [
+            _strip_chat_prefix(line)
+            for line in text.splitlines()
+            if line.strip() and not _is_separator_or_caption(line.strip())
+        ]
+        merged_text = "\n".join(line.strip() for line in merged_lines if line.strip()).strip()
+        if merged_text:
+            return [merged_text]
+    return order_lines
 
 
 def parse_excel_to_drafts(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -439,57 +540,394 @@ def parse_chinese_order(text: str) -> dict[str, Any]:
         remark_parts.append("备注标签：" + "；".join(notes))
     remark_parts.append(raw)
     parsed["remark"] = "\n".join(remark_parts)
-    _enhance_real_order_parse(raw, parsed)
+    try:
+        _enhance_real_order_parse(raw, parsed)
+    except Exception:
+        pass
+    _apply_readable_text_overlay(raw, parsed)
     return parsed
 
 
-REAL_LOCATION_ALIASES = {
-    "关西": "KIX",
-    "关空": "KIX",
-    "关西机场": "KIX",
-    "関西": "KIX",
-    "関空": "KIX",
-    "kix": "KIX",
-    "KIX": "KIX",
-    "伊丹": "ITM",
-    "伊丹机场": "ITM",
-    "神户机场": "神户机场",
-    "大阪": "大阪市内",
-    "大阪市内": "大阪市内",
-    "新大阪": "新大阪站",
-    "新大阪站": "新大阪站",
-    "京都": "京都市内",
-    "京都市内": "京都市内",
-    "奈良": "奈良",
-    "宇治": "宇治",
-    "神户": "神户",
-    "名古屋": "名古屋",
-    "环球": "USJ",
-    "环球影城": "USJ",
-    "USJ": "USJ",
-    "临空城": "临空城",
-    "りんくう": "临空城",
-    "Rinku": "临空城",
-    "岸和田": "岸和田",
-    "心斋桥": "心斋桥",
-    "心斋桥微笑酒店": "心斋桥微笑酒店",
-    "门真": "门真",
-    "铃鹿": "铃鹿",
-    "大津": "大津",
-    "美山": "美山",
-    "龟岗": "龟岗",
-    "胜尾寺": "胜尾寺",
-    "关西酒店": "关西酒店",
-    "机场": "机场",
-}
+def _apply_readable_text_overlay(raw: str, parsed: dict[str, Any]) -> None:
+    if not raw:
+        return
+    overlay: dict[str, Any] = {}
+    date_value = _extract_readable_date(raw)
+    if date_value:
+        overlay["order_date"] = date_value
+        overlay["end_date"] = date_value
 
-REAL_NOTE_PATTERNS = [
-    ("儿童座椅", r"儿童[座坐]椅\s*[*xX×]?\s*(\d+)?|儿童坐垫\s*[*xX×]?\s*(\d+)?"),
-    ("举牌", r"举牌|接机牌"),
-    ("绿牌", r"绿牌|(?<![一-龥])绿(?![一-龥])"),
-    ("夜班", r"深夜|夜班|加班"),
-    ("额外费用", r"[+＋]\s*\d{3,6}\s*(?:日元|円|jpy)?"),
-]
+    start_time, end_time = _extract_readable_times(raw)
+    if start_time:
+        overlay["start_time"] = start_time
+    if end_time:
+        overlay["end_time"] = end_time
+
+    order_type = _extract_modern_readable_order_type(raw)
+    if order_type:
+        overlay["order_type"] = order_type
+
+    pickup, dropoff = _extract_modern_readable_route(raw)
+    if pickup:
+        overlay["pickup_location"] = pickup
+    if dropoff:
+        overlay["dropoff_location"] = dropoff
+
+    readable_lines = [line.strip() for line in re.split(r"[\r\n]+", raw) if line.strip()]
+    normalized_lines = [line.replace("：", ":").strip() for line in readable_lines]
+    has_detail_labels = any(token in raw for token in ("姓名", "客人", "电话", "聯絡", "联系", "人数", "行李"))
+
+    guest_name_patterns = (
+        r"^(?:姓名|客人姓名|客人|name|guest)\s*:\s*(.+)$",
+    )
+    for line in normalized_lines:
+        for pattern in guest_name_patterns:
+            match = re.match(pattern, line, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip()
+                if value:
+                    overlay["guest_name"] = value
+                    break
+        if overlay.get("guest_name"):
+            break
+
+    guest_contact = _extract_phone(raw)
+    if guest_contact:
+        overlay["guest_contact"] = guest_contact
+
+    for line in normalized_lines:
+        match = re.match(r"^(?:人数|乘客数|pax|passengers?)\s*:\s*(\d+)\b", line, re.IGNORECASE)
+        if match:
+            overlay["passenger_count"] = int(match.group(1))
+            break
+    if overlay.get("passenger_count") in ("", None):
+        inline_passenger = re.search(r"(?<!\d)(\d{1,2})\s*(?:人|位)\b", raw, re.IGNORECASE)
+        if inline_passenger:
+            overlay["passenger_count"] = int(inline_passenger.group(1))
+
+    for line in normalized_lines:
+        match = re.match(r"^(?:行李|件数|baggage|luggage)\s*:\s*(\d+)\b", line, re.IGNORECASE)
+        if match:
+            overlay["luggage_count"] = int(match.group(1))
+            break
+
+    vehicle_type = _extract_readable_vehicle_type(raw)
+    if vehicle_type:
+        overlay["vehicle_type"] = vehicle_type
+        overlay["vehicle_class"] = vehicle_type
+        overlay["vehicle_type_code"] = normalize_vehicle_type_code(vehicle_type)
+
+    language = _extract_readable_language(raw)
+    if language:
+        overlay["driver_language"] = language
+
+    price = _extract_modern_readable_price(raw)
+    if price is not None or has_detail_labels or _looks_like_structured_single_order(raw):
+        overlay["price"] = price
+        overlay["price_rmb"] = price
+        overlay["price_jpy"] = price
+        if price is None:
+            overlay["other_fee_jpy"] = None
+
+    if overlay.get("order_date") and not overlay.get("end_date"):
+        overlay["end_date"] = overlay["order_date"]
+
+    if not overlay.get("end_time") and overlay.get("start_time"):
+        order_type_for_duration = overlay.get("order_type") or parsed.get("order_type")
+        hours = 10 if order_type_for_duration in {"包车", "charter"} else 2
+        computed_end = _real_add_hours(str(overlay["start_time"]), hours)
+        if computed_end:
+            overlay["end_time"] = computed_end
+
+    for key, value in overlay.items():
+        if value in ("", None):
+            parsed[key] = None if key in {"price", "price_rmb", "price_jpy", "other_fee_jpy", "guest_name", "guest_contact", "passenger_count", "luggage_count", "driver_language", "vehicle_type", "vehicle_class", "vehicle_type_code", "end_time", "end_date"} else parsed.get(key)
+            continue
+        parsed[key] = value
+    for location_key in ("pickup_location", "dropoff_location"):
+        location_value = parsed.get(location_key)
+        if isinstance(location_value, str):
+            parsed[location_key] = re.sub(r"(?<!\d)(\d{1,2})\s*(?:人|位)\s*$", "", location_value).strip(" -/>")
+
+def _extract_readable_date(text: str) -> str | None:
+    first_line = next((line.strip() for line in re.split(r"[\r\n]+", text) if line.strip()), text)
+    month_day = re.search(r"(\d{1,2})\s*\u6708\s*(\d{1,2})\s*\u65e5", first_line)
+    if month_day:
+        value = _build_valid_date(month_day.group(1), month_day.group(2))
+        if value:
+            return value
+    for pattern in (
+        r"(\d{4}[./-]\d{1,2}[./-]\d{1,2})",
+        r"(\d{1,2}[./-]\d{1,2})",
+    ):
+        match = re.search(pattern, first_line)
+        if match:
+            token = match.group(1)
+            if re.fullmatch(r"\d{1,2}[./-]\d{1,2}", token):
+                month, day = re.split(r"[./-]", token)
+                value = _build_valid_date(month, day)
+            else:
+                value = normalize_date_token(token)
+            if value:
+                return value
+    return None
+
+def _build_valid_date(month: str, day: str, year: int | None = None) -> str | None:
+    try:
+        month_i = int(month)
+        day_i = int(day)
+    except (TypeError, ValueError):
+        return None
+    if not (1 <= month_i <= 12 and 1 <= day_i <= 31):
+        return None
+    return normalize_date_token(f"{year}-{month_i:02d}-{day_i:02d}" if year else f"{month_i:02d}-{day_i:02d}")
+
+
+def _extract_readable_times(text: str) -> tuple[str | None, str | None]:
+    range_match = re.search(r"(\d{1,2}:\d{2})\s*(?:-|~|\u301c|\u5230)\s*(\d{1,2}:\d{2})", text)
+    if range_match:
+        return normalize_time_token(range_match.group(1)), normalize_time_token(range_match.group(2))
+    time_match = re.search(r"(\d{1,2}:\d{2})", text)
+    if time_match:
+        return normalize_time_token(time_match.group(1)), None
+    return None, None
+
+def _extract_readable_order_type(text: str) -> str | None:
+    lowered = text.lower()
+    if any(token in text for token in ["包车", "貸切", "チャーター"]) or "charter" in lowered:
+        return "charter"
+    if any(token in text for token in ["送机", "送机场", "空港行き", "机场出发", "departure", "dropoff"]):
+        return "送机"
+    if any(token in text for token in ["接机", "接机场", "空港迎え", "airport pickup", "arrival", "pickup"]):
+        return "接机"
+    if "片道送迎" in text:
+        if any(token in text for token in ["空港行き", "送机", "送机场"]):
+            return "送机"
+        if any(token in text for token in ["空港迎え", "接机", "接机场"]):
+            return "接机"
+    return None
+
+
+def _extract_readable_route(text: str) -> tuple[str | None, str | None]:
+    lines = [line.strip() for line in re.split(r"[\r\n]+", text) if line.strip()]
+    location_lines: list[str] = []
+    for line in lines:
+        if _is_metadata_line(line):
+            continue
+        if re.search(r"\d{1,2}\s*月\s*\d{1,2}\s*日", line) and re.search(r"\d{1,2}:\d{2}", line):
+            continue
+        cleaned = _sanitize_route_line(line)
+        if cleaned:
+            location_lines.append(cleaned)
+    if len(location_lines) >= 2:
+        return location_lines[0], location_lines[1]
+    inline_route = re.search(r"(.+?)\s*(?:->|→|＞|›)\s*(.+)", text)
+    if inline_route:
+        return _sanitize_route_line(inline_route.group(1)), _sanitize_route_line(inline_route.group(2))
+    return None, None
+
+
+def _is_metadata_line(line: str) -> bool:
+    lowered = line.lower()
+    return any(
+        token in line for token in ["姓名", "名字", "电话", "手機", "手机", "人数", "行李", "车型", "车种", "语言", "备注", "料金", "价格", "担当"]
+    ) or any(token in lowered for token in ["name", "phone", "guest", "pax", "bags", "vehicle", "language", "remark", "price"])
+
+
+def _sanitize_route_line(line: str) -> str:
+    value = clean_text(line)
+    value = re.sub(r"^[\-\s\u2022\xb7]+", "", value).strip()
+    if not value:
+        return ""
+    if any(token in value for token in ["関西国際空港", "关西国际机场", "Kansai International Airport", "KIX"]):
+        terminal = re.search(r"T\s*([12])", value, re.IGNORECASE)
+        return f"KIX-T{terminal.group(1)}" if terminal else "KIX"
+    if any(token in value for token in ["伊丹空港", "ITM", "大阪国际机场"]):
+        return "ITM"
+    return value
+
+def _extract_readable_labeled_value(text: str, labels: list[str]) -> str | None:
+    for label in sorted(labels, key=len, reverse=True):
+        match = re.search(rf"(?:^|\n)\s*{re.escape(label)}\s*[:?]?\s*([^\n]+)", text, re.IGNORECASE)
+        if match:
+            value = match.group(1).strip().lstrip(":?").strip()
+            if value:
+                return value
+    return None
+
+
+def _extract_readable_number(text: str, patterns: list[str]) -> int | None:
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _extract_readable_vehicle_type(text: str) -> str | None:
+    lowered = text.lower()
+    if any(token in lowered for token in ["alphard", "vellfire"]) or "3代" in text:
+        return "A-3"
+    if any(token in lowered for token in ["hiace"]) or any(token in text for token in ["10座", "海狮"]):
+        return "Hiace"
+    if any(token in lowered for token in ["coaster"]) or "23座" in text:
+        return "Coaster"
+    labeled = _extract_readable_labeled_value(text, ["车型", "车种", "车辆", "vehicle"])
+    return labeled or None
+
+
+def _extract_readable_language(text: str) -> str | None:
+    labeled = _extract_readable_labeled_value(text, ["语言", "language", "司机语言"])
+    source = labeled or text
+    found: list[str] = []
+    mapping = [
+        ("中文", ["中文", "汉语", "chinese"]),
+        ("日文", ["日文", "日语", "japanese"]),
+        ("英文", ["英文", "英语", "english"]),
+        ("粤语", ["粤语", "cantonese"]),
+    ]
+    for label, tokens in mapping:
+        if any(token.lower() in source.lower() for token in tokens):
+            found.append(label)
+    return "/".join(found) if found else None
+
+
+def _extract_readable_price(text: str) -> float | None:
+    explicit_patterns = [
+        r"(?:价格|料金|price)\s*[:：]?\s*[¥￥]?\s*(\d{3,6})",
+        r"[¥￥]\s*(\d{3,6})",
+        r"(\d{3,6})\s*(?:円|JPY|RMB|元)\b",
+    ]
+    for pattern in explicit_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    return None
+
+def _extract_modern_readable_order_type(text: str) -> str | None:
+    lowered = str(text or "").lower()
+    if any(token in lowered for token in ["charter", "包车", "包車", "往返"]):
+        return "包车"
+    if any(token in lowered for token in ["送机", "送机场", "空港行き", "airport dropoff", "departure", "dropoff"]):
+        return "送机"
+    if any(token in lowered for token in ["接机", "接机场", "空港迎え", "airport pickup", "arrival", "pickup"]):
+        return "接机"
+    location_lines = _extract_modern_location_lines(text)
+    if len(location_lines) >= 2:
+        first_is_airport = bool(_normalize_modern_airport_code(location_lines[0]))
+        second_is_airport = bool(_normalize_modern_airport_code(location_lines[1]))
+        if first_is_airport and not second_is_airport:
+            return "接机"
+        if second_is_airport and not first_is_airport:
+            return "送机"
+    return None
+
+
+def _extract_modern_readable_route(text: str) -> tuple[str | None, str | None]:
+    location_lines = _extract_modern_location_lines(text)
+    if len(location_lines) >= 2:
+        return location_lines[0], location_lines[1]
+    inline_route = re.search(r"(.+?)\s*(?:->|→|—>|＞|到)\s*(.+)", str(text or ""))
+    if inline_route:
+        return _sanitize_modern_route_line(inline_route.group(1)), _sanitize_modern_route_line(inline_route.group(2))
+    return None, None
+
+
+def _extract_modern_readable_price(text: str) -> float | None:
+    raw = str(text or "")
+    explicit_patterns = [
+        r"(?:价格|料金|price)\s*[:：]?\s*[¥￥]?\s*(\d{3,6})",
+        r"[¥￥]\s*(\d{3,6})",
+        r"(\d{3,6})\s*(?:円|JPY|RMB|元)\b",
+    ]
+    for pattern in explicit_patterns:
+        match = re.search(pattern, raw, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    if "\n" in raw or "\r" in raw:
+        return None
+    compact = clean_text(raw)
+    if re.search(r"(?:接机|送机|包车|往返|单送|airport|charter)", compact, re.IGNORECASE):
+        tail = re.search(r"(?<![+\d])(\d{3,6})\s*$", compact)
+        if tail:
+            return float(tail.group(1))
+    return None
+
+
+def _extract_modern_location_lines(text: str) -> list[str]:
+    lines = [line.strip() for line in re.split(r"[\r\n]+", str(text or "")) if line.strip()]
+    location_lines: list[str] = []
+    for line in lines:
+        if _is_modern_metadata_line(line):
+            continue
+        if _looks_like_modern_datetime_line(line):
+            continue
+        if _looks_like_modern_phone_line(line):
+            continue
+        cleaned = _sanitize_modern_route_line(line)
+        if cleaned:
+            location_lines.append(cleaned)
+    return location_lines
+
+
+def _is_modern_metadata_line(line: str) -> bool:
+    lowered = str(line or "").lower()
+    return any(
+        token in str(line or "") for token in ["姓名", "客人姓名", "客人", "电话", "手機", "手机", "联系方式", "人数", "位", "行李", "车型", "语言", "备注", "价格", "料金", "旅行社", "来源"]
+    ) or any(token in lowered for token in ["name", "phone", "guest", "contact", "pax", "passengers", "bags", "luggage", "vehicle", "language", "remark", "price"])
+
+
+def _looks_like_modern_datetime_line(line: str) -> bool:
+    value = str(line or "").strip()
+    if re.search(r"\d{1,2}[./-]\d{1,2}", value) and re.search(r"\d{1,2}:\d{2}", value):
+        return True
+    if re.search(r"\d{1,2}\s*月\s*\d{1,2}\s*日", value) and re.search(r"\d{1,2}:\d{2}", value):
+        return True
+    return False
+
+
+def _looks_like_modern_phone_line(line: str) -> bool:
+    digits = re.sub(r"\D", "", str(line or ""))
+    return len(digits) >= 8 and bool(re.fullmatch(r"[\+\d\-\s()]+", str(line or "").strip()))
+
+
+def _sanitize_modern_route_line(line: str) -> str:
+    value = clean_text(line)
+    value = re.sub(r"^[\-\s\u2022\xb7]+", "", value).strip()
+    if not value:
+        return ""
+    airport = _normalize_modern_airport_code(value)
+    if airport:
+        return airport
+    return value
+
+
+def _normalize_modern_airport_code(value: str) -> str | None:
+    text = clean_text(value)
+    lowered = text.lower()
+    if any(token in text for token in ["関西国際空港", "关西国际机场", "关西国际空港", "Kansai International Airport"]) or "kix" in lowered:
+        terminal = re.search(r"(?:^|[^A-Z0-9])T\s*([12])(?:[^A-Z0-9]|$)", text, re.IGNORECASE)
+        if terminal:
+            return f"KIX-T{terminal.group(1)}"
+        return "KIX"
+    if any(token in text for token in ["伊丹机场", "大阪伊丹机场", "大阪国际机场", "ITM"]) or "itm" in lowered:
+        return "ITM"
+    if any(token in text for token in ["神户机场", "神戸空港", "UKB"]) or "ukb" in lowered:
+        return "UKB"
+    if any(token in text for token in ["成田机场", "成田空港", "NRT"]) or "nrt" in lowered:
+        return "NRT"
+    if any(token in text for token in ["羽田机场", "羽田空港", "HND"]) or "hnd" in lowered:
+        return "HND"
+    return None
+
+
+def _looks_like_structured_single_order(text: str) -> bool:
+    lines = [line.strip() for line in re.split(r"[\r\n]+", str(text or "")) if line.strip()]
+    if len(lines) < 3:
+        return False
+    if not any(_looks_like_modern_datetime_line(line) for line in lines[:2]):
+        return False
+    return len(_extract_modern_location_lines(text)) >= 2
 
 
 def _split_real_order_text(text: str) -> list[str]:
@@ -614,7 +1052,11 @@ def _enhance_real_order_parse(raw: str, parsed: dict[str, Any]) -> None:
         remarks.append("完整路线：" + " -> ".join(route_chain))
     if remarks:
         parsed["fee_remark"] = _merge_remark(parsed.get("fee_remark"), "；".join(remarks))
-    parsed["remark"] = _merge_remark(parsed.get("remark"), raw)
+    existing_remark = str(parsed.get("remark") or "")
+    if raw and raw in existing_remark:
+        parsed["remark"] = existing_remark
+    else:
+        parsed["remark"] = _merge_remark(parsed.get("remark"), raw)
 
 
 def _apply_agency_parser_overlay(raw: str, parsed: dict[str, Any]) -> bool:
@@ -623,6 +1065,13 @@ def _apply_agency_parser_overlay(raw: str, parsed: dict[str, Any]) -> bool:
     The agency parser calls parse_chinese_order internally, so this guard avoids
     recursive overlay while still allowing carrier drafts to use the same rules.
     """
+    readable_like = (
+        "\n" in raw
+        or "\r" in raw
+        or any(token in raw for token in ("姓名", "客人", "电话", "手機", "手机", "联系方式", "人数", "行李", "价格", "料金"))
+    )
+    if not readable_like and _has_minimum_fields(parsed):
+        return False
     global _AGENCY_PARSER_OVERLAY_ACTIVE
     if _AGENCY_PARSER_OVERLAY_ACTIVE:
         return False
@@ -718,7 +1167,13 @@ def _real_extract_route(text: str, order_type: str | None) -> tuple[str | None, 
     if "送机" in route_text:
         left, right = route_text.split("送机", 1)
         pickup = _real_endpoint(left, "待确认")
-        dropoff = _real_endpoint(right, "KIX") if _real_known_locations(right) else "KIX"
+        cleaned_right = re.sub(r"\s+", "", right or "")
+        if not cleaned_right:
+            dropoff = "KIX"
+        elif _real_has_airport_context(cleaned_right):
+            dropoff = _real_endpoint(cleaned_right, "KIX")
+        else:
+            dropoff = _real_endpoint(cleaned_right, "待确认")
         return pickup, dropoff, [pickup, dropoff]
     for keyword in ["单送", "送到", "到"]:
         if keyword in route_text:
@@ -759,10 +1214,38 @@ def _real_strip_noise(text: str) -> str:
 
 def _real_endpoint(value: str, fallback: str) -> str:
     cleaned = re.sub(r"\s+", "", value or "")
+    matches: list[str] = []
     for key in sorted(REAL_LOCATION_ALIASES, key=len, reverse=True):
         if key and key.lower() in cleaned.lower():
-            return REAL_LOCATION_ALIASES[key]
+            normalized = REAL_LOCATION_ALIASES[key]
+            if _real_should_skip_alias_match(cleaned, key, normalized):
+                continue
+            matches.append(normalized)
+    unique_matches = list(dict.fromkeys(matches))
+    if len(unique_matches) > 1 and not _real_has_airport_context(cleaned):
+        return cleaned or fallback
+    if unique_matches:
+        return unique_matches[0]
     return cleaned or fallback
+
+
+def _real_has_airport_context(value: str) -> bool:
+    lowered = str(value or "").lower()
+    if any(token in str(value or "") for token in ["机场", "空港", "国际机场", "国际空港", "航站楼", "ターミナル", "terminal", "t1", "t2"]):
+        return True
+    return any(token in lowered for token in ["airport", "kix", "itm", "ukb", "nrt", "hnd"])
+
+
+def _real_should_skip_alias_match(cleaned: str, key: str, normalized: str) -> bool:
+    airport_targets = {"KIX", "KIX-T1", "KIX-T2", "ITM", "UKB", "NRT", "HND"}
+    if normalized not in airport_targets:
+        return False
+    lowered = cleaned.lower()
+    if any(token in cleaned for token in ["酒店", "饭店", "民宿", "别墅"]) or any(token in lowered for token in ["hotel", "inn", "villa", "hostel"]):
+        return True
+    if lowered == key.lower():
+        return False
+    return not _real_has_airport_context(cleaned)
 
 
 def _real_add_hours(start_time: str, hours: int) -> str | None:
@@ -817,6 +1300,7 @@ def _real_extract_price_and_fee(text: str) -> tuple[float | None, str | None]:
     work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
     work = re.sub(r"\b\d{1,2}月\d{1,2}日?\b", " ", work)
     work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", " ", work)
+    work = re.sub(r"(?:\+?\d[\d\s\-()]{7,}\d)", " ", work)
     work = re.sub(r"代收\s*[0-9,]+\s*(?:日元|円|jpy)?", " ", work, flags=re.I)
     fee_parts = []
     for fee in re.findall(r"[+＋]\s*(\d{3,6})\s*(?:日元|円|jpy)?", work, re.I):
@@ -834,7 +1318,8 @@ def _real_extract_price_and_fee(text: str) -> tuple[float | None, str | None]:
         value = int(match.group(1))
         if value >= 300:
             candidates.append(value)
-    return (float(candidates[0]) if candidates else None), ("；".join(fee_parts) if fee_parts else None)
+    unique_candidates = list(dict.fromkeys(candidates))
+    return (float(unique_candidates[0]) if unique_candidates else None), ("；".join(fee_parts) if fee_parts else None)
 
 
 def _real_extract_explicit_jpy(text: str) -> float | None:

@@ -56,6 +56,8 @@ Page({
     error: '',
     loading: false,
     autoLoginTried: false,
+    wechatAutoLoginEnabled: false,
+    wechatBindingRequired: false,
     pendingPromptKey: ''
   },
 
@@ -75,6 +77,10 @@ Page({
       .then((config) => {
         const settings = (config && config.settings) || config || {};
         console.info('[dispatch-mobile app-config]', settings);
+        this.setData({
+          wechatAutoLoginEnabled: !!settings.wechat_auto_login_enabled,
+          wechatBindingRequired: !!settings.wechat_binding_required
+        });
         if (api.isManualLogout && api.isManualLogout()) {
           this.setData({ loading: false, autoLoginTried: true });
           return;
@@ -143,9 +149,10 @@ Page({
     const account = String(this.data.username || '').trim();
     const password = String(this.data.password || '');
     const isPhone = /^\+?[\d\s-]{6,}$/.test(account) || /^[A-Za-z0-9]+-[\d\s-]{6,}$/.test(account);
-    this.getWechatLoginCode()
+    const loginWithCode = this.data.wechatAutoLoginEnabled || this.data.wechatBindingRequired;
+    const codeTask = loginWithCode ? this.getWechatLoginCode().catch(() => '') : Promise.resolve('');
+    codeTask
       .then((wxCode) => (isPhone ? api.loginPhone(account, password, wxCode) : api.login(account, password, wxCode)))
-      .catch(() => (isPhone ? api.loginPhone(account, password, '') : api.login(account, password, '')))
       .catch(() => (isPhone ? api.loginPhone(account.replace(/[^\d]/g, ''), password, '') : Promise.reject({ error: 'login_failed' })))
       .then((res) => {
         api.setSession(res);

@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "订单大厅"
+  "navigationBarTitleText": "订单大厅",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
 }

@@ -128,6 +128,8 @@ Page({
     resourceError: '',
     resourceFocus: 'alerts',
     resourceOfficeFilter: 'all',
+    driverStatusLabels: ['出勤', '休假', '离职'],
+    driverStatusValues: ['available', 'resting', 'retired'],
     officeFilters: [
       { label: '全部', value: 'all' },
       { label: '大阪', value: 'osaka' },
@@ -1066,14 +1068,19 @@ Page({
     const healthDays = health ? this.resourceDaysUntil(health.iso) : null;
     const rowId = driver.id || driver.driver_code || driver.code || driver.name || index;
     const officeText = driver.office || driver.branch || driver.sales_office || driver['所属営業所'] || '';
-    const officeType = this.officeTypeForResource([officeText, driver.name, driver.driver_name, driver.driver_code, driver.code].join(' '));
+    const officeType = this.driverOfficeTypeForResource(officeText);
+    const status = driver.status || driver.driver_status || driver['状態'] || '';
+    const statusValue = this.normalizeResourceDriverStatus(status);
     return {
       id: String(rowId),
       resourceId: driver.id || '',
       title: driver.name || driver.driver_name || driver['運転手名'] || '人员',
       driverCode: driver.driver_code || driver.code || driver['運転手ID'] || '',
       phone: driver.phone || driver.mobile || driver['携帯電話番号'] || '',
-      status: driver.status || driver.driver_status || driver['状態'] || '',
+      status,
+      statusValue,
+      statusLabel: this.driverStatusLabel(statusValue),
+      statusIndex: this.driverStatusIndex(statusValue),
       healthExamDate: healthDate,
       officeText,
       officeType,
@@ -1096,6 +1103,29 @@ Page({
     if (text.indexOf('京都') >= 0 || text.indexOf('kyoto') >= 0) return 'kyoto';
     if (text.indexOf('大阪') >= 0 || text.indexOf('osaka') >= 0 || text.indexOf('なにわ') >= 0) return 'osaka';
     return '';
+  },
+
+  driverOfficeTypeForResource(value) {
+    const text = String(value || '').toLowerCase();
+    if (text.indexOf('京都') >= 0 || text.indexOf('kyoto') >= 0) return 'kyoto';
+    return 'osaka';
+  },
+
+  normalizeResourceDriverStatus(status) {
+    const text = String(status || '').trim().toLowerCase();
+    if (['retired', 'resigned', 'deleted'].indexOf(text) >= 0 || status === '离职') return 'retired';
+    if (['resting', 'leave', 'off', 'vacation'].indexOf(text) >= 0 || status === '休假') return 'resting';
+    return 'available';
+  },
+
+  driverStatusLabel(status) {
+    const value = this.normalizeResourceDriverStatus(status);
+    return { available: '出勤', resting: '休假', retired: '离职' }[value] || '出勤';
+  },
+
+  driverStatusIndex(status) {
+    const value = this.normalizeResourceDriverStatus(status);
+    return Math.max(0, this.data.driverStatusValues.indexOf(value));
   },
 
   officeLabel(type) {
@@ -1555,6 +1585,51 @@ Page({
   },
 
   noopTap() {},
+
+  isResourceNotFoundError(err) {
+    const message = String((err && (err.error || err.detail || err.errMsg || err.message)) || '').toLowerCase();
+    return Number(err && err.statusCode) === 404 || message.indexOf('not_found') >= 0 || message.indexOf('not found') >= 0;
+  },
+
+  updateHomeDriverStatus(e) {
+    const dataset = e.currentTarget.dataset || {};
+    const resourceId = dataset.resourceId || '';
+    const driverKey = dataset.title || dataset.driverCode || dataset.phone || '';
+    const status = this.data.driverStatusValues[Number(e.detail.value || 0)] || 'available';
+    const label = this.driverStatusLabel(status);
+    if (!resourceId && !driverKey) return;
+    wx.showModal({
+      title: '更新人员状态',
+      content: `${dataset.title || '人员'}\n状态改为：${label}`,
+      confirmText: '更新',
+      success: (res) => {
+        if (!res.confirm) return;
+        wx.showLoading({ title: '更新中' });
+        const fallback = () => api.updateResourceDriverStatus({
+          driver_key: driverKey,
+          driver_code: dataset.driverCode || '',
+          phone: dataset.phone || '',
+          name: dataset.title || '',
+          status,
+          driver_status: status
+        });
+        const task = resourceId
+          ? api.updateResourceDriver(resourceId, { status, driver_status: status }).catch((err) => {
+            if (driverKey && this.isResourceNotFoundError(err)) return fallback();
+            return Promise.reject(err);
+          })
+          : fallback();
+        task.then(() => {
+          wx.hideLoading();
+          wx.showToast({ title: '已更新', icon: 'success' });
+          this.refreshResourceOverview();
+        }).catch((err) => {
+          wx.hideLoading();
+          wx.showToast({ title: err && err.error ? err.error : '更新失败', icon: 'none' });
+        });
+      }
+    });
+  },
 
   updateHomeVehicleInspectionDate(e) {
     const dataset = e.currentTarget.dataset || {};

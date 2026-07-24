@@ -104,7 +104,19 @@ def get_summary() -> dict:
             (tenant_id,),
         )
         available_drivers = _count(conn, "SELECT COUNT(*) AS total FROM drivers WHERE tenant_id = ? AND status = 'available'", (tenant_id,))
-        available_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')", (tenant_id,))
+        available_vehicles = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS total
+            FROM vehicles
+            WHERE tenant_id = ?
+              AND COALESCE(status, 'available') NOT IN (
+                'retired', 'removed', 'decommissioned', 'deleted',
+                '减车', '已减车', '出售', '已出售', '报废'
+              )
+            """,
+            (tenant_id,),
+        )
         outbound_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'outbound'", (tenant_id,))
         in_service_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'in_service'", (tenant_id,))
         returned_vehicles = _count(conn, "SELECT COUNT(*) AS total FROM vehicles WHERE tenant_id = ? AND status = 'returned'", (tenant_id,))

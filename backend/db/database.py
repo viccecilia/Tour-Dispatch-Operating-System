@@ -102,6 +102,7 @@ DRIVER_COLUMNS: dict[str, str] = {
     "driver_code": "TEXT",
     "driver_language": "TEXT",
     "office": "TEXT",
+    "note": "TEXT",
     "driver_status": "TEXT",
     "driver_external_id": "TEXT",
     "license_number": "TEXT",

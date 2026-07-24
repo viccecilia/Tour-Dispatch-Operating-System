@@ -46,13 +46,10 @@ const CARRIER_DISPATCHER_PAGES = new Set<PageKey>([
   "dispatch",
   "calendar",
   "driver-monitor",
-  "attendance",
   "map",
   "vehicles",
   "incidents",
-  "automation",
   "copilot",
-  "settings",
 ]);
 
 const CARRIER_OPERATIONS_PAGES = new Set<PageKey>([
@@ -64,12 +61,10 @@ const CARRIER_OPERATIONS_PAGES = new Set<PageKey>([
   "map",
   "vehicles",
   "incidents",
-  "automation",
-  "copilot",
-  "settings",
 ]);
 
-const DRIVER_PAGES = new Set<PageKey>(["dashboard", "notifications", "settings"]);
+// Driver accounts use the dedicated driver client and must not enter the carrier admin console.
+const DRIVER_PAGES = new Set<PageKey>();
 
 export function accountScope(user: AuthUser): AccountScope {
   return (user.account_scope as AccountScope | undefined) || (user.role === "driver" ? "driver" : "carrier");

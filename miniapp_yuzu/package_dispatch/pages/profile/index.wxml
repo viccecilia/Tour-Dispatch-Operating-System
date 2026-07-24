@@ -46,9 +46,15 @@
   </block>
 
   <block wx:else>
-    <view class="panel">
-      <view class="panel-title">账号信息</view>
-      <view class="profile-list">
+    <view class="panel account-card">
+      <view class="account-head" bindtap="toggleAccount">
+        <view>
+          <view class="panel-title">账号信息</view>
+          <view class="account-hint">姓名、角色、账号代码和手机号</view>
+        </view>
+        <view class="account-toggle">{{accountExpanded ? '收起' : '展开'}}</view>
+      </view>
+      <view wx:if="{{accountExpanded}}" class="profile-list account-body">
         <view class="profile-row"><text>姓名</text><strong>{{session.dispatcher.dispatcher_name || '-'}}</strong></view>
         <view class="profile-row"><text>账号代码</text><strong>{{session.dispatcher.dispatcher_code || '-'}}</strong></view>
         <view class="profile-row"><text>角色</text><strong>{{roleLabel}}</strong></view>

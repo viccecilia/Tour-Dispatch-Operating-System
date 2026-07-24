@@ -43,8 +43,8 @@ def main() -> None:
         ("miniapp_dispatch_default_api", lambda: check_miniapp_api(ROOT_DIR / "miniapp_dispatch" / "utils" / "api.js")),
         ("miniapp_agency_default_api", lambda: check_miniapp_api(ROOT_DIR / "miniapp_agency" / "utils" / "api.js")),
         ("cloud_platform_login", lambda: check_platform_login(args.api_url)),
-        ("cloud_carrier_admin_login", lambda: check_dispatch_mobile_login(args.api_url, "SKR-08070010000", "Test123456")),
-        ("cloud_driver_login", lambda: check_dispatch_mobile_login(args.api_url, "SKR-08070010101", "Test123456")),
+        ("cloud_carrier_admin_login", lambda: check_dispatch_mobile_login(args.api_url, "08070010000", "010000")),
+        ("cloud_driver_login", lambda: check_dispatch_mobile_login(args.api_url, "08070010101", "010101")),
         ("cloud_agency_portal_login", lambda: check_agency_login(args.api_url, "AGA2026", "Test123456")),
         ("cloud_agency_guide_login", lambda: check_agency_login(args.api_url, "080-7101-0101", "Test123456")),
     ]
@@ -106,10 +106,12 @@ def check_web_bundle(web_url: str, api_url: str) -> str:
 
 def check_local_frontend_default_api() -> str:
     text = (ROOT_DIR / "frontend" / "src" / "services" / "apiClient.ts").read_text(encoding="utf-8")
-    required = ['"http://127.0.0.1:18765"', '"https://api-trial.taxi-airport.jp"', "window.location.hostname"]
+    required = ['"http://127.0.0.1:18765"', '"https://api-trial.taxi-airport.jp"']
     missing = [item for item in required if item not in text]
     if missing:
         raise RuntimeError("missing " + ", ".join(missing))
+    if "window.location.hostname" not in text and "import.meta.env.DEV" not in text:
+        raise RuntimeError("missing explicit dev/cloud API split")
     if "window.location.origin" in text:
         raise RuntimeError("apiClient.ts must not use window.location.origin as cloud API")
     return "frontend default API split is explicit"
@@ -169,7 +171,7 @@ def check_remote_trial_db(remote_host: str, ssh_key: str) -> str:
         "from backend.config import DB_PATH\n"
         "conn = sqlite3.connect(DB_PATH)\n"
         "cur = conn.cursor()\n"
-        "users = cur.execute(\"SELECT COUNT(*) FROM users WHERE username IN ('SKR-08070010000','SKR-08070010101','admin')\").fetchone()[0]\n"
+        "users = cur.execute(\"SELECT COUNT(*) FROM users WHERE username IN ('08070010000','08070010101','admin')\").fetchone()[0]\n"
         "agencies = cur.execute(\"SELECT COUNT(*) FROM travel_agency_accounts WHERE password_seed='Test123456'\").fetchone()[0]\n"
         "print(f'db={DB_PATH} users={users} agency_accounts={agencies}')\n"
         "PY"

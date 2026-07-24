@@ -126,6 +126,7 @@ Page({
 
   decorateAssignment(item) {
     const status = item.execution_status || item.status || 'assigned';
+    const flightDisplay = this.buildFlightDisplay(item);
     return {
       ...item,
       rawStatus: status,
@@ -134,7 +135,39 @@ Page({
       orderStatusText: this.orderStatusText(status),
       orderStatusClass: this.orderStatusClass(status),
       canConfirm: status === 'assigned',
-      isExpanded: ACTIVE_STATUSES.indexOf(status) >= 0
+      isExpanded: ACTIVE_STATUSES.indexOf(status) >= 0,
+      flightDisplay
+    };
+  },
+
+  buildFlightDisplay(item) {
+    const flightNumber = String(item.flight_number || '').trim().toUpperCase();
+    if (!flightNumber) {
+      return { show: false };
+    }
+    const status = String(item.flight_status || '').trim() || '待更新';
+    const terminal = String(item.flight_terminal || '').trim();
+    const gate = String(item.flight_gate || '').trim();
+    const route = [item.flight_origin, item.flight_destination].filter(Boolean).join(' -> ');
+    const scheduled = String(item.flight_scheduled_arrival || item.flight_scheduled_departure || '').trim();
+    const estimated = String(item.flight_estimated_arrival || item.flight_estimated_departure || '').trim();
+    const actual = String(item.flight_actual_arrival || item.flight_actual_departure || '').trim();
+    const checkedAt = String(item.flight_last_checked_at || '').trim();
+    const note = String(item.flight_manual_note || '').trim();
+    const statusParts = [status, terminal ? `T${terminal.replace(/^T/i, '')}` : '', gate ? `Gate ${gate}` : ''].filter(Boolean);
+    const timingParts = [
+      scheduled ? `STD/STA ${scheduled}` : '',
+      estimated ? `ETD/ETA ${estimated}` : '',
+      actual ? `ATD/ATA ${actual}` : ''
+    ].filter(Boolean);
+    return {
+      show: true,
+      flightNumber,
+      statusLine: statusParts.join(' · '),
+      route,
+      timingLine: timingParts.join(' · '),
+      checkedLine: checkedAt ? `Updated ${checkedAt}` : '',
+      note
     };
   },
 

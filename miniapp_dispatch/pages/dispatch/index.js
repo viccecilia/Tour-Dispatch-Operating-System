@@ -11,6 +11,7 @@ const AIRPORT_WORDS = ['kix', '机场', '空港', '关西', '关空', '羽田', 
 Page({
   data: {
     importOpen: false,
+    importMode: 'batch',
     importText: SAMPLE_TEXT,
     pendingRows: [],
     charterRows: [],
@@ -61,8 +62,13 @@ Page({
     }
   },
 
-  toggleImport() {
-    this.setData({ importOpen: !this.data.importOpen });
+  openImport(e) {
+    const mode = (e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.mode) || 'batch';
+    const nextOpen = this.data.importOpen && this.data.importMode === mode ? !this.data.importOpen : true;
+    this.setData({
+      importOpen: nextOpen,
+      importMode: mode
+    });
   },
 
   toggleCharter() {
@@ -125,6 +131,43 @@ Page({
       })
       .catch(() => {
         this.setData({ loading: false, conflictText: '解析失败，请检查后端服务或订单文本格式。' });
+      });
+  },
+
+  submitImport() {
+    if (this.data.importMode === 'single') {
+      this.parseSingleOrder();
+      return;
+    }
+    this.parseOrders();
+  },
+
+  parseSingleOrder() {
+    const text = String(this.data.importText || '').trim();
+    if (!text) {
+      wx.showToast({ title: 'Please enter one order text', icon: 'none' });
+      return;
+    }
+    this.setData({ loading: true, message: '', conflictText: '' });
+    api.parseText(text, false)
+      .then(() => {
+        this.setData({
+          loading: false,
+          importOpen: false,
+          message: 'Single order parsed. Review it below, then confirm or assign.'
+        });
+        this.loadAll();
+        setTimeout(() => {
+          const normalized = text.replace(/\s+/g, ' ').trim();
+          const match = (this.data.pendingRows || []).find((item) => (
+            item.kind === 'draft'
+            && String(item.raw_text || '').replace(/\s+/g, ' ').trim() === normalized
+          )) || (this.data.pendingRows || []).find((item) => item.kind === 'draft');
+          if (match) this.startEditByKey(match.key);
+        }, 260);
+      })
+      .catch(() => {
+        this.setData({ loading: false, conflictText: 'Single order parse failed. Please check the text structure and try again.' });
       });
   },
 
@@ -277,7 +320,7 @@ Page({
 
   decorateVehicles(vehicles, assignments) {
     const selectedWindows = this.getSelectedWindows();
-    return vehicles.map((vehicle) => {
+    return vehicles.filter((vehicle) => !this.isRetiredVehicle(vehicle)).map((vehicle) => {
       const active = assignments.find((item) => Number(item.vehicle_id) === Number(vehicle.id));
       const conflict = this.hasConflict(assignments, 'vehicle_id', vehicle.id, selectedWindows);
       return {
@@ -293,6 +336,11 @@ Page({
       if ((a.statusClass === 'busy') !== (b.statusClass === 'busy')) return a.statusClass === 'busy' ? 1 : -1;
       return String(a.plate_number || '').localeCompare(String(b.plate_number || ''), 'ja-JP');
     }).slice(0, 15);
+  },
+
+  isRetiredVehicle(vehicle) {
+    const raw = String((vehicle && (vehicle.status || vehicle.vehicle_status)) || '').toLowerCase();
+    return raw.indexOf('retired') >= 0 || raw.indexOf('removed') >= 0 || raw.indexOf('decommissioned') >= 0 || raw.indexOf('减车') >= 0;
   },
 
   toggleRowByKey(key) {

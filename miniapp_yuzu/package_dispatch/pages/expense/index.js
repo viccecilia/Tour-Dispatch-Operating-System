@@ -43,7 +43,9 @@ Page({
     Promise.all([
       api.driverExpenses(this.data.driverId).catch(() => ({ expenses: [] })),
       api.driverIncome(this.data.driverId).catch(() => ({}))
-    ]).then(([expenseRes, income]) => {
+    ]).then((results) => {
+      const expenseRes = results && results[0] || { expenses: [] };
+      const income = results && results[1] || {};
       this.setData({
         expenses: (expenseRes.expenses || []).map((item) => ({
           ...item,

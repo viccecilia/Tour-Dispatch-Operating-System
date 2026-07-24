@@ -20,7 +20,11 @@ Page({
       api.unassignedOrders().catch(() => ({ orders: [] })),
       api.drivers().catch(() => ({ drivers: [] })),
       api.vehicles().catch(() => ({ vehicles: [] }))
-    ]).then(([assignments, unassigned, drivers, vehicles]) => {
+    ]).then((results) => {
+      const assignments = results && results[0] || { assignments: [] };
+      const unassigned = results && results[1] || { orders: [] };
+      const drivers = results && results[2] || { drivers: [] };
+      const vehicles = results && results[3] || { vehicles: [] };
       const assignedOrders = (assignments.assignments || []).map((item) => ({ ...item, is_assigned: true }));
       const pendingOrders = (unassigned.orders || []).map((item) => ({ ...item, is_assigned: false }));
       this.setData({

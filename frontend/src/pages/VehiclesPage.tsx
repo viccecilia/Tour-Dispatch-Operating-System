@@ -1,15 +1,30 @@
-import { KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { KeyboardEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CarFront, ChevronDown, ChevronRight, Search, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, CarFront, ChevronDown, ChevronRight, Download, FolderDown, Plus, RefreshCw, Search, Trash2, UserRound } from "lucide-react";
 import { CompanyScopeFilter, isAllCompanyScope } from "@/components/CompanyScopeFilter";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { api } from "@/services/apiClient";
-import type { Driver, ResourceAlert, Vehicle, VehicleInspectionRecord } from "@/types/api";
+import { api, downloadApiFile } from "@/services/apiClient";
+import type { Driver, ResourceAlert, ResourceLibraryFile, ResourceLibraryResponse, ResourceLibraryVehicle, Vehicle, VehicleInspectionRecord } from "@/types/api";
 
-type ResourceTab = "vehicles" | "drivers";
+type ResourceTab = "vehicles" | "drivers" | "maintenance";
 type EditingCell = { id: number; key: string; value: string } | null;
+type LifecycleFilter = "active" | "archived" | "all";
+type HealthFilter = "all" | "expired" | "attention" | "30" | "90" | "normal" | "unknown";
+type HealthBucket = Exclude<HealthFilter, "all" | "attention">;
+type DriverQuickFilter = "active" | "archived" | "available" | "expired" | "attention" | "duplicate" | null;
+type ResourceLibraryQuickFilter = "vehicles" | "pdf" | "categories" | "drivers";
+type ResourceStat<T extends string = string> = { value: number; label: string; tone: string; filterKey?: T };
+type ResourceUploadPayload = {
+  vehicle_key: string;
+  category: string;
+  document_date?: string;
+  custom_title?: string;
+  file_name: string;
+  content_type?: string;
+  file_base64: string;
+};
 
 const driverInitial: Partial<Driver> = {
   driver_external_id: "",
@@ -17,6 +32,7 @@ const driverInitial: Partial<Driver> = {
   name: "",
   driver_code: "",
   driver_language: "中文",
+  note: "",
   license_due_date: "",
   license_number: "",
   residence_status: "",
@@ -67,16 +83,31 @@ export function VehiclesPage() {
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
   const [tenantScope, setTenantScope] = useState("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>("active");
+  const [officeFilter, setOfficeFilter] = useState("all");
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
+  const [vehicleStatusFilter, setVehicleStatusFilter] = useState("all");
+  const [driverQuickFilter, setDriverQuickFilter] = useState<DriverQuickFilter>("active");
 
   const drivers = useQuery({ queryKey: ["resource-drivers", tenantScope], queryFn: () => api.resourceDrivers({ tenant_id: tenantScope }) });
+  const retiredDrivers = useQuery({
+    queryKey: ["resource-drivers", tenantScope, "retired"],
+    queryFn: () => api.resourceDrivers({ tenant_id: tenantScope, status: "retired" }),
+  });
   const vehicles = useQuery({ queryKey: ["resource-vehicles", tenantScope], queryFn: () => api.resourceVehicles({ tenant_id: tenantScope }) });
+  const retiredVehicles = useQuery({
+    queryKey: ["resource-vehicles", tenantScope, "retired"],
+    queryFn: () => api.resourceVehicles({ tenant_id: tenantScope, status: "retired" }),
+  });
   const reminders = useQuery({ queryKey: ["resource-reminders"], queryFn: api.resourceReminders });
+  const resourceLibrary = useQuery({ queryKey: ["dispatch-resource-library"], queryFn: api.resourceLibrary });
 
   async function refreshResources() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["resource-drivers"] }),
       queryClient.invalidateQueries({ queryKey: ["resource-vehicles"] }),
       queryClient.invalidateQueries({ queryKey: ["resource-reminders"] }),
+      queryClient.invalidateQueries({ queryKey: ["dispatch-resource-library"] }),
       queryClient.invalidateQueries({ queryKey: ["notification-summary"] }),
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] }),
       queryClient.invalidateQueries({ queryKey: ["drivers"] }),
@@ -106,12 +137,43 @@ export function VehiclesPage() {
   });
 
   const updateDriver = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Partial<Driver> }) => api.updateDriver(id, payload),
+    mutationFn: async ({ id, payload }: { id: number; payload: Partial<Driver> }) => {
+      if (payload.health_check_due_date) {
+        const driver = [...(drivers.data || []), ...(retiredDrivers.data || [])].find((item) => item.id === id);
+        const driverKey = driver?.driver_external_id || driver?.driver_code || driver?.name;
+        if (!driverKey) throw new Error("缺少司机编号或姓名，无法同步健康诊断日期");
+        await api.updateDriverResourceHealth(driverKey, payload.health_check_due_date);
+      }
+      return api.updateDriver(id, payload);
+    },
     onSuccess: async () => {
       setMessage("司机信息已保存。");
       await refreshResources();
     },
     onError: (error: Error) => setMessage(`保存司机失败：${error.message}`),
+  });
+
+  const changeDriverEmployment = useMutation({
+    mutationFn: async ({
+      id,
+      driverKey,
+      tenantId,
+      retired,
+    }: {
+      id: number;
+      driverKey: string;
+      tenantId?: number;
+      retired: boolean;
+    }) => {
+      const status = retired ? "retired" : "available";
+      await api.updateDriverResourceStatus(driverKey, retired ? "离职" : "運転可");
+      await api.updateDriver(id, { tenant_id: tenantId, status, driver_status: status });
+    },
+    onSuccess: async (_, variables) => {
+      setMessage(variables.retired ? "司机已归档到离职人员。" : "司机已恢复为在职人员。");
+      await refreshResources();
+    },
+    onError: (error: Error) => setMessage(`更新司机在职状态失败：${error.message}`),
   });
 
   const deleteDriver = useMutation({
@@ -150,6 +212,15 @@ export function VehiclesPage() {
     onError: (error: Error) => setMessage(`删除车辆失败：${error.message}`),
   });
 
+  const uploadResourceDocument = useMutation({
+    mutationFn: (payload: ResourceUploadPayload) => api.uploadResourceDocument(payload),
+    onSuccess: async () => {
+      setMessage("车辆 PDF 已上传入库。");
+      await refreshResources();
+    },
+    onError: (error: Error) => setMessage(`上传车辆资料失败：${error.message}`),
+  });
+
   const createVehicleInspectionRecord = useMutation({
     mutationFn: ({ vehicleId, payload }: { vehicleId: number; payload: Partial<VehicleInspectionRecord> }) => api.createVehicleInspectionRecord(vehicleId, payload),
     onSuccess: async () => {
@@ -177,107 +248,391 @@ export function VehiclesPage() {
     onError: (error: Error) => setMessage(`删除维护记录失败：${error.message}`),
   });
 
+  const libraryDriverByName = useMemo(() => {
+    const entries = (resourceLibrary.data?.drivers || [])
+      .map((item) => [libraryDriverName(item), item] as const)
+      .filter(([name]) => Boolean(name));
+    return new Map(entries);
+  }, [resourceLibrary.data?.drivers]);
+
+  const onlineRetiredDriverNames = useMemo(
+    () =>
+      new Set(
+        (resourceLibrary.data?.drivers || [])
+          .filter(isLibraryDriverRetired)
+          .map(libraryDriverName)
+          .filter(Boolean),
+      ),
+    [resourceLibrary.data?.drivers],
+  );
+
+  const activeDrivers = useMemo(
+    () =>
+      (drivers.data || [])
+        .filter((item) => !onlineRetiredDriverNames.has(item.name))
+        .map((item) => mergeDriverFromLibrary(item, libraryDriverByName.get(item.name))),
+    [drivers.data, libraryDriverByName, onlineRetiredDriverNames],
+  );
+
+  const archivedDrivers = useMemo(() => {
+    const reconciled = new Map<number, Driver>();
+    [...(retiredDrivers.data || []), ...(drivers.data || []).filter((item) => onlineRetiredDriverNames.has(item.name))].forEach((item) => {
+      reconciled.set(item.id, mergeDriverFromLibrary(item, libraryDriverByName.get(item.name)));
+    });
+    return Array.from(reconciled.values());
+  }, [drivers.data, libraryDriverByName, onlineRetiredDriverNames, retiredDrivers.data]);
+
+  const driverPool = useMemo(() => {
+    if (lifecycleFilter === "archived") return archivedDrivers;
+    if (lifecycleFilter === "all") return [...activeDrivers, ...archivedDrivers];
+    return activeDrivers;
+  }, [activeDrivers, archivedDrivers, lifecycleFilter]);
+
+  const vehiclePool = useMemo(() => {
+    if (lifecycleFilter === "archived") return retiredVehicles.data || [];
+    if (lifecycleFilter === "all") return [...(vehicles.data || []), ...(retiredVehicles.data || [])];
+    return vehicles.data || [];
+  }, [lifecycleFilter, retiredVehicles.data, vehicles.data]);
+
+  const officeOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...activeDrivers, ...archivedDrivers]
+            .map((item) => item.office)
+            .filter((office): office is string => Boolean(office)),
+        ),
+      ).sort(),
+    [activeDrivers, archivedDrivers],
+  );
+
+  const duplicateDriverIds = useMemo(() => {
+    const libraryRows = resourceLibrary.data?.drivers || [];
+    const ids = (libraryRows.length
+      ? libraryRows.filter((item) => !isLibraryDriverRetired(item)).map((item) => libraryDriverValue(item, "運転手ID"))
+      : (drivers.data || []).map((item) => item.driver_external_id))
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const counts = new Map<string, number>();
+    ids.forEach((id) => counts.set(id, (counts.get(id) || 0) + 1));
+    return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([id]) => id));
+  }, [drivers.data, resourceLibrary.data?.drivers]);
+
   const filteredDrivers = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return (drivers.data || []).filter((item) =>
-      [
-        item.driver_external_id,
-        item.tenant_name,
-        item.tenant_slug,
-        item.office,
-        item.name,
-        item.driver_code,
-        item.driver_language,
-        item.license_due_date,
-        item.license_number,
-        item.residence_status,
-        item.residence_due_date,
-        item.health_check_due_date,
-        item.phone,
-        item.wechat,
-        item.line,
-        item.whatsapp,
-        item.email,
-        item.status,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [drivers.data, query]);
+    return driverPool.filter((item) => {
+      const matchesQuery = [
+          item.driver_external_id,
+          item.tenant_name,
+          item.tenant_slug,
+          item.office,
+          item.name,
+          item.driver_code,
+          item.driver_language,
+          item.license_due_date,
+          item.license_number,
+          item.residence_status,
+          item.residence_due_date,
+          item.health_check_due_date,
+          item.phone,
+          item.wechat,
+          item.line,
+          item.whatsapp,
+          item.email,
+          item.status,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
+      const matchesOffice = officeFilter === "all" || item.office === officeFilter;
+      const healthBucket = driverHealthBucket(item);
+      const matchesHealth =
+        healthFilter === "all" ||
+        (healthFilter === "attention" ? ["30", "90"].includes(healthBucket) : healthBucket === healthFilter);
+      const matchesAvailable =
+        driverQuickFilter !== "available" || isDriverOperational(item, libraryDriverByName.get(item.name));
+      const matchesDuplicate =
+        driverQuickFilter !== "duplicate" || duplicateDriverIds.has(String(item.driver_external_id || "").trim());
+      return matchesQuery && matchesOffice && matchesHealth && matchesAvailable && matchesDuplicate;
+    });
+  }, [driverPool, driverQuickFilter, duplicateDriverIds, healthFilter, libraryDriverByName, officeFilter, query]);
 
   const filteredVehicles = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return (vehicles.data || []).filter((item) =>
-      [
-        item.plate_number,
-        item.tenant_name,
-        item.tenant_slug,
-        item.plate_short_code,
-        item.vehicle_type,
-        item.vehicle_type_code,
-        item.vehicle_color,
-        item.snow_tire,
-        item.first_registration_date,
-        item.company_registration_date,
-        item.last_inspection_date,
-        item.next_inspection_due_date,
-        item.shaken_due_date,
-        item.insurance_due_date,
-        item.maintenance_status,
-        item.status,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [query, vehicles.data]);
+    return vehiclePool.filter((item) => {
+      const matchesQuery = [
+          item.plate_number,
+          item.tenant_name,
+          item.tenant_slug,
+          item.plate_short_code,
+          item.vehicle_type,
+          item.vehicle_type_code,
+          item.vehicle_color,
+          item.snow_tire,
+          item.first_registration_date,
+          item.company_registration_date,
+          item.last_inspection_date,
+          item.next_inspection_due_date,
+          item.shaken_due_date,
+          item.insurance_due_date,
+          item.maintenance_status,
+          item.status,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
+      return matchesQuery && (vehicleStatusFilter === "all" || item.status === vehicleStatusFilter);
+    });
+  }, [query, vehiclePool, vehicleStatusFilter]);
+
+  const driverStats = useMemo(() => {
+    const libraryRows = resourceLibrary.data?.drivers || [];
+    const activeLibraryRows = libraryRows.filter((item) => !isLibraryDriverRetired(item));
+    return [
+      { value: activeDrivers.length, label: "在职记录", tone: "blue", filterKey: "active" },
+      {
+        value: archivedDrivers.length,
+        label: "离职人员",
+        tone: "slate",
+        filterKey: "archived",
+      },
+      {
+        value: activeDrivers
+          .filter((item) => isDriverOperational(item, libraryDriverByName.get(item.name))).length,
+        label: "運転可",
+        tone: "emerald",
+        filterKey: "available",
+      },
+      {
+        value: libraryRows.length
+          ? activeLibraryRows.filter((item) => libraryDriverHealthBucket(item) === "expired").length
+          : (drivers.data || []).filter((item) => driverHealthBucket(item) === "expired").length,
+        label: "健康诊断过期",
+        tone: "red",
+        filterKey: "expired",
+      },
+      {
+        value: libraryRows.length
+          ? activeLibraryRows.filter((item) => ["30", "90"].includes(libraryDriverHealthBucket(item))).length
+          : (drivers.data || []).filter((item) => ["30", "90"].includes(driverHealthBucket(item))).length,
+        label: "90天内需关注",
+        tone: "amber",
+        filterKey: "attention",
+      },
+      {
+        value: duplicateDriverIds.size,
+        label: "重复運転手ID",
+        tone: duplicateDriverIds.size ? "red" : "slate",
+        filterKey: "duplicate",
+      },
+    ] satisfies ResourceStat<Exclude<DriverQuickFilter, null>>[];
+  }, [activeDrivers, archivedDrivers.length, drivers.data, duplicateDriverIds, libraryDriverByName, resourceLibrary.data?.drivers]);
+
+  const vehicleStats = useMemo(() => {
+    const active = vehicles.data || [];
+    const vehicleAlerts = (reminders.data?.alerts || []).filter((item) => item.type === "vehicle");
+    return [
+      { value: active.length, label: "在用车辆", tone: "blue" },
+      { value: retiredVehicles.data?.length || 0, label: "退役车辆", tone: "slate" },
+      { value: active.filter((item) => item.status === "available").length, label: "可派车辆", tone: "emerald" },
+      { value: active.filter((item) => item.status === "maintenance").length, label: "维修车辆", tone: "amber" },
+      { value: vehicleAlerts.filter((item) => item.status === "expired" || item.status === "invalid").length, label: "资料已过期", tone: "red" },
+      { value: vehicleAlerts.filter((item) => item.status === "upcoming").length, label: "即将到期", tone: "amber" },
+    ];
+  }, [reminders.data?.alerts, retiredVehicles.data, vehicles.data]);
 
   const vehicleTenantId = (id: number) => vehicles.data?.find((item) => item.id === id)?.tenant_id;
   const driverTenantId = (id: number) => drivers.data?.find((item) => item.id === id)?.tenant_id;
 
+  const pageSaving =
+    createVehicle.isPending ||
+    updateVehicle.isPending ||
+    uploadResourceDocument.isPending ||
+    deleteVehicle.isPending ||
+    createDriver.isPending ||
+    updateDriver.isPending ||
+    changeDriverEmployment.isPending ||
+    deleteDriver.isPending;
+
+  function switchTab(nextTab: ResourceTab) {
+    setTab(nextTab);
+    setQuery("");
+    setLifecycleFilter("active");
+    setOfficeFilter("all");
+    setHealthFilter("all");
+    setVehicleStatusFilter("all");
+    setDriverQuickFilter(nextTab === "drivers" ? "active" : null);
+  }
+
+  function applyDriverQuickFilter(filter: Exclude<DriverQuickFilter, null>) {
+    const nextFilter = driverQuickFilter === filter ? null : filter;
+    setDriverQuickFilter(nextFilter);
+    setQuery("");
+    setOfficeFilter("all");
+    setVehicleStatusFilter("all");
+    if (!nextFilter) {
+      setLifecycleFilter("all");
+      setHealthFilter("all");
+      return;
+    }
+    setLifecycleFilter(nextFilter === "archived" ? "archived" : "active");
+    setHealthFilter(
+      nextFilter === "expired"
+        ? "expired"
+        : nextFilter === "attention"
+          ? "attention"
+          : "all",
+    );
+  }
+
+  function focusQuickCreate() {
+    const input = document.querySelector<HTMLInputElement>(`[data-quick-create="${tab}"] input`);
+    input?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    window.setTimeout(() => input?.focus(), 250);
+  }
+
   return (
     <div className="space-y-5">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border bg-white">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-bold tracking-[0.18em] text-blue-600">资源管理</p>
-              <h2 className="mt-1 text-xl font-bold text-slate-950">车辆与司机管理</h2>
-              <p className="mt-1 text-sm text-slate-500">按 Excel 台账字段维护车辆、司机和到期提醒，提醒规则请到设置页调整。</p>
+              <h2 className="mt-1 text-xl font-bold text-slate-950">
+                {tab === "drivers" ? "司机信息表" : tab === "maintenance" ? "车辆维护台账" : "车辆资料检索"}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {tab === "vehicles" ? "按车辆和资料类别检索已入库 PDF，点击资料卡即可下载。" : "在线维护现有数据库资料；双击单元格后，回车或点击空白处即保存。"}
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant={tab === "vehicles" ? "primary" : "secondary"} onClick={() => setTab("vehicles")}>
-                <CarFront size={16} />
-                车辆台账
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant={tab === "vehicles" ? "primary" : "secondary"} onClick={() => switchTab("vehicles")}>
+                <FolderDown size={16} />
+                车辆资料
               </Button>
-              <Button type="button" variant={tab === "drivers" ? "primary" : "secondary"} onClick={() => setTab("drivers")}>
+              <Button type="button" variant={tab === "drivers" ? "primary" : "secondary"} onClick={() => switchTab("drivers")}>
                 <UserRound size={16} />
                 司机台账
+              </Button>
+              <Button type="button" variant={tab === "maintenance" ? "primary" : "secondary"} onClick={() => switchTab("maintenance")}>
+                <CarFront size={16} />
+                维护台账
               </Button>
               <CompanyScopeFilter value={tenantScope} onChange={setTenantScope} />
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <ResourceReminderStrip alerts={reminders.data?.alerts || []} loading={reminders.isLoading} />
+        <CardContent className="space-y-4 bg-slate-50/50 py-5">
+          {tab === "vehicles" ? (
+            <ResourceDownloadView
+              data={resourceLibrary.data}
+              loading={resourceLibrary.isLoading}
+              uploading={uploadResourceDocument.isPending}
+              onUpload={(payload) => uploadResourceDocument.mutateAsync(payload)}
+              onShowDrivers={() => switchTab("drivers")}
+            />
+          ) : (
+            <>
+          <ResourceStatGrid
+            stats={tab === "drivers" ? driverStats : vehicleStats}
+            loading={tab === "drivers" ? drivers.isLoading || resourceLibrary.isLoading : vehicles.isLoading}
+            activeKey={tab === "drivers" ? driverQuickFilter : null}
+            onSelect={tab === "drivers" ? applyDriverQuickFilter : undefined}
+          />
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex h-10 min-w-[320px] items-center gap-2 rounded-md border border-border bg-white px-3 text-sm">
-              <Search size={16} className="text-slate-400" />
-              <input
-                className="w-full bg-transparent outline-none"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索车牌、车型、司机、电话、到期日期或状态"
-              />
-            </label>
-            {message ? <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">{message}</div> : null}
+          <div className="rounded-xl border border-border bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex h-9 min-w-[260px] flex-1 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm xl:max-w-[420px]">
+                <Search size={15} className="text-slate-400" />
+                <input
+                  className="w-full bg-transparent outline-none"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={tab === "drivers" ? "搜索 ID / 姓名 / 电话 / 备注" : "搜索车牌 / 车型 / 车辆简码 / 状态"}
+                />
+              </label>
+
+              {tab === "drivers" ? (
+                <>
+                  <CompactSelect value={officeFilter} onChange={setOfficeFilter}>
+                    <option value="all">全部营业所</option>
+                    {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
+                  </CompactSelect>
+                  <CompactSelect
+                    value={lifecycleFilter}
+                    onChange={(value) => {
+                      setLifecycleFilter(value as LifecycleFilter);
+                      setDriverQuickFilter(null);
+                    }}
+                  >
+                    <option value="active">在职人员</option>
+                    <option value="archived">离职人员</option>
+                    <option value="all">全部人员</option>
+                  </CompactSelect>
+                  <CompactSelect
+                    value={healthFilter}
+                    onChange={(value) => {
+                      setHealthFilter(value as HealthFilter);
+                      setDriverQuickFilter(null);
+                    }}
+                  >
+                    <option value="all">全部健康诊断状态</option>
+                    <option value="expired">过期</option>
+                    <option value="attention">90天内需关注</option>
+                    <option value="30">30天内</option>
+                    <option value="90">31-90天</option>
+                    <option value="normal">正常</option>
+                    <option value="unknown">无法计算</option>
+                  </CompactSelect>
+                </>
+              ) : (
+                <>
+                  <CompactSelect value={lifecycleFilter} onChange={(value) => setLifecycleFilter(value as LifecycleFilter)}>
+                    <option value="active">在用车辆</option>
+                    <option value="archived">退役车辆</option>
+                    <option value="all">全部车辆</option>
+                  </CompactSelect>
+                  <CompactSelect value={vehicleStatusFilter} onChange={setVehicleStatusFilter}>
+                    <option value="all">全部车辆状态</option>
+                    <option value="available">正常</option>
+                    <option value="maintenance">维修</option>
+                    <option value="retired">退役</option>
+                  </CompactSelect>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={focusQuickCreate}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+              >
+                <Plus size={15} />
+                新增一行
+              </button>
+              <button
+                type="button"
+                disabled={pageSaving}
+                onClick={() => {
+                  void refreshResources().then(() => setMessage("修改已自动保存，当前资料已刷新。"));
+                }}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+              >
+                <RefreshCw size={15} className={pageSaving ? "animate-spin" : ""} />
+                保存并刷新
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <span>已有单元格双击编辑；删除操作为软归档，历史订单和派车记录不会被删除。</span>
+              <span>当前显示 {tab === "drivers" ? filteredDrivers.length : filteredVehicles.length} 条</span>
+            </div>
           </div>
 
-          {tab === "vehicles" ? (
+          {message ? <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">{message}</div> : null}
+          <ResourceReminderStrip alerts={reminders.data?.alerts || []} loading={reminders.isLoading} />
+
+          {tab === "maintenance" ? (
             <div className="space-y-4">
               <VehicleTable
                 rows={filteredVehicles}
@@ -305,21 +660,494 @@ export function VehiclesPage() {
             <div className="space-y-4">
               <DriverTable
                 rows={filteredDrivers}
+                libraryRowsByName={libraryDriverByName}
                 loading={drivers.isLoading}
-                saving={createDriver.isPending || updateDriver.isPending || deleteDriver.isPending}
+                saving={createDriver.isPending || updateDriver.isPending || changeDriverEmployment.isPending || deleteDriver.isPending}
                 onCreate={(payload) => {
                   if (requireTenantForCreate()) createDriver.mutate(payload);
                 }}
                 onSave={(id, payload) => updateDriver.mutate({ id, payload: { ...payload, tenant_id: driverTenantId(id) } })}
+                onEmploymentChange={(row, retired) => {
+                  const driverKey = row.driver_external_id || row.driver_code || row.name;
+                  const action = retired ? "离职归档" : "恢复在职";
+                  if (window.confirm(`确认将 ${row.name} ${action}？`)) {
+                    changeDriverEmployment.mutate({
+                      id: row.id,
+                      driverKey,
+                      tenantId: driverTenantId(row.id),
+                      retired,
+                    });
+                  }
+                }}
                 onDelete={(id) => {
-                  if (window.confirm("确认删除这名司机？历史派车和报备记录会保留。")) deleteDriver.mutate({ id, tenantId: driverTenantId(id) });
+                  if (window.confirm("确认从当前资料台账移除这名司机？历史派车和报备记录会保留。")) deleteDriver.mutate({ id, tenantId: driverTenantId(id) });
                 }}
               />
-            </div>
+              </div>
+          )}
+            </>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ResourceDownloadView({
+  data,
+  loading,
+  uploading,
+  onUpload,
+  onShowDrivers,
+}: {
+  data?: ResourceLibraryResponse;
+  loading: boolean;
+  uploading: boolean;
+  onUpload: (payload: ResourceUploadPayload) => Promise<unknown>;
+  onShowDrivers: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+  const [sort, setSort] = useState<"plate" | "files">("plate");
+  const [selectedId, setSelectedId] = useState("");
+  const [downloadError, setDownloadError] = useState("");
+  const [uploadVehicleKey, setUploadVehicleKey] = useState("");
+  const [uploadCategory, setUploadCategory] = useState("");
+  const [uploadDate, setUploadDate] = useState("");
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [quickFilter, setQuickFilter] = useState<Exclude<ResourceLibraryQuickFilter, "drivers">>("vehicles");
+  const [categoryPanelOpen, setCategoryPanelOpen] = useState(false);
+  const vehicles = useMemo(() => data?.vehicles || [], [data?.vehicles]);
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          vehicles
+            .flatMap((vehicle) => vehicle.docs?.map((file) => file.category) || [])
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ).sort(),
+    [vehicles],
+  );
+  const filteredVehicles = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const rows = vehicles.filter((vehicle) => {
+      const vehicleText = [vehicle.plate_number, vehicle.suffix, vehicle.chassis_number, vehicle.model_code, vehicle.vehicle_type]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const matchingFiles = (vehicle.docs || []).filter((file) => {
+        const matchesCategory = category === "all" || file.category === category;
+        const matchesTerm = !term || [file.name, file.category, file.date].filter(Boolean).join(" ").toLowerCase().includes(term);
+        return matchesCategory && matchesTerm;
+      });
+      const vehicleMatches = !term || vehicleText.includes(term);
+      const categoryMatches = category === "all" || (vehicle.docs || []).some((file) => file.category === category);
+      const quickFilterMatches = quickFilter !== "pdf" || (vehicle.docs || []).length > 0;
+      return quickFilterMatches && ((vehicleMatches && categoryMatches) || matchingFiles.length > 0);
+    });
+    return [...rows].sort((a, b) => {
+      if (sort === "files") return Number(b.file_count || 0) - Number(a.file_count || 0);
+      return String(a.suffix || a.plate_number || "").localeCompare(String(b.suffix || b.plate_number || ""), "ja");
+    });
+  }, [category, quickFilter, search, sort, vehicles]);
+
+  useEffect(() => {
+    if (!filteredVehicles.length) {
+      setSelectedId("");
+      return;
+    }
+    if (!filteredVehicles.some((vehicle) => resourceVehicleId(vehicle) === selectedId)) {
+      setSelectedId(resourceVehicleId(filteredVehicles[0]));
+    }
+  }, [filteredVehicles, selectedId]);
+
+  useEffect(() => {
+    if (!uploadVehicleKey && vehicles.length) setUploadVehicleKey(resourceVehicleId(vehicles[0]));
+    if (!uploadCategory && categories.length) setUploadCategory(categories[0] || "其他");
+  }, [categories, uploadCategory, uploadVehicleKey, vehicles]);
+
+  const selectedVehicle = filteredVehicles.find((vehicle) => resourceVehicleId(vehicle) === selectedId) || filteredVehicles[0];
+  const selectedDocs = useMemo(() => {
+    if (!selectedVehicle) return [];
+    const term = search.trim().toLowerCase();
+    const vehicleText = [selectedVehicle.plate_number, selectedVehicle.suffix, selectedVehicle.chassis_number, selectedVehicle.model_code]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return (selectedVehicle.docs || []).filter((file) => {
+      const matchesCategory = category === "all" || file.category === category;
+      const matchesTerm =
+        !term ||
+        vehicleText.includes(term) ||
+        [file.name, file.category, file.date].filter(Boolean).join(" ").toLowerCase().includes(term);
+      return matchesCategory && matchesTerm;
+    });
+  }, [category, search, selectedVehicle]);
+  const groupedDocs = useMemo(() => {
+    const groups = new Map<string, ResourceLibraryFile[]>();
+    selectedDocs.forEach((file) => {
+      const key = file.category || "其他";
+      groups.set(key, [...(groups.get(key) || []), file]);
+    });
+    return Array.from(groups.entries());
+  }, [selectedDocs]);
+
+  if (loading) return <EmptyState title="正在读取资料库" detail="正在加载车辆和 PDF 资料。" />;
+
+  async function submitUpload() {
+    if (!uploadVehicleKey || !uploadCategory || !uploadFile) {
+      setUploadMessage("请选择车辆、资料类别和 PDF 文件。");
+      return;
+    }
+    if (uploadFile.type && uploadFile.type !== "application/pdf") {
+      setUploadMessage("只能上传 PDF 文件。");
+      return;
+    }
+    setUploadMessage("");
+    try {
+      await onUpload({
+        vehicle_key: uploadVehicleKey,
+        category: uploadCategory,
+        document_date: uploadDate.trim(),
+        custom_title: uploadTitle.trim(),
+        file_name: uploadFile.name,
+        content_type: uploadFile.type,
+        file_base64: await readFileDataUrl(uploadFile),
+      });
+      setUploadMessage("上传成功，资料列表已刷新。");
+      setUploadTitle("");
+      setUploadDate("");
+      setUploadFile(null);
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : "上传失败");
+    }
+  }
+
+  function applyResourceQuickFilter(filter: ResourceLibraryQuickFilter) {
+    if (filter === "drivers") {
+      onShowDrivers();
+      return;
+    }
+    setQuickFilter(filter);
+    if (filter === "vehicles") {
+      setSearch("");
+      setCategory("all");
+      setSort("plate");
+      setCategoryPanelOpen(false);
+      return;
+    }
+    if (filter === "pdf") {
+      setSearch("");
+      setCategory("all");
+      setSort("files");
+      setCategoryPanelOpen(false);
+      return;
+    }
+    setCategoryPanelOpen((open) => !open);
+  }
+
+  return (
+    <div className="w-full space-y-4">
+      <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+        <div>
+          <p className="text-sm font-bold text-slate-950">上传新资料入库</p>
+          <p className="mt-0.5 text-xs text-slate-500">选择车辆、资料类别和 PDF；上传后自动加入下方资料列表。</p>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+          <label className="grid min-w-0 gap-1 text-xs font-bold text-slate-600 xl:col-span-3">
+            车辆
+            <select className="h-10 min-w-0 w-full rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-800" value={uploadVehicleKey} onChange={(event) => setUploadVehicleKey(event.target.value)}>
+              {vehicles.map((vehicle) => (
+                <option key={resourceVehicleId(vehicle)} value={resourceVehicleId(vehicle)}>
+                  {vehicle.suffix || "-"} ｜ {vehicle.plate_number || "-"} ｜ {vehicle.chassis_number || vehicle.model_code || "-"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold text-slate-600 xl:col-span-3">
+            资料类别
+            <select className="h-10 min-w-0 w-full rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-800" value={uploadCategory} onChange={(event) => setUploadCategory(event.target.value)}>
+              {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold text-slate-600 xl:col-span-1">
+            日期
+            <input className="h-10 min-w-0 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-blue-400" value={uploadDate} onChange={(event) => setUploadDate(event.target.value)} placeholder="R80519" />
+          </label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold text-slate-600 xl:col-span-2">
+            自定义标题
+            <input className="h-10 min-w-0 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-blue-400" value={uploadTitle} onChange={(event) => setUploadTitle(event.target.value)} placeholder="可留空" />
+          </label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold text-slate-600 xl:col-span-2">
+            PDF
+            <input
+              key={uploadFile?.name || "empty-upload"}
+              className="h-10 min-w-0 w-full rounded-md border border-border bg-white px-2 py-1.5 text-xs file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:font-bold"
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={uploading || !uploadVehicleKey || !uploadCategory || !uploadFile}
+            className="h-10 self-end rounded-md bg-blue-600 px-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-40 xl:col-span-1"
+            onClick={() => void submitUpload()}
+          >
+            {uploading ? "上传中..." : "上传入库"}
+          </button>
+        </div>
+        {uploadMessage ? (
+          <p className={`mt-2 text-xs font-semibold ${uploadMessage.includes("成功") ? "text-emerald-700" : "text-red-600"}`}>{uploadMessage}</p>
+        ) : null}
+      </div>
+
+      <ResourceStatGrid
+        stats={[
+          { value: data?.summary?.vehicles || vehicles.length, label: "车辆", tone: "blue", filterKey: "vehicles" },
+          { value: data?.summary?.pdf_files || 0, label: "PDF资料", tone: "emerald", filterKey: "pdf" },
+          { value: data?.summary?.categories || categories.length, label: "资料类别", tone: "amber", filterKey: "categories" },
+          { value: data?.summary?.drivers || 0, label: "司机信息", tone: "slate", filterKey: "drivers" },
+        ] satisfies ResourceStat<ResourceLibraryQuickFilter>[]}
+        loading={false}
+        activeKey={quickFilter}
+        onSelect={applyResourceQuickFilter}
+        gridClassName="grid-cols-2 md:grid-cols-4"
+      />
+
+      {categoryPanelOpen ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-xs font-bold text-slate-700">选择资料类别</p>
+            <span className="text-xs text-slate-500">{categories.length} 类</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${category === "all" ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300"}`}
+              onClick={() => setCategory("all")}
+            >
+              全部类别
+            </button>
+            {categories.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={`rounded-full border px-3 py-1.5 text-xs font-bold ${category === item ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300"}`}
+                onClick={() => setCategory(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid gap-2 lg:grid-cols-[minmax(300px,1fr)_200px_170px_120px]">
+        <label className="flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm">
+          <Search size={15} className="text-slate-400" />
+          <input
+            className="w-full bg-transparent outline-none"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索车牌、后四位、车台番号、文件名"
+          />
+        </label>
+        <CompactSelect
+          value={category}
+          onChange={(value) => {
+            setCategory(value);
+            setQuickFilter(value === "all" ? "vehicles" : "categories");
+          }}
+        >
+          <option value="all">全部资料类别</option>
+          {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+        </CompactSelect>
+        <CompactSelect value={sort} onChange={(value) => setSort(value as "plate" | "files")}>
+          <option value="plate">按车牌排序</option>
+          <option value="files">资料多到少</option>
+        </CompactSelect>
+        <button
+          type="button"
+          className="h-10 rounded-md bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700"
+          onClick={() => {
+            setSearch("");
+            setCategory("all");
+            setSort("plate");
+            setQuickFilter("vehicles");
+            setCategoryPanelOpen(false);
+          }}
+        >
+          清除筛选
+        </button>
+      </div>
+      {downloadError ? <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{downloadError}</div> : null}
+
+      <div className="grid min-h-[620px] gap-3 lg:grid-cols-[310px_minmax(0,1fr)]">
+        <aside className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h3 className="text-sm font-bold text-slate-950">车辆列表</h3>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">{filteredVehicles.length}</span>
+          </div>
+          <div className="max-h-[650px] overflow-auto">
+            {filteredVehicles.map((vehicle) => {
+              const id = resourceVehicleId(vehicle);
+              const active = id === resourceVehicleId(selectedVehicle || {});
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`block w-full border-b border-slate-100 px-4 py-3 text-left transition ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                  onClick={() => setSelectedId(id)}
+                >
+                  <strong className="block text-sm text-slate-950">{vehicle.plate_number || vehicle.suffix || "未命名车辆"}</strong>
+                  <span className="mt-1 block text-xs text-slate-500">后四位 {vehicle.suffix || "-"} ｜ {vehicle.chassis_number || vehicle.model_code || "-"}</span>
+                  <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">{vehicle.file_count || vehicle.docs?.length || 0} PDF</span>
+                </button>
+              );
+            })}
+            {!filteredVehicles.length ? <div className="px-4 py-10 text-center text-sm text-slate-400">没有符合条件的车辆</div> : null}
+          </div>
+        </aside>
+
+        <section className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h3 className="text-sm font-bold text-slate-950">资料下载</h3>
+            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">{selectedDocs.length} PDF</span>
+          </div>
+          {selectedVehicle ? (
+            <div className="max-h-[650px] overflow-auto p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <h4 className="text-lg font-black text-slate-950">{selectedVehicle.plate_number || selectedVehicle.suffix}</h4>
+                <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">后四位 {selectedVehicle.suffix || "-"}</span>
+                <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">{selectedVehicle.chassis_number || selectedVehicle.model_code || "-"}</span>
+              </div>
+              <div className="space-y-3">
+                {groupedDocs.map(([group, files]) => (
+                  <div key={group} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <h5 className="text-sm font-black text-slate-950">{group}</h5>
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600">{files.length}</span>
+                    </div>
+                    <div className="grid gap-2 xl:grid-cols-3">
+                      {files.map((file, index) => {
+                        const url = normalizeResourceFileUrl(file.download_url || file.download_path || file.file_key || "");
+                        return (
+                          <button
+                            key={`${file.file_key || file.name}-${index}`}
+                            type="button"
+                            className="group rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-blue-400 hover:bg-blue-50"
+                            onClick={() => {
+                              setDownloadError("");
+                              void downloadApiFile(url, file.name || "document.pdf").catch((error: Error) => setDownloadError(error.message));
+                            }}
+                          >
+                            <span className="block break-words text-xs font-bold leading-5 text-slate-900">{file.name || "未命名 PDF"}</span>
+                            <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700 group-hover:bg-white">
+                              <Download size={12} />
+                              {resourceFileDate(file) || "点击下载 PDF"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {!groupedDocs.length ? <EmptyState title="暂无资料" detail="当前车辆在所选类别下没有 PDF。" /> : null}
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="未选择车辆" detail="请从左侧车辆列表选择一台车辆。" />
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ResourceStatGrid<T extends string = string>({
+  stats,
+  loading,
+  activeKey,
+  onSelect,
+  gridClassName,
+}: {
+  stats: ResourceStat<T>[];
+  loading: boolean;
+  activeKey?: T | null;
+  onSelect?: (key: T) => void;
+  gridClassName?: string;
+}) {
+  const toneClasses: Record<string, string> = {
+    blue: "border-blue-100 bg-blue-50/40 text-blue-700",
+    emerald: "border-emerald-100 bg-emerald-50/40 text-emerald-700",
+    amber: "border-amber-100 bg-amber-50/40 text-amber-700",
+    red: "border-red-100 bg-red-50/40 text-red-700",
+    slate: "border-slate-200 bg-white text-slate-700",
+  };
+  return (
+    <div className={`grid gap-2 ${gridClassName || "grid-cols-2 sm:grid-cols-3 xl:grid-cols-6"}`}>
+      {stats.map((stat) => {
+        const filterKey = stat.filterKey;
+        const interactive = Boolean(filterKey && onSelect);
+        const active = Boolean(filterKey && activeKey === filterKey);
+        const className = [
+          "rounded-lg border px-3 py-3 text-left shadow-sm transition",
+          toneClasses[stat.tone] || toneClasses.slate,
+          interactive ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400" : "",
+          active ? "border-blue-500 ring-2 ring-blue-500 ring-offset-1" : "",
+        ].join(" ");
+        const content = (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <strong className="block text-2xl font-black leading-none text-slate-950">{loading ? "-" : stat.value}</strong>
+              {active ? <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">筛选中</span> : null}
+            </div>
+            <span className="mt-2 block text-xs font-semibold">{stat.label}</span>
+          </>
+        );
+        return onSelect && filterKey ? (
+          <button
+            key={stat.label}
+            type="button"
+            aria-pressed={active}
+            title="点击筛选，再次点击清除"
+            className={className}
+            onClick={() => onSelect(filterKey)}
+          >
+            {content}
+          </button>
+        ) : (
+          <div key={stat.label} className={className}>
+            {content}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CompactSelect({
+  value,
+  onChange,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <select
+      className="h-9 min-w-[142px] rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {children}
+    </select>
   );
 }
 
@@ -384,26 +1212,26 @@ function VehicleTable({
     setDraft(vehicleInitial);
   }
   return (
-    <section className="rounded-xl border border-border bg-white">
+    <section className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
       <div className="border-b border-border px-4 py-3">
         <h3 className="text-base font-bold text-slate-950">车辆基础信息</h3>
         <p className="text-xs text-slate-500">第一行快速新增；已有单元格双击修改，回车或点击空白处保存。</p>
       </div>
       <div className="max-h-[72vh] overflow-auto">
-        <table className="w-full min-w-[1160px] text-center text-sm">
-          <thead className="sticky top-0 z-20 bg-slate-50 text-xs font-bold text-slate-500 shadow-[0_1px_0_0_#e5e7eb]">
+        <table className="w-full min-w-[1160px] border-collapse text-center text-sm">
+          <thead className="sticky top-0 z-20 bg-slate-100 text-xs font-bold text-slate-600 shadow-[0_1px_0_0_#dbe2ea]">
             <tr>
-              <th className="px-4 py-3 text-center">序号</th>
-              {cols.map((col) => <th key={col.key} className="px-4 py-3 text-center">{col.label}</th>)}
-              <th className="px-4 py-3 text-center">PDF</th>
-              <th className="px-4 py-3 text-center">删除</th>
+              <th className="border-r border-slate-200 px-3 py-2 text-center">序号</th>
+              {cols.map((col) => <th key={col.key} className="border-r border-slate-200 px-3 py-2 text-center">{col.label}</th>)}
+              <th className="border-r border-slate-200 px-3 py-2 text-center">PDF</th>
+              <th className="px-3 py-2 text-center">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             <VehicleQuickCreateRow draft={draft} saving={saving} onChange={setDraft} onSave={saveDraft} />
             {rows.map((row, index) => (
               <tr key={row.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3 align-middle text-slate-500">{index + 1}</td>
+                <td className="border-r border-slate-100 px-3 py-2 align-middle text-slate-500">{index + 1}</td>
                 {cols.map((col) => (
                   <EditableTd
                     key={`${row.id}-${col.key}`}
@@ -416,10 +1244,10 @@ function VehicleTable({
                     onSave={(id, field, value) => onSave(id, normalizeVehiclePatch(field, value))}
                   />
                 ))}
-                <td className="px-4 py-3 align-middle">
+                <td className="border-r border-slate-100 px-3 py-2 align-middle">
                   <ResourceFileLinks row={row} />
                 </td>
-                <td className="px-4 py-3 align-middle">
+                <td className="px-3 py-2 align-middle">
                   <button
                     type="button"
                     disabled={saving}
@@ -455,7 +1283,7 @@ function VehicleQuickCreateRow({
     if (event.key === "Enter") onSave();
   }
   return (
-    <tr className="bg-emerald-50/50">
+    <tr className="bg-emerald-50/60" data-quick-create="vehicles">
       <td className="px-4 py-3 text-xs font-bold text-emerald-700">新增</td>
       <td className="px-2 py-2"><QuickInput value={draft.vehicle_type || ""} placeholder="ハイエース" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, vehicle_type: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.plate_number || ""} placeholder="なにわ300あ1001" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, plate_number: value })} /></td>
@@ -477,11 +1305,6 @@ function VehicleQuickCreateRow({
 function VehicleMaintenanceTable({
   rows,
   loading,
-  saving,
-  onSave,
-  onCreateRecord,
-  onUpdateRecord,
-  onDeleteRecord,
 }: {
   rows: Vehicle[];
   loading: boolean;
@@ -492,94 +1315,57 @@ function VehicleMaintenanceTable({
   onDeleteRecord: (id: number) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const [retiredOpen, setRetiredOpen] = useState(false);
-  const [editing, setEditing] = useState<EditingCell>(null);
-  const [recordDrafts, setRecordDrafts] = useState<Record<number, Partial<VehicleInspectionRecord>>>({});
-  const [recordOpen, setRecordOpen] = useState<Record<number, boolean>>({});
-  const activeRows = rows.filter((row) => row.status !== "retired");
-  const retiredRows: Vehicle[] = [];
-  const cols: Array<{ key: keyof Vehicle; label: string; render?: (row: Vehicle) => ReactNode }> = [
-    { key: "first_registration_date", label: "初登录日" },
-    { key: "company_registration_date", label: "到社时间" },
-    { key: "last_inspection_date", label: "最近点检" },
-    { key: "next_inspection_due_date", label: "点检到期", render: (row) => dateWithStatus(addDays(row.last_inspection_date, 90) || row.next_inspection_due_date) },
-    { key: "shaken_due_date", label: "车检到期" },
-    { key: "status", label: "状态", render: (row) => vehicleStatusBadge(row.status) },
-  ];
   if (loading || !rows.length) return null;
-  const renderRows = (items: Vehicle[]) => items.map((row) => (
-    <tr key={row.id} className="hover:bg-slate-50">
-      <td className="px-4 py-3 text-center font-semibold text-slate-900">{row.plate_number}</td>
-      {cols.map((col) => (
-        <EditableTd
-          key={`${row.id}-${col.key}`}
-          rowId={row.id}
-          field={col.key}
-          value={String(row[col.key] || "")}
-          editing={editing}
-          saving={saving}
-          onStart={setEditing}
-          onSave={(id, field, value) => onSave(id, normalizeVehiclePatch(field, value))}
-          render={(value) => col.render ? col.render(row) : maintenanceValue(col.key, value)}
-        />
-      ))}
-      <td className="px-4 py-3 text-center text-xs text-slate-600">
-        <VehicleInspectionRecordCell
-          vehicleId={row.id}
-          records={row.inspection_records || []}
-          draft={recordDrafts[row.id] || {}}
-          open={Boolean(recordOpen[row.id])}
-          saving={saving}
-          onToggle={() => setRecordOpen((current) => ({ ...current, [row.id]: !current[row.id] }))}
-          onCancel={() => {
-            setRecordOpen((current) => ({ ...current, [row.id]: false }));
-            setRecordDrafts((drafts) => ({ ...drafts, [row.id]: {} }));
-          }}
-          onDraftChange={(value) => setRecordDrafts((drafts) => ({ ...drafts, [row.id]: value }))}
-          onCreate={() => {
-            const draft = recordDrafts[row.id] || {};
-            const parsed = parseInspectionRecordText(recordTextFromDraft(draft));
-            if (!parsed.inspection_date) return;
-            onCreateRecord(row.id, { ...parsed, source: "manual" });
-            setRecordDrafts((drafts) => ({ ...drafts, [row.id]: {} }));
-          }}
-          onUpdate={(record, payload) => record.id && onUpdateRecord(record.id, payload)}
-          onDelete={(record) => record.id && window.confirm("确认删除这条维护记录？") && onDeleteRecord(record.id)}
-        />
-      </td>
-    </tr>
-  ));
   return (
-    <section className="rounded-xl border border-border bg-white">
+    <section className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
       <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={() => setOpen((value) => !value)}>
         <div>
           <h3 className="text-base font-bold text-slate-950">车辆维护记录</h3>
-          <p className="text-xs text-slate-500">最近点检只记录日期；点检到期按最近点检 +90 天计算。初登录日、到社时间和保险不做过期提醒。</p>
+          <p className="text-xs text-slate-500">只读日期汇总；资料上传、PDF 下载和分类管理请在“车辆资料”页完成。</p>
         </div>
         {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
       </button>
       {open ? (
         <div className="max-h-[72vh] overflow-auto border-t border-border">
-          <table className="w-full min-w-[1120px] text-center text-sm">
+          <table className="w-full min-w-[980px] text-center text-sm">
             <thead className="sticky top-0 z-20 bg-slate-50 text-xs font-bold text-slate-500 shadow-[0_1px_0_0_#e5e7eb]">
               <tr>
                 <th className="px-4 py-3 text-center">车辆</th>
-                {cols.map((col) => <th key={col.key} className="px-4 py-3 text-center">{col.label}</th>)}
-                <th className="px-4 py-3 text-center">历次记录</th>
+                <th className="px-4 py-3 text-center">初登录日</th>
+                <th className="px-4 py-3 text-center">到社日期</th>
+                <th className="px-4 py-3 text-center">最近点检日</th>
+                <th className="px-4 py-3 text-center">点检到期日</th>
+                <th className="px-4 py-3 text-center">车检到期日</th>
+                <th className="px-4 py-3 text-center">历次点检日期</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {renderRows(activeRows)}
-              {retiredRows.length ? (
-                <tr className="bg-slate-50">
-                  <td colSpan={cols.length + 2} className="px-4 py-2 text-center">
-                    <button type="button" className="text-xs font-bold text-slate-600 hover:text-slate-950" onClick={() => setRetiredOpen((value) => !value)}>
-                      {retiredOpen ? "收起已减车" : `展开已减车 ${retiredRows.length} 台`}
-                    </button>
-                  </td>
-                </tr>
-              ) : null}
-              {retiredOpen ? renderRows(retiredRows) : null}
+              {rows.map((row) => {
+                const historyDates = Array.from(
+                  new Set((row.inspection_records || []).map((record) => dateOnly(record.inspection_date)).filter((value) => value !== "-")),
+                ).sort((left, right) => right.localeCompare(left));
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-center font-semibold text-slate-900">{row.plate_number}</td>
+                    <td className="px-4 py-3 text-center text-slate-700">{dateOnly(row.first_registration_date)}</td>
+                    <td className="px-4 py-3 text-center text-slate-700">{dateOnly(row.company_registration_date)}</td>
+                    <td className="px-4 py-3 text-center text-slate-700">{dateOnly(row.last_inspection_date)}</td>
+                    <td className="px-4 py-3 text-center text-slate-700">
+                      {dateOnly(addDays(row.last_inspection_date, 90) || row.next_inspection_due_date)}
+                    </td>
+                    <td className="px-4 py-3 text-center text-slate-700">{dateOnly(row.shaken_due_date)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-wrap justify-center gap-1.5">
+                        {historyDates.length ? historyDates.map((date) => (
+                          <span key={date} className="inline-flex h-6 items-center rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700">
+                            {date}
+                          </span>
+                        )) : <span className="text-xs text-slate-400">-</span>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -588,185 +1374,23 @@ function VehicleMaintenanceTable({
   );
 }
 
-function VehicleInspectionRecordCell({
-  vehicleId,
-  records,
-  draft,
-  open,
-  saving,
-  onToggle,
-  onCancel,
-  onDraftChange,
-  onCreate,
-  onUpdate,
-  onDelete,
-}: {
-  vehicleId: number;
-  records: VehicleInspectionRecord[];
-  draft: Partial<VehicleInspectionRecord>;
-  open: boolean;
-  saving: boolean;
-  onToggle: () => void;
-  onCancel: () => void;
-  onDraftChange: (value: Partial<VehicleInspectionRecord>) => void;
-  onCreate: () => void;
-  onUpdate: (record: VehicleInspectionRecord, payload: Partial<VehicleInspectionRecord>) => void;
-  onDelete: (record: VehicleInspectionRecord) => void;
-}) {
-  const sorted = [...records].sort((a, b) => String(b.inspection_date || "").localeCompare(String(a.inspection_date || "")));
-  const panelRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (target instanceof Node && panelRef.current?.contains(target)) return;
-      onCancel();
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [onCancel, open]);
-
-  return (
-    <div ref={panelRef} className="mx-auto max-w-[520px] text-left" data-vehicle-id={vehicleId}>
-      <div className="flex flex-wrap items-center justify-center gap-1.5">
-        {sorted.length ? sorted.map((record) => (
-          <InspectionDatePill key={record.id || `${record.inspection_type}-${record.inspection_date}`} record={record} />
-        )) : <span className="text-xs text-slate-400">-</span>}
-      </div>
-      <button type="button" className="mx-auto mt-2 block text-[11px] font-bold text-blue-600 hover:text-blue-800" onClick={onToggle}>
-        {open ? "收起记录" : "编辑记录"}
-      </button>
-      {open ? (
-        <div className="mt-2 grid gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
-          {sorted.map((record) => (
-            <VehicleInspectionEditRow
-              key={record.id || `${record.inspection_type}-${record.inspection_date}`}
-              record={record}
-              saving={saving}
-              onUpdate={(payload) => onUpdate(record, payload)}
-              onDelete={() => onDelete(record)}
-            />
-          ))}
-          <VehicleInspectionCreateRow
-            value={draft}
-            saving={saving}
-            onChange={onDraftChange}
-            onSave={onCreate}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function InspectionDatePill({ record }: { record: VehicleInspectionRecord }) {
-  const isShaken = record.inspection_type === "shaken";
-  return (
-    <span
-      className={[
-        "inline-flex h-6 items-center rounded-full border px-2 text-[11px] font-bold",
-        isShaken ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-700",
-      ].join(" ")}
-      title={isShaken ? "车检" : "点检"}
-    >
-      {record.inspection_date || "-"}
-    </span>
-  );
-}
-
-function VehicleInspectionCreateRow({
-  value,
-  saving,
-  onChange,
-  onSave,
-}: {
-  value: Partial<VehicleInspectionRecord>;
-  saving: boolean;
-  onChange: (value: Partial<VehicleInspectionRecord>) => void;
-  onSave: () => void;
-}) {
-  function keySave(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") onSave();
-  }
-  const text = recordTextFromDraft(value);
-  return (
-    <div className="grid grid-cols-[minmax(220px,1fr)_44px] items-center gap-1.5">
-      <input
-        className="h-8 rounded-md border border-emerald-100 bg-white px-3 text-center text-xs font-semibold text-slate-800 outline-none focus:border-emerald-400"
-        value={text}
-        disabled={saving}
-        onChange={(event) => onChange(parseInspectionRecordText(event.target.value))}
-        onKeyDown={keySave}
-        placeholder="点检 2026-04-19"
-      />
-      <button
-        type="button"
-        className="h-8 rounded-md bg-emerald-500 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
-        disabled={saving || !value.inspection_date}
-        onClick={onSave}
-      >
-        新增
-      </button>
-    </div>
-  );
-}
-
-function VehicleInspectionEditRow({
-  record,
-  saving,
-  onUpdate,
-  onDelete,
-}: {
-  record: VehicleInspectionRecord;
-  saving: boolean;
-  onUpdate: (payload: Partial<VehicleInspectionRecord>) => void;
-  onDelete: () => void;
-}) {
-  function commit(value: string) {
-    const parsed = parseInspectionRecordText(value);
-    if (!parsed.inspection_date) return;
-    onUpdate(parsed);
-  }
-  function keyCommit(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") (event.currentTarget as HTMLInputElement).blur();
-  }
-  return (
-    <div className="grid grid-cols-[minmax(220px,1fr)_32px] items-center gap-1.5">
-      <input
-        className="h-8 rounded-md border border-border bg-white px-3 text-center text-xs font-semibold text-slate-800 outline-none focus:border-blue-300"
-        defaultValue={recordTextFromDraft(record)}
-        disabled={saving || !record.id}
-        onBlur={(event) => commit(event.target.value)}
-        onKeyDown={keyCommit}
-        placeholder="点检 2026-04-19"
-      />
-      <button
-        type="button"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-        disabled={saving || !record.id}
-        title="删除"
-        onClick={onDelete}
-      >
-        <Trash2 size={14} />
-      </button>
-    </div>
-  );
-}
-
 function DriverTable({
   rows,
+  libraryRowsByName,
   loading,
   saving,
   onCreate,
   onSave,
+  onEmploymentChange,
   onDelete,
 }: {
   rows: Driver[];
+  libraryRowsByName: Map<string, Record<string, string>>;
   loading: boolean;
   saving: boolean;
   onCreate: (payload: Partial<Driver>) => void;
   onSave: (id: number, payload: Partial<Driver>) => void;
+  onEmploymentChange: (row: Driver, retired: boolean) => void;
   onDelete: (id: number) => void;
 }) {
   const [editing, setEditing] = useState<EditingCell>(null);
@@ -775,21 +1399,14 @@ function DriverTable({
     { key: "driver_external_id", label: "運転手ID" },
     { key: "office", label: "所属営業所" },
     { key: "name", label: "運転手名" },
-    { key: "driver_code", label: "司机代码" },
-    { key: "driver_language", label: "语言" },
-    { key: "phone", label: "电话" },
     { key: "license_due_date", label: "免许有效期限" },
-    { key: "license_file_url", label: "驾照文件", render: fileLinkValue },
     { key: "license_number", label: "免許番号" },
     { key: "residence_status", label: "在留资格" },
     { key: "residence_due_date", label: "再留期限有效日期" },
     { key: "health_check_due_date", label: "健康诊断日期", render: healthCheckDateValue },
-    { key: "health_check_file_url", label: "体检文件", render: fileLinkValue },
-    { key: "wechat", label: "wechat" },
-    { key: "line", label: "line" },
-    { key: "whatsapp", label: "WhatsApp" },
-    { key: "email", label: "mail" },
-    { key: "status", label: "状态" },
+    { key: "phone", label: "携帯電話番号" },
+    { key: "email", label: "メールアドレス" },
+    { key: "status", label: "状態" },
   ];
   if (loading) return <EmptyState title="正在加载司机" detail="正在读取司机台账。" />;
   function saveDraft() {
@@ -798,51 +1415,87 @@ function DriverTable({
     setDraft(driverInitial);
   }
   return (
-    <section className="rounded-xl border border-border bg-white">
-      <div className="border-b border-border px-4 py-3">
-        <h3 className="text-base font-bold text-slate-950">司机明细</h3>
-        <p className="text-xs text-slate-500">第一行快速新增；已有单元格双击修改，回车或点击空白处保存。</p>
-      </div>
+    <section className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
       <div className="max-h-[72vh] overflow-auto">
-        <table className="w-full min-w-[1680px] text-center text-sm">
-          <thead className="sticky top-0 z-20 bg-slate-50 text-xs font-bold text-slate-500 shadow-[0_1px_0_0_#e5e7eb]">
+        <table className="w-full min-w-[1780px] border-collapse text-center text-xs">
+          <thead className="sticky top-0 z-20 bg-slate-100 text-xs font-bold text-slate-600 shadow-[0_1px_0_0_#dbe2ea]">
             <tr>
-              <th className="px-4 py-3 text-center">序号</th>
-              {cols.map((col) => <th key={col.key} className="px-4 py-3 text-center">{col.label}</th>)}
-              <th className="px-4 py-3 text-center">删除</th>
+              <th className="sticky left-0 z-30 min-w-[112px] border-r border-slate-200 bg-slate-100 px-2 py-2 text-center">操作</th>
+              <th className="min-w-[96px] border-r border-slate-200 px-2 py-2 text-center">健康诊断状态</th>
+              {cols.map((col) => <th key={col.key} className="border-r border-slate-200 px-3 py-2 text-center">{col.label}</th>)}
+              <th className="min-w-[118px] border-r border-slate-200 px-2 py-2 text-center">健康诊断剩余有效天数</th>
+              <th className="min-w-[120px] border-r border-slate-200 px-2 py-2 text-center">特长</th>
+              <th className="min-w-[260px] px-3 py-2 text-center">备注</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             <DriverQuickCreateRow draft={draft} saving={saving} onChange={setDraft} onSave={saveDraft} />
-            {rows.map((row, index) => (
-              <tr key={row.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3 align-middle text-slate-500">{index + 1}</td>
-                {cols.map((col) => (
+            {rows.map((row) => {
+              const libraryRow = libraryRowsByName.get(row.name);
+              const retired = row.status === "retired" || isLibraryDriverRetired(libraryRow);
+              return (
+                <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-2 py-1.5 align-middle">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        disabled={saving}
+                        className={`h-7 rounded-md border px-2 text-[11px] font-bold disabled:opacity-50 ${
+                          retired
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        }`}
+                        onClick={() => onEmploymentChange(row, !retired)}
+                      >
+                        {retired ? "复职" : "离职"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        className="h-7 rounded-md border border-red-200 bg-red-50 px-2 text-[11px] font-bold text-red-600 hover:bg-red-100 disabled:opacity-50"
+                        onClick={() => onDelete(row.id)}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </td>
+                  <td className="border-r border-slate-100 px-2 py-1.5 align-middle">{driverHealthStatusBadge(row, libraryRow)}</td>
+                  {cols.map((col) => (
+                    <EditableTd
+                      key={`${row.id}-${col.key}`}
+                      rowId={row.id}
+                      field={col.key}
+                      value={displayDriverValue(row, col.key)}
+                      editing={editing}
+                      saving={saving}
+                      onStart={setEditing}
+                      onSave={(id, field, value) => onSave(id, normalizeDriverPatch(field, value))}
+                      render={(value) =>
+                        col.key === "status"
+                          ? driverOperationalStatusBadge(value, libraryRow)
+                          : col.render
+                            ? col.render(value, row)
+                            : fieldLooksDate(String(col.key))
+                              ? dateWithStatus(value)
+                              : value || "-"
+                      }
+                    />
+                  ))}
+                  <td className="border-r border-slate-100 px-2 py-1.5 align-middle">{driverHealthRemainingBadge(row, libraryRow)}</td>
+                  <td className="border-r border-slate-100 px-2 py-1.5 align-middle text-slate-700">{libraryDriverValue(libraryRow, "特长") || "-"}</td>
                   <EditableTd
-                    key={`${row.id}-${col.key}`}
                     rowId={row.id}
-                    field={col.key}
-                    value={String(row[col.key] || "")}
+                    field="note"
+                    value={String(row.note || libraryDriverValue(libraryRow, "来源/备注") || "")}
                     editing={editing}
                     saving={saving}
                     onStart={setEditing}
                     onSave={(id, field, value) => onSave(id, normalizeDriverPatch(field, value))}
-                    render={(value) => col.render ? col.render(value, row) : fieldLooksDate(String(col.key)) ? dateWithStatus(value) : value || "-"}
+                    render={(value) => <span className="block max-w-[360px] whitespace-pre-wrap text-left leading-5 text-slate-600">{value || "-"}</span>}
                   />
-                ))}
-                <td className="px-4 py-3 align-middle">
-                  <button
-                    type="button"
-                    disabled={saving}
-                    className="mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                    title="删除司机"
-                    onClick={() => onDelete(row.id)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {!rows.length ? <div className="border-t border-border py-8"><EmptyState title="暂无司机" detail="在表格第一行录入姓名后按回车新增。" /></div> : null}
@@ -866,31 +1519,27 @@ function DriverQuickCreateRow({
     if (event.key === "Enter") onSave();
   }
   return (
-    <tr className="bg-emerald-50/50">
-      <td className="px-4 py-3 text-xs font-bold text-emerald-700">新增</td>
+    <tr className="bg-emerald-50/60" data-quick-create="drivers">
+      <td className="sticky left-0 z-10 bg-emerald-50 px-2 py-2">
+        <button type="button" disabled={saving || !draft.name?.trim()} onClick={onSave} className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-40">
+          新增
+        </button>
+      </td>
+      <td className="px-2 py-2 text-xs font-bold text-slate-400">自动</td>
       <td className="px-2 py-2"><QuickInput value={draft.driver_external_id || ""} placeholder="ID" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, driver_external_id: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.office || ""} placeholder="本社" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, office: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.name || ""} placeholder="司机姓名" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, name: value })} /></td>
-      <td className="px-2 py-2"><QuickInput value={draft.driver_code || ""} placeholder="代码" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, driver_code: value })} /></td>
-      <td className="px-2 py-2"><QuickInput value={draft.driver_language || ""} placeholder="中文/日文" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, driver_language: value })} /></td>
-      <td className="px-2 py-2"><QuickInput value={draft.phone || ""} placeholder="电话" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, phone: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.license_due_date || ""} placeholder="驾照到期" onBlurDate={(value) => onChange({ ...draft, license_due_date: value })} onKeyDown={keySave} onChange={(value) => onChange({ ...draft, license_due_date: value })} /></td>
-      <td className="px-2 py-2 text-xs text-slate-400">小程序上传</td>
       <td className="px-2 py-2"><QuickInput value={draft.license_number || ""} placeholder="驾照号" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, license_number: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.residence_status || ""} placeholder="在留" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, residence_status: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.residence_due_date || ""} placeholder="在留到期" onBlurDate={(value) => onChange({ ...draft, residence_due_date: value })} onKeyDown={keySave} onChange={(value) => onChange({ ...draft, residence_due_date: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.health_check_due_date || ""} placeholder="体检日期" onBlurDate={(value) => onChange({ ...draft, health_check_due_date: value })} onKeyDown={keySave} onChange={(value) => onChange({ ...draft, health_check_due_date: value })} /></td>
-      <td className="px-2 py-2 text-xs text-slate-400">小程序上传</td>
-      <td className="px-2 py-2"><QuickInput value={draft.wechat || ""} placeholder="wechat" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, wechat: value })} /></td>
-      <td className="px-2 py-2"><QuickInput value={draft.line || ""} placeholder="line" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, line: value })} /></td>
-      <td className="px-2 py-2"><QuickInput value={draft.whatsapp || ""} placeholder="WhatsApp" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, whatsapp: value })} /></td>
+      <td className="px-2 py-2"><QuickInput value={draft.phone || ""} placeholder="电话" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, phone: value })} /></td>
       <td className="px-2 py-2"><QuickInput value={draft.email || ""} placeholder="mail" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, email: value })} /></td>
-      <td className="px-2 py-2"><QuickInput value={statusLabel(draft.status)} placeholder="正常" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, status: parseStatus(value, "driver"), driver_status: parseStatus(value, "driver") })} /></td>
-      <td className="px-4 py-3">
-        <button type="button" disabled={saving || !draft.name?.trim()} onClick={onSave} className="inline-flex h-8 items-center rounded-full bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-40">
-          新增
-        </button>
-      </td>
+      <td className="px-2 py-2"><QuickInput value={statusLabel(draft.status)} placeholder="運転可" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, status: parseStatus(value, "driver"), driver_status: parseStatus(value, "driver") })} /></td>
+      <td className="px-2 py-2 text-xs font-bold text-slate-400">自动</td>
+      <td className="px-2 py-2 text-xs text-slate-400">-</td>
+      <td className="px-2 py-2"><QuickInput value={draft.note || ""} placeholder="备注" onKeyDown={keySave} onChange={(value) => onChange({ ...draft, note: value })} /></td>
     </tr>
   );
 }
@@ -926,7 +1575,7 @@ function EditableTd({
     if (event.key === "Escape") onStart(null);
   }
   return (
-    <td className="px-4 py-3 align-middle text-center" onDoubleClick={() => onStart({ id: rowId, key: field, value })}>
+    <td className="border-r border-slate-100 px-3 py-2 align-middle text-center" onDoubleClick={() => onStart({ id: rowId, key: field, value })}>
       {active ? (
         <input
           autoFocus
@@ -982,6 +1631,142 @@ function normalizeDateFields<T extends Record<string, unknown>>(payload: T): T {
   ) as T;
 }
 
+function libraryDriverValue(row: Record<string, string> | undefined, ...keys: string[]) {
+  if (!row) return "";
+  for (const key of keys) {
+    const value = String(row[key] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function libraryDriverName(row: Record<string, string>) {
+  return libraryDriverValue(row, "運転手名", "司机姓名", "姓名", "name", "driver_name");
+}
+
+function isLibraryDriverRetired(row?: Record<string, string>) {
+  return ["状態", "状态", "status", "driver_status", "来源/备注"].some((key) =>
+    /离职|離職|退職|retired|deleted/i.test(String(row?.[key] || "")),
+  );
+}
+
+function isDriverOperational(driver: Driver, libraryRow?: Record<string, string>) {
+  if (libraryRow && isLibraryDriverRetired(libraryRow)) return false;
+  const source = libraryDriverValue(libraryRow, "状態", "状态", "status", "driver_status");
+  if (source) return /運転可|available|正常/i.test(source);
+  return driver.driver_status === "available" || driver.status === "available";
+}
+
+function libraryDriverHealthBucket(row?: Record<string, string>): HealthBucket {
+  const explicit = libraryDriverValue(row, "健康诊断状态", "健康診断状態").toLowerCase();
+  if (/expired|overdue|已过期|期限切れ/.test(explicit)) return "expired";
+  if (/soon|30天内|30日以内/.test(explicit)) return "30";
+  if (/31-90|90天内|90日以内/.test(explicit)) return "90";
+  if (/ok|normal|正常/.test(explicit)) return "normal";
+  const remainingText = libraryDriverValue(row, "健康诊断剩余有效天数", "健康診断残日数");
+  if (!remainingText || !/^-?\d+$/.test(remainingText)) return "unknown";
+  const remaining = Number(remainingText);
+  if (remaining < 0) return "expired";
+  if (remaining <= 30) return "30";
+  if (remaining <= 90) return "90";
+  return "normal";
+}
+
+function mergeDriverFromLibrary(driver: Driver, row?: Record<string, string>): Driver {
+  if (!row) return driver;
+  const statusText = libraryDriverValue(row, "状態", "状态", "status", "driver_status");
+  const locallyRetired = driver.status === "retired" || driver.driver_status === "retired";
+  const status = locallyRetired || isLibraryDriverRetired(row)
+    ? "retired"
+    : /運転可|available|正常/i.test(statusText)
+      ? "available"
+      : driver.status;
+  const remainingText = libraryDriverValue(row, "健康诊断剩余有效天数", "健康診断残日数");
+  return {
+    ...driver,
+    driver_external_id: libraryDriverValue(row, "運転手ID", "司机编号") || driver.driver_external_id,
+    office: libraryDriverValue(row, "所属営業所", "营业所") || driver.office,
+    name: libraryDriverName(row) || driver.name,
+    license_due_date: libraryDriverValue(row, "免许有効期限", "免許有効期限") || driver.license_due_date,
+    license_number: libraryDriverValue(row, "免許番号", "驾照号码") || driver.license_number,
+    residence_status: libraryDriverValue(row, "在留資格", "在留资格") || driver.residence_status,
+    residence_due_date: libraryDriverValue(row, "再留期限有效日期", "在留期限有效日期") || driver.residence_due_date,
+    health_check_due_date: libraryDriverValue(row, "健康诊断日期", "健康診断日") || driver.health_check_due_date,
+    health_check_remaining_days: /^-?\d+$/.test(remainingText) ? Number(remainingText) : driver.health_check_remaining_days,
+    phone: libraryDriverValue(row, "携帯電話番号", "电话") || driver.phone,
+    email: libraryDriverValue(row, "メールアドレス", "邮箱") || driver.email,
+    note: driver.note || libraryDriverValue(row, "来源/备注"),
+    status,
+    driver_status: status,
+  };
+}
+
+function displayDriverValue(row: Driver, key: keyof Driver) {
+  if (key === "status") return String(row.status || row.driver_status || "");
+  return String(row[key] || "");
+}
+
+function driverHealthStatusBadge(row: Driver, libraryRow?: Record<string, string>) {
+  const bucket = libraryRow ? libraryDriverHealthBucket(libraryRow) : driverHealthBucket(row);
+  const styles: Record<HealthBucket, string> = {
+    expired: "bg-red-50 text-red-600",
+    "30": "bg-amber-50 text-amber-700",
+    "90": "bg-emerald-50 text-emerald-700",
+    normal: "bg-blue-50 text-blue-700",
+    unknown: "bg-slate-100 text-slate-500",
+  };
+  const labels: Record<HealthBucket, string> = {
+    expired: "已过期",
+    "30": "30天内",
+    "90": "31-90天",
+    normal: "正常",
+    unknown: "无法计算",
+  };
+  return <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${styles[bucket]}`}>{labels[bucket]}</span>;
+}
+
+function driverHealthRemainingBadge(row: Driver, libraryRow?: Record<string, string>) {
+  const sourceValue = libraryDriverValue(libraryRow, "健康诊断剩余有效天数", "健康診断残日数");
+  const remaining = /^-?\d+$/.test(sourceValue)
+    ? Number(sourceValue)
+    : typeof row.health_check_remaining_days === "number"
+      ? row.health_check_remaining_days
+      : daysUntil(addDays(row.health_check_due_date, 365));
+  if (remaining === null) return <span className="text-slate-400">-</span>;
+  const className = remaining < 0 ? "bg-red-50 text-red-600" : remaining <= 30 ? "bg-amber-50 text-amber-700" : remaining <= 90 ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700";
+  return <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${className}`}>{remaining}</span>;
+}
+
+function driverOperationalStatusBadge(value: string, libraryRow?: Record<string, string>) {
+  const source = libraryDriverValue(libraryRow, "状態", "状态", "status", "driver_status");
+  const retired = isLibraryDriverRetired(libraryRow) || value === "retired";
+  const label = retired ? "离职" : source || (value === "available" ? "運転可" : statusLabel(value));
+  return (
+    <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${retired ? "bg-slate-100 text-slate-600" : /待补/.test(label) ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+      {label}
+    </span>
+  );
+}
+
+function resourceVehicleId(vehicle: Partial<ResourceLibraryVehicle>) {
+  return String(vehicle.id || vehicle.suffix || vehicle.plate_number || "");
+}
+
+function resourceFileDate(file: ResourceLibraryFile) {
+  if (file.date) return file.date;
+  const match = String(file.name || "").match(/(?:R\d{5,6}|\d{8})/i);
+  return match?.[0] || "";
+}
+
+function readFileDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("读取 PDF 文件失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function displayVehicleValue(row: Vehicle, key: keyof Vehicle) {
   if (key === "snow_tire") return row.snow_tire === "yes" || row.snow_tire === "雪" || row.snow_tire === "雪胎" ? "雪胎" : "普通";
   if (key === "status") return statusLabel(row.status);
@@ -998,7 +1783,10 @@ function normalizeVehiclePatch(field: string, value: string): Partial<Vehicle> {
 }
 
 function normalizeDriverPatch(field: string, value: string): Partial<Driver> {
-  if (field === "status") return { status: value, driver_status: value };
+  if (field === "status") {
+    const status = parseStatus(value, "driver");
+    return { status, driver_status: status };
+  }
   if (fieldLooksDate(field)) return { [field]: normalizeFlexibleDate(value) } as Partial<Driver>;
   return { [field]: value } as Partial<Driver>;
 }
@@ -1083,15 +1871,6 @@ function daysUntil(value?: string) {
 
 function dateOnly(value?: string) {
   return value || "-";
-}
-
-function fileLinkValue(value?: string) {
-  if (!value) return "-";
-  return (
-    <a className="font-bold text-blue-700 hover:underline" href={value} target="_blank" rel="noreferrer">
-      打开
-    </a>
-  );
 }
 
 type ResourceFileLink = {
@@ -1185,26 +1964,6 @@ function shortFileLabel(label: string) {
   return label.length > 24 ? `${label.slice(0, 23)}...` : label;
 }
 
-function recordTextFromDraft(record?: Partial<VehicleInspectionRecord>) {
-  if (!record) return "";
-  const type = record.inspection_type === "shaken" ? "车检" : "点检";
-  return [type, record.inspection_date].filter(Boolean).join(" ");
-}
-
-function parseInspectionRecordText(value: string): Partial<VehicleInspectionRecord> {
-  const text = String(value || "").trim();
-  if (!text) return {};
-  const parts = text.split(/\s+/).filter(Boolean);
-  const first = parts[0] || "";
-  const inspection_type = first.includes("车") || first.toLowerCase() === "shaken" ? "shaken" : "inspection";
-  const dateIndex = parts.findIndex((part) => Boolean(normalizeFlexibleDate(part).match(/^\d{4}-\d{2}-\d{2}$/)));
-  const inspection_date = dateIndex >= 0 ? normalizeFlexibleDate(parts[dateIndex]) : "";
-  const note = parts
-    .filter((_, index) => index !== 0 && index !== dateIndex)
-    .join(" ");
-  return { inspection_type, inspection_date, note };
-}
-
 function addDays(value: unknown, days: number) {
   if (!value) return "";
   const date = new Date(String(value));
@@ -1213,12 +1972,16 @@ function addDays(value: unknown, days: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function maintenanceValue(field: keyof Vehicle, value?: string) {
-  if (field === "first_registration_date" || field === "company_registration_date" || field === "last_inspection_date") {
-    return dateOnly(value);
-  }
-  if (field === "status") return vehicleStatusBadge(value);
-  return dateWithStatus(value);
+function driverHealthBucket(row: Driver): HealthBucket {
+  const remaining =
+    typeof row.health_check_remaining_days === "number"
+      ? row.health_check_remaining_days
+      : daysUntil(addDays(row.health_check_due_date, 365));
+  if (remaining === null) return "unknown";
+  if (remaining < 0) return "expired";
+  if (remaining <= 30) return "30";
+  if (remaining <= 90) return "90";
+  return "normal";
 }
 
 function healthCheckDateValue(value?: string, row?: Driver) {
@@ -1249,15 +2012,4 @@ function healthCheckDateValue(value?: string, row?: Driver) {
       ) : null}
     </span>
   );
-}
-
-function vehicleStatusBadge(status?: string) {
-  const label = status === "retired" ? "减车" : status === "maintenance" ? "维修" : "正常";
-  const className =
-    status === "retired"
-        ? "bg-slate-100 text-slate-600"
-        : status === "maintenance"
-          ? "bg-amber-50 text-amber-700"
-          : "bg-emerald-50 text-emerald-700";
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${className}`}>{label}</span>;
 }

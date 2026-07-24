@@ -9,6 +9,7 @@ from typing import Any
 from backend.config import RUNTIME_DIR
 from backend.db.database import get_connection, hash_password
 from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail
+from backend.services.agency_portal_service import _hash_portal_password
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -133,7 +134,7 @@ def list_company_registrations(params: dict[str, Any] | None = None) -> list[dic
         values.extend([like] * 7)
     sql.append("ORDER BY cr.updated_at DESC, cr.id DESC")
     with get_connection() as conn:
-        return [dict(row) for row in conn.execute(" ".join(sql), values).fetchall()]
+        return [_decorate_login_hint(dict(row)) for row in conn.execute(" ".join(sql), values).fetchall()]
 
 
 def create_company_registration(payload: dict[str, Any]) -> dict[str, Any]:
@@ -264,7 +265,7 @@ def get_company_registration(registration_id: Any) -> dict[str, Any] | None:
             "SELECT * FROM company_registrations WHERE id = ? AND managing_tenant_id = ?",
             (_to_int(registration_id), get_current_tenant_id()),
         ).fetchone()
-    return dict(row) if row else None
+    return _decorate_login_hint(dict(row)) if row else None
 
 
 def ensure_company_registration_schema() -> None:
@@ -453,14 +454,28 @@ def _linked_agency(conn, data: dict[str, Any], tenant_id: int, agency_id: Any | 
             return int(row["id"])
     row = conn.execute("SELECT id FROM agencies WHERE tenant_id = ? AND agency_code = ?", (tenant_id, code)).fetchone()
     if row:
+        portal_code = str(data.get("company_code") or row["id"]).upper()
+        if portal_code:
+            conn.execute(
+                """
+                UPDATE agencies
+                SET portal_password_hash = COALESCE(NULLIF(portal_password_hash, ''), ?),
+                    portal_password_updated_at = COALESCE(portal_password_updated_at, CURRENT_TIMESTAMP),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """,
+                (_hash_portal_password(portal_code), tenant_id, int(row["id"])),
+            )
         return int(row["id"])
+    portal_code = f"{code}{tenant_id}".upper()
     cursor = conn.execute(
         """
         INSERT INTO agencies (
             tenant_id, agency_code, company_name, name, address, contact_name, contact_phone,
-            responsible_person, contact_email, status, portal_code, is_portal_enabled, updated_at
+            responsible_person, contact_email, status, portal_code, portal_password_hash,
+            portal_password_updated_at, is_portal_enabled, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 1, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP)
         """,
         (
             tenant_id,
@@ -472,10 +487,29 @@ def _linked_agency(conn, data: dict[str, Any], tenant_id: int, agency_id: Any | 
             data.get("contact_phone") or "",
             data.get("representative_name") or "",
             data.get("contact_email") or "",
-            f"{code}{tenant_id}".upper(),
+            portal_code,
+            _hash_portal_password(portal_code),
         ),
     )
     return int(cursor.lastrowid)
+
+
+def _decorate_login_hint(row: dict[str, Any]) -> dict[str, Any]:
+    company_type = str(row.get("company_type") or "").strip()
+    if company_type == "agency":
+        portal_code = row.get("portal_code") or row.get("company_code") or row.get("agency_code") or ""
+        row["initial_login_account"] = str(portal_code or "").upper()
+        row["initial_password_hint"] = "初始密码同门户代码，首次登录后请修改"
+        row["initial_login_channel"] = "旅行社门户"
+        return row
+    phone = str(row.get("contact_phone") or "").strip()
+    normalized = normalize_phone(phone)
+    tenant_slug = row.get("tenant_slug") or row.get("company_code")
+    tenant_name = row.get("tenant_name") or row.get("company_name")
+    row["initial_login_account"] = company_login_name(normalized or phone, tenant_slug, tenant_name) if phone else ""
+    row["initial_password_hint"] = "初始密码为联系电话后 6 位，首次登录后必须修改" if phone_password_tail(phone) else "请先填写联系电话生成初始密码"
+    row["initial_login_channel"] = "车公司后台"
+    return row
 
 
 def _decode_file_payload(value: str) -> bytes:

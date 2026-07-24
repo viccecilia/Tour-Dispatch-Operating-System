@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "财务"
+  "navigationBarTitleText": "财务",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
 }

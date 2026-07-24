@@ -18,6 +18,42 @@
   min-width: 0;
 }
 
+.import-title-row {
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.title-left {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+.import-title-row .panel-title {
+  margin-bottom: 0;
+}
+
+.daily-clear-mini {
+  flex: 0 0 auto;
+  min-width: 60rpx;
+  height: 36rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid rgba(13, 148, 136, 0.28);
+  border-radius: 999rpx;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 36rpx;
+  text-align: center;
+}
+
+.daily-clear-mini:active {
+  transform: scale(0.96);
+  opacity: 0.84;
+}
+
 .help-dot {
   box-sizing: border-box;
   display: flex;
@@ -1024,6 +1060,23 @@
   font-weight: 950;
 }
 
+.daily-summary-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4rpx;
+  margin-top: 5rpx;
+  color: #64748b;
+  font-size: 16rpx;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.daily-summary-ratio {
+  color: #0f172a;
+  font-weight: 950;
+}
+
 .daily-preview-head {
   margin-top: 18rpx;
 }
@@ -1401,15 +1454,32 @@
   white-space: nowrap;
 }
 
+.daily-swipe-shell {
+  position: relative;
+  overflow: hidden;
+  border-top: 1rpx solid #e8f3ef;
+  background: #ef4444;
+}
+
+.daily-swipe-shell:first-child {
+  border-top: 0;
+}
+
 .daily-order-line {
   position: relative;
   display: grid;
-  grid-template-columns: 22rpx 62rpx 56rpx 62rpx minmax(0, 1fr) 54rpx 62rpx 32rpx;
+  z-index: 1;
+  grid-template-columns: 22rpx 62rpx 56rpx 62rpx minmax(0, 1fr) 54rpx 62rpx;
   gap: 4rpx;
   align-items: stretch;
   padding: 6rpx;
-  border-top: 1rpx solid #e2e8f0;
   background: #ffffff;
+  transform: translateX(0);
+  transition: transform 180ms ease-out;
+}
+
+.daily-order-line.swipe-open {
+  transform: translateX(-104rpx);
 }
 
 .daily-order-line.voided {
@@ -1481,14 +1551,17 @@
 }
 
 .daily-line-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 104rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40rpx;
-  border-radius: 9rpx;
-  color: #dc2626;
-  background: #fff1f2;
-  font-size: 17rpx;
+  color: #ffffff;
+  background: #ef4444;
+  font-size: 19rpx;
   font-weight: 950;
 }
 
@@ -1534,8 +1607,7 @@
 
 .daily-order-line {
   padding: 4rpx 6rpx;
-  border-top-color: #e8f3ef;
-  background: transparent;
+  background: #fbfffd;
 }
 
 .daily-cell-input {
@@ -1565,9 +1637,9 @@
 }
 
 .daily-line-delete {
-  height: 36rpx;
-  color: #ef4444;
-  background: transparent;
+  height: auto;
+  color: #ffffff;
+  background: #ef4444;
 }
 
 .published-panel {

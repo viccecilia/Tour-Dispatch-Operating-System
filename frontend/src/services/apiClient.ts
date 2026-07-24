@@ -42,6 +42,7 @@ import type {
   PlatformAuthSettings,
   ReminderSettings,
   ResourceAlert,
+  ResourceLibraryResponse,
   Team,
   TenantOption,
   Vehicle,
@@ -85,6 +86,33 @@ export function setAgencyToken(token: string) {
 export function clearAgencyToken() {
   agencyTokenCache = "";
   window.localStorage.removeItem(AGENCY_TOKEN_KEY);
+}
+
+export async function downloadApiFile(path: string, fileName: string) {
+  const rawPath = String(path || "").trim();
+  if (!rawPath) throw new Error("下载地址为空");
+  const isExternal = /^https?:\/\//i.test(rawPath) && !rawPath.startsWith(API_BASE_URL);
+  if (isExternal) {
+    window.open(rawPath, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const url = /^https?:\/\//i.test(rawPath) ? rawPath : `${API_BASE_URL}${rawPath.startsWith("/") ? rawPath : `/${rawPath}`}`;
+  const token = getAuthToken();
+  const response = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    throw new Error(`下载失败（HTTP ${response.status}）`);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName || "download";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -636,6 +664,34 @@ export const api = {
   },
   resourceReminders: () =>
     request<{ alerts: ResourceAlert[]; total: number; expired: number; upcoming: number; maintenance: number; settings?: ReminderSettings }>("/api/resources/reminders"),
+  resourceLibrary: () =>
+    request<ResourceLibraryResponse>("/api/dispatch-mobile/resource-library"),
+  uploadResourceDocument: (payload: {
+    vehicle_key: string;
+    category: string;
+    document_date?: string;
+    custom_title?: string;
+    file_name: string;
+    content_type?: string;
+    file_base64: string;
+  }) =>
+    request<{ vehicle_key: string; document: Record<string, unknown> }>("/api/dispatch-mobile/resource-library/upload", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateDriverResourceStatus: (driverKey: string, status: string) =>
+    request<{ driver?: Record<string, string>; status?: string }>("/api/dispatch-mobile/resource-library/driver-status", {
+      method: "POST",
+      body: JSON.stringify({ driver_key: driverKey, status }),
+    }),
+  updateDriverResourceHealth: (driverKey: string, healthCheckDate: string) =>
+    request<{ driver?: Record<string, string>; health_check_date?: string; days_remaining?: number; status?: string }>(
+      "/api/dispatch-mobile/resource-library/driver-health",
+      {
+        method: "POST",
+        body: JSON.stringify({ driver_key: driverKey, health_check_date: healthCheckDate }),
+      },
+    ),
   reminderSettings: async () => (await request<{ settings: ReminderSettings }>("/api/settings/reminders")).settings,
   updateReminderSettings: (payload: Partial<ReminderSettings>) =>
     request<{ settings: ReminderSettings }>("/api/settings/reminders", {

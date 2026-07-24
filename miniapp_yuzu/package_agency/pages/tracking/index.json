@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "订单跟踪"
+  "navigationBarTitleText": "订单跟踪",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
 }

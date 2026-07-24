@@ -30,6 +30,7 @@ Page({
     canFinance: false,
     financeSummary: {},
     financeOrders: [],
+    accountExpanded: false,
     saving: false,
     message: ''
   },
@@ -86,7 +87,9 @@ Page({
     Promise.all([
       api.financeSummary().catch(() => ({})),
       api.financeLedger().catch(() => ({ orders: [] }))
-    ]).then(([summary, ledger]) => {
+    ]).then((results) => {
+      const summary = results && results[0] || {};
+      const ledger = results && results[1] || { orders: [] };
       const expenseSummary = summary.driver_expense_summary || {};
       this.setData({
         financeSummary: {
@@ -165,9 +168,14 @@ Page({
     });
   },
 
+  toggleAccount() {
+    this.setData({ accountExpanded: !this.data.accountExpanded });
+  },
+
   logout() {
     api.clearSession({ manual: true });
-    wx.reLaunch({ url: '/package_dispatch/pages/home/index' });
+    wx.setStorageSync('yuzu_selected_port', 'dispatch');
+    wx.reLaunch({ url: '/pages/login/index?port=dispatch' });
   }
 });
 

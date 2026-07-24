@@ -67,7 +67,9 @@ Page({
     Promise.all([
       api.orders(),
       api.auctionListings('listed')
-    ]).then(([orders, listings]) => {
+    ]).then((results) => {
+      const orders = (results && results[0]) || [];
+      const listings = (results && results[1]) || [];
       const decoratedOrders = this.sortOrders((orders || []).map((item) => this.decorateOrder(item)));
       const decoratedListings = (listings || []).map((item) => this.decorateListing(item));
       this.setData({

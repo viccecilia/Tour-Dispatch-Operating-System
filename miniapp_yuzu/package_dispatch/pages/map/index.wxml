@@ -1,9 +1,13 @@
 <view wx:if="{{isDriver}}" class="map-page driver-map-page driver-theme">
   <map
+    id="dispatchDriverMap"
     class="fleet-map"
     latitude="{{latitude}}"
     longitude="{{longitude}}"
+    markers="{{markers}}"
+    circles="{{circles}}"
     scale="{{scale}}"
+    show-location="{{true}}"
   ></map>
 
   <view class="map-top driver-task-panel">
@@ -15,7 +19,10 @@
           <view class="help-dot" data-type="driver" bindtap="showHelp">?</view>
         </view>
       </view>
-      <button class="refresh-button" bindtap="loadDriverMap">刷新</button>
+      <view class="map-action-group">
+        <button class="locate-button" bindtap="moveToCurrentLocation">当前位置</button>
+        <button class="refresh-button" bindtap="manualRefresh">刷新</button>
+      </view>
     </view>
 
     <view wx:if="{{currentAssignment}}" class="current-task-card">
@@ -23,6 +30,7 @@
       <view class="current-order">{{currentAssignment.oid || currentAssignment.order_id}}</view>
       <view class="current-time">{{currentAssignment.timeText}}</view>
       <view class="current-route">{{currentAssignment.routeText}}</view>
+      <button class="route-nav-button" bindtap="navigateToCurrentDropoff">导航到终点</button>
       <button
         class="node-action"
         disabled="{{nextAction.disabled}}"
@@ -32,7 +40,6 @@
 
     <view wx:else class="current-task-card empty-current">
       <view class="current-order">今日暂无当前任务</view>
-      <view class="current-time">调度派车后会显示当前订单和节点汇报按钮。</view>
     </view>
   </view>
 
@@ -65,11 +72,13 @@
 
 <view wx:else class="map-page">
   <map
+    id="dispatchFleetMap"
     class="fleet-map"
     latitude="{{latitude}}"
     longitude="{{longitude}}"
     markers="{{markers}}"
     scale="{{scale}}"
+    show-location="{{true}}"
     bindmarkertap="onMarkerTap"
   ></map>
 
@@ -82,7 +91,10 @@
           <view class="help-dot" data-type="fleet" bindtap="showHelp">?</view>
         </view>
       </view>
-      <button class="refresh-button" bindtap="loadData">刷新</button>
+      <view class="map-action-group">
+        <button class="locate-button" bindtap="moveToCurrentLocation">当前位置</button>
+        <button class="refresh-button" bindtap="manualRefresh">刷新</button>
+      </view>
     </view>
 
     <view class="map-alert-row">
@@ -160,3 +172,5 @@
     </view>
   </view>
 </view>
+
+<custom-tab-bar />

@@ -105,3 +105,5 @@
 
   <view wx:if="{{!parsedOrders.length}}" class="empty">暂无解析预览</view>
 </view>
+
+<custom-tab-bar />

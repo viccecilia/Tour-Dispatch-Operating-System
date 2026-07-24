@@ -39,7 +39,6 @@ const DISPATCH_TABS = {
     { key: 'calendar', label: '日历', url: '/package_dispatch/pages/calendar/index' },
     { key: 'auction', label: '订单大厅', url: '/package_dispatch/pages/auction/index' },
     { key: 'map', label: '地图', url: '/package_dispatch/pages/map/index' },
-    { key: 'finance', label: '财务', url: '/package_dispatch/pages/finance/index' },
     { key: 'profile', label: '我的', url: '/package_dispatch/pages/profile/index' }
   ],
   dispatcher: [

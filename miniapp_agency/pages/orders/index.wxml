@@ -7,11 +7,15 @@
 
   <view class="panel">
     <view class="panel-title">统一文本解析</view>
-    <view class="muted">机场接送适合批量粘贴，包车可混在同一批文本中。系统会自动分类。</view>
-    <textarea class="textarea" value="{{rawText}}" bindinput="onTextInput" placeholder="每行一单：接机 / 送机 / 包车都可以粘贴到这里" />
+    <view class="muted">机场接送支持批量粘贴，也可以切到单条录入，解析后直接在下方校对。</view>
+    <view class="mode-row">
+      <button class="mode-button {{entryMode === 'batch' ? 'mode-button-active' : ''}}" data-mode="batch" bindtap="switchEntryMode">批量解析</button>
+      <button class="mode-button {{entryMode === 'single' ? 'mode-button-active' : ''}}" data-mode="single" bindtap="switchEntryMode">单条录入</button>
+    </view>
+    <textarea class="textarea" value="{{rawText}}" bindinput="onTextInput" placeholder="{{entryMode === 'single' ? '把一条完整订单贴在这里，解析后会生成 1 条可校对订单。' : '每行一单：接机 / 送机 / 包车都可以粘贴到这里'}}" />
     <view class="button-row">
       <button class="button-secondary" bindtap="clearParsed">清空预览</button>
-      <button class="button-primary" loading="{{parseLoading}}" bindtap="parseOrders">解析订单</button>
+      <button class="button-primary" loading="{{parseLoading}}" bindtap="parseOrders">{{entryMode === 'single' ? '解析并回填' : '解析订单'}}</button>
     </view>
     <button class="sample-button" bindtap="fillSample">填入混合示例</button>
   </view>

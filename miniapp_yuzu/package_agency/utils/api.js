@@ -3,6 +3,7 @@ const SESSION_STORAGE_KEY = 'tourflow_agency_session';
 const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
 const DEFAULT_BASE_URL = TRIAL_BASE_URL;
+const REQUEST_TIMEOUT_MS = 15000;
 
 const API_CONFIG = {
   baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
@@ -38,15 +39,6 @@ function getRuntimeInfo() {
 }
 
 function syncEnvironmentBaseUrl() {
-  try {
-    const runtimeInfo = getRuntimeInfo();
-    if (runtimeInfo.platform === 'devtools') {
-      setBaseUrl(LOCAL_BASE_URL);
-      return;
-    }
-  } catch (err) {
-    // Keep trial endpoint when environment detection is unavailable.
-  }
   useTrialBaseUrl();
 }
 
@@ -66,10 +58,12 @@ function request(path, options = {}) {
   const session = getSession();
   const token = options.agencyToken || (session && session.token);
   return new Promise((resolve, reject) => {
+    const requestPayload = options.data || {};
     wx.request({
       url: `${API_CONFIG.baseUrl}${path}`,
       method: options.method || 'GET',
-      data: options.data || {},
+      data: requestPayload,
+      timeout: options.timeout || REQUEST_TIMEOUT_MS,
       header: {
         'Content-Type': 'application/json',
         ...(path.indexOf('/api/agency-portal') === 0 && token ? { 'X-Agency-Token': token } : {}),
@@ -78,6 +72,13 @@ function request(path, options = {}) {
       success: (res) => {
         const payload = res.data || {};
         if (res.statusCode >= 400 || payload.error) {
+          console.error('[agency api failed]', {
+            path,
+            method: options.method || 'GET',
+            statusCode: res.statusCode,
+            requestPayload,
+            responseBody: payload
+          });
           if (res.statusCode === 401 || payload.error === 'agency_unauthorized' || payload.error === 'invalid_agency_credentials') {
             clearSession();
           }
@@ -86,7 +87,22 @@ function request(path, options = {}) {
         }
         resolve(payload);
       },
-      fail: reject
+      fail: (error) => {
+        console.error('[agency api network failed]', {
+          path,
+          method: options.method || 'GET',
+          baseUrl: API_CONFIG.baseUrl,
+          requestPayload,
+          error
+        });
+        const errMsg = error && error.errMsg ? String(error.errMsg) : '';
+        reject({
+          error: errMsg.indexOf('timeout') >= 0 ? 'network_timeout' : 'network_failed',
+          detail: errMsg,
+          path,
+          base_url: API_CONFIG.baseUrl
+        });
+      }
     });
   });
 }

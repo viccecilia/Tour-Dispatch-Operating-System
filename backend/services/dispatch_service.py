@@ -20,9 +20,8 @@ def list_available_drivers() -> list[dict[str, Any]]:
                 SELECT id, name, phone, status, driver_code, driver_language, office, created_at, updated_at
                 FROM drivers
                 WHERE COALESCE(status, 'available') NOT IN ('retired', 'removed', 'decommissioned', 'deleted')
+                  AND COALESCE(driver_status, 'available') = 'available'
                   AND tenant_id = ?
-                  AND COALESCE(driver_code, '') != ''
-                  AND COALESCE(phone, '') LIKE '0%'
                 ORDER BY id
                 """
                 ,
@@ -78,7 +77,23 @@ def list_unassigned_orders() -> list[dict[str, Any]]:
 
 def list_assignments(status: str | None = "active", tenant_id: int | None | object = _DEFAULT_TENANT) -> list[dict[str, Any]]:
     with get_connection() as conn:
+        assignment_columns = _table_columns(conn, "assignments")
         order_columns = _table_columns(conn, "orders")
+        published_by_user_id_expr = (
+            "a.published_by_user_id"
+            if "published_by_user_id" in assignment_columns
+            else "NULL AS published_by_user_id"
+        )
+        published_by_name_expr = (
+            "a.published_by_name"
+            if "published_by_name" in assignment_columns
+            else "'' AS published_by_name"
+        )
+        published_at_expr = (
+            "a.published_at"
+            if "published_at" in assignment_columns
+            else "NULL AS published_at"
+        )
         raw_text_expr = "o.raw_text" if "raw_text" in order_columns else "'' AS raw_text"
         sql = [
             f"""
@@ -90,9 +105,9 @@ def list_assignments(status: str | None = "active", tenant_id: int | None | obje
             a.status,
             a.execution_status,
             a.assigned_at,
-            a.published_by_user_id,
-            a.published_by_name,
-            a.published_at,
+            {published_by_user_id_expr},
+            {published_by_name_expr},
+            {published_at_expr},
             a.cancelled_at,
             a.created_at,
             a.updated_at,

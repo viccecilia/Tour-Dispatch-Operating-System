@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "旅行社入单"
+  "navigationBarTitleText": "旅行社入单",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
 }

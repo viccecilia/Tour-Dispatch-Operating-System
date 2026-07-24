@@ -5,6 +5,9 @@ from typing import Any
 
 PLATFORM_PERMISSIONS = {
     "platform.company_registration.manage",
+    "platform.system.read",
+    "platform.system.manage",
+    "platform.auth.manage",
 }
 
 

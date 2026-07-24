@@ -26,24 +26,16 @@
   </view>
 
   <view wx:if="{{importOpen}}" class="panel import-panel">
-    <view class="title-with-help">
-      <view class="panel-title">{{importMode === 'daily' ? '日配录入' : (importMode === 'single' ? '单条订单录入' : '微信 / LINE 订单文本')}}</view>
-      <view class="help-dot" data-type="import" bindtap="showHelp">?</view>
+    <view class="title-with-help import-title-row">
+      <view class="title-left">
+        <view class="panel-title">{{importMode === 'daily' ? '日配录入' : (importMode === 'single' ? '单条订单录入' : '微信 / LINE 订单文本')}}</view>
+        <view class="help-dot" data-type="import" bindtap="showHelp">?</view>
+      </view>
+      <view wx:if="{{importMode === 'daily'}}" class="tap-control daily-clear-mini" bindtap="clearDailySource">清空</view>
     </view>
 
     <block wx:if="{{importMode === 'daily'}}">
-      <view class="daily-intro">
-        <view>
-          <view class="daily-intro-title">按司机分组粘贴当天订单</view>
-          <view class="daily-intro-text">司机姓名一行，下面跟订单；可包含车牌尾号、价格、作废标记。</view>
-        </view>
-        <view class="daily-tools">
-          <view class="tap-control daily-tool" bindtap="fillDailyExample">示例</view>
-          <view class="tap-control daily-tool" bindtap="clearDailySource">清空</view>
-        </view>
-      </view>
-
-      <textarea class="textarea daily-textarea {{dailyGroups.length ? 'parsed' : ''}}" maxlength="-1" value="{{dailySourceText}}" bindinput="onDailySourceInput" placeholder="例如：&#10;林泽群 3893&#10;1.31 10:00 京都单送关西酒店 3代 绿800" />
+      <textarea class="textarea daily-textarea {{dailyGroups.length ? 'parsed' : ''}}" maxlength="-1" value="{{dailySourceText}}" bindinput="onDailySourceInput" />
       <view class="daily-action-row">
         <view class="tap-control daily-action" bindtap="parseDailyText">解析</view>
         <view class="tap-control daily-action primary" bindtap="saveDailyDraft">保存草稿</view>
@@ -53,20 +45,24 @@
       <view class="daily-overview-grid">
         <view class="daily-summary-card"><text>已分配司机</text><strong>{{dailyOverview.assignedDrivers}}</strong></view>
         <view class="daily-summary-card"><text>已分配订单</text><strong>{{dailyOverview.assignedOrders}}</strong></view>
-        <view class="daily-summary-card success"><text>空闲司机</text><strong>{{dailyOverview.idleDrivers}}</strong></view>
-        <view class="daily-summary-card success"><text>空闲车辆</text><strong>{{dailyOverview.idleVehicles}}</strong></view>
+        <view class="daily-summary-card success"><text>今日空闲司机</text><strong>{{dailyOverview.idleDrivers}}/{{dailyOverview.driverTotal}}</strong></view>
+        <view class="daily-summary-card success">
+          <text>今日空闲车辆</text>
+          <view class="daily-summary-meta"><view>10座</view><view class="daily-summary-ratio">{{dailyOverview.idleTenSeat}}/{{dailyOverview.tenSeatTotal}}</view></view>
+          <view class="daily-summary-meta"><view>Alphard</view><view class="daily-summary-ratio">{{dailyOverview.idleAlphard}}/{{dailyOverview.alphardTotal}}</view></view>
+        </view>
       </view>
 
       <view class="daily-issue-grid">
         <view class="daily-issue-card {{dailyOverview.missingDriverGroups.length ? 'warning' : 'ok'}}">
-          <view class="daily-issue-title">未分配司机</view>
+          <view class="daily-issue-title">未匹配司机</view>
           <view wx:if="{{!dailyOverview.missingDriverGroups.length}}" class="daily-issue-empty">全部已填司机</view>
           <view wx:for="{{dailyOverview.missingDriverGroups}}" wx:key="index" class="daily-issue-line" data-group-index="{{item.index}}" bindtap="focusDailyGroup">
             {{item.label}} · {{item.orderCount}} 单
           </view>
         </view>
         <view class="daily-issue-card {{dailyOverview.missingVehicleGroups.length ? 'warning' : 'ok'}}">
-          <view class="daily-issue-title">未分配车辆</view>
+          <view class="daily-issue-title">未匹配车辆</view>
           <view wx:if="{{!dailyOverview.missingVehicleGroups.length}}" class="daily-issue-empty">全部已填车辆</view>
           <view wx:for="{{dailyOverview.missingVehicleGroups}}" wx:key="index" class="daily-issue-line" data-group-index="{{item.index}}" bindtap="focusDailyGroup">
             {{item.label}} · {{item.orderCount}} 单
@@ -103,15 +99,23 @@
         </view>
 
         <view class="daily-order-table">
-          <view wx:for="{{item.orders}}" wx:key="id" wx:for-item="order" wx:for-index="orderIndex" class="daily-order-line {{order.status === '作废' ? 'voided' : ''}}">
-            <view class="daily-order-index">{{order.displayIndex}}</view>
-            <input class="daily-cell-input time" value="{{order.time}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="time" bindinput="onDailyOrderInput" />
-            <input class="daily-cell-input" value="{{order.type}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="type" bindinput="onDailyOrderInput" />
-            <input class="daily-cell-input" value="{{order.vehicleType}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="vehicleType" bindinput="onDailyOrderInput" />
-            <input class="daily-cell-input route" value="{{order.route}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="route" bindinput="onDailyOrderInput" />
-            <input class="daily-cell-input price" value="{{order.price}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="price" bindinput="onDailyOrderInput" />
-            <input class="daily-cell-input status" value="{{order.status}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="status" bindinput="onDailyOrderInput" />
-            <view class="daily-line-delete" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" bindtap="removeDailyOrder">删</view>
+          <view wx:for="{{item.orders}}" wx:key="id" wx:for-item="order" wx:for-index="orderIndex" class="daily-swipe-shell">
+            <view class="daily-line-delete" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" bindtap="removeDailyOrder">删除</view>
+            <view
+              class="daily-order-line {{order.status === '作废' ? 'voided' : ''}} {{dailySwipeGroupIndex == groupIndex && dailySwipeOrderIndex == orderIndex ? 'swipe-open' : ''}}"
+              data-group-index="{{groupIndex}}"
+              data-order-index="{{orderIndex}}"
+              bindtouchstart="onDailyOrderTouchStart"
+              bindtouchend="onDailyOrderTouchEnd"
+            >
+              <view class="daily-order-index">{{order.displayIndex}}</view>
+              <input class="daily-cell-input time" value="{{order.time}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="time" bindinput="onDailyOrderInput" />
+              <input class="daily-cell-input" value="{{order.type}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="type" bindinput="onDailyOrderInput" />
+              <input class="daily-cell-input" value="{{order.vehicleType}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="vehicleType" bindinput="onDailyOrderInput" />
+              <input class="daily-cell-input route" value="{{order.route}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="route" bindinput="onDailyOrderInput" />
+              <input class="daily-cell-input price" value="{{order.price}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="price" bindinput="onDailyOrderInput" />
+              <input class="daily-cell-input status" value="{{order.status}}" data-group-index="{{groupIndex}}" data-order-index="{{orderIndex}}" data-key="status" bindinput="onDailyOrderInput" />
+            </view>
           </view>
         </view>
         <view class="tap-control daily-add-order" data-group-index="{{groupIndex}}" bindtap="addDailyOrder">添加订单</view>

@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .search-tabs {
   display: grid;

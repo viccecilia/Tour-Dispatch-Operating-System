@@ -105,28 +105,6 @@
       </view>
     </view>
 
-    <view wx:if="{{isOperationsManager}}" class="resource-entry ops-resource-entry" data-section="vehicles" bindtap="goInfo">
-      <view class="resource-entry-copy">
-        <view class="resource-entry-title">车辆 / 人员信息总览</view>
-        <view class="resource-entry-meta">车辆档案、司机资料、车检点检 PDF 统一查询下载</view>
-      </view>
-      <view class="resource-entry-stats">
-        <view>
-          <text class="resource-entry-stat-value">{{resourceSummary.vehicleTotal || 0}}</text>
-          <text class="resource-entry-stat-label">车辆</text>
-        </view>
-        <view>
-          <text class="resource-entry-stat-value">{{resourceSummary.driverTotal || 0}}</text>
-          <text class="resource-entry-stat-label">人员</text>
-        </view>
-        <view>
-          <text class="resource-entry-stat-value">{{resourceSummary.pdfTotal || 0}}</text>
-          <text class="resource-entry-stat-label">PDF</text>
-        </view>
-      </view>
-      <view class="resource-entry-action">进入</view>
-    </view>
-
     <view wx:if="{{isOperationsManager}}" class="panel ops-alert-panel">
       <view class="panel-header-lite">
         <view>
@@ -290,14 +268,29 @@
             </view>
             <scroll-view scroll-y class="resource-window-scroll">
               <view wx:for="{{resourceDriverRows}}" wx:key="id" class="resource-mini-row resource-driver-row {{expandedHomeDriverId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="toggleHomeResourceDriver">
-                <view class="resource-driver-main">
-                  <view class="row-title">{{item.title}}</view>
+                <view class="resource-driver-summary">
+                  <view class="resource-driver-head">
+                    <view class="row-title">{{item.title}}</view>
+                    <picker mode="selector" range="{{driverStatusLabels}}" value="{{item.statusIndex}}" data-resource-id="{{item.resourceId}}" data-driver-code="{{item.driverCode}}" data-phone="{{item.phone}}" data-title="{{item.title}}" bindchange="updateHomeDriverStatus" catchtap="noopTap">
+                      <view class="resource-driver-status {{item.statusValue}}">{{item.statusLabel}}</view>
+                    </picker>
+                  </view>
                   <view class="muted">{{item.meta}}</view>
-                </view>
-                <view class="resource-mini-side">
-                  <text wx:if="{{item.riskText}}" class="resource-risk {{item.riskTone}}">{{item.riskText}}</text>
-                  <text>体检 {{item.healthText || '-'}}</text>
-                  <text>驾照 {{item.licenseIso || '-'}}</text>
+                  <view class="resource-driver-facts">
+                    <view class="resource-driver-fact health {{item.riskTone}}">
+                      <view class="resource-driver-fact-label">
+                        <text>体检</text>
+                        <strong wx:if="{{item.riskText}}">{{item.riskText}}</strong>
+                      </view>
+                      <view class="resource-driver-fact-value">{{item.healthText || '-'}}</view>
+                    </view>
+                    <view class="resource-driver-fact license">
+                      <view class="resource-driver-fact-label">
+                        <text>驾照</text>
+                      </view>
+                      <view class="resource-driver-fact-value">{{item.licenseText || item.licenseIso || '-'}}</view>
+                    </view>
+                  </view>
                 </view>
                 <view wx:if="{{expandedHomeDriverId === item.id}}" class="home-driver-health-edit">
                   <view>
@@ -305,10 +298,10 @@
                     <strong>{{item.healthExamDate || '-'}}</strong>
                   </view>
                   <view class="home-driver-health-actions">
-                    <picker catchtap="noopTap" mode="date" value="{{item.healthExamDate}}" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" bindchange="updateHomeDriverHealthDate">
+                    <picker catchtap="noopTap" mode="date" value="{{item.healthExamDate}}" data-key="{{item.title || item.driverCode}}" data-title="{{item.title}}" bindchange="updateHomeDriverHealthDate">
                       <view class="health-edit-button">更新体检</view>
                     </picker>
-                    <view class="health-upload-button" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" catchtap="uploadHomeDriverHealthDocument">上传资料</view>
+                    <view class="health-upload-button" data-key="{{item.title || item.driverCode}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" catchtap="uploadHomeDriverHealthDocument">上传资料</view>
                   </view>
                 </view>
               </view>

@@ -67,17 +67,27 @@ export function DashboardPage() {
             {recentAssignments.length ? (
               <div className="space-y-3">
                 {recentAssignments.map((item) => (
-                  <div key={`${item.assignment_id || item.id}-${item.order_id}`} className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{item.oid || `ORDER-${item.order_id}`}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {item.start_time || "--:--"} {item.pickup_location || "-"} {"->"} {item.dropoff_location || "-"}
-                      </p>
+                  <div key={`${item.assignment_id || item.id}-${item.order_id}`} className="rounded-md border border-border px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{item.oid || `ORDER-${item.order_id}`}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.start_time || "--:--"} {item.pickup_location || "-"} {"->"} {item.dropoff_location || "-"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500">{item.driver_name || "-"}</span>
+                        <StatusBadge status={item.execution_status || item.status || item.dispatch_status} />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-slate-500">{item.driver_name || "-"}</span>
-                      <StatusBadge status={item.execution_status || item.status || item.dispatch_status} />
-                    </div>
+                    {(item.guest_name || item.guest_contact || item.agency_name) ? (
+                      <div className="mt-2 grid gap-1 text-xs text-slate-600 md:grid-cols-3">
+                        <div>客人：{item.guest_name || "-"}</div>
+                        <div>联系：{item.guest_contact || "-"}</div>
+                        <div>旅行社：{item.agency_name || "-"}</div>
+                      </div>
+                    ) : null}
+                    {item.remark ? <p className="mt-2 line-clamp-2 text-xs text-slate-500">{item.remark}</p> : null}
                   </div>
                 ))}
               </div>

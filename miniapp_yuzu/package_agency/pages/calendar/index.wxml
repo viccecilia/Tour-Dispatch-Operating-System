@@ -75,3 +75,5 @@
     <view wx:else class="empty">当天没有订单</view>
   </view>
 </view>
+
+<custom-tab-bar />

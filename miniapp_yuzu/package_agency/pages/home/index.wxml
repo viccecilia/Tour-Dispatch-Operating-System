@@ -177,3 +177,4 @@
   <view wx:if="{{message}}" class="message">{{message}}</view>
 </view>
 
+<custom-tab-bar wx:if="{{session}}" />

@@ -1,21 +1,22 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .guide-hero {
-  color: #0f3f3a;
-  background: linear-gradient(135deg, #e8faf5 0%, #dff4ee 100%);
-  box-shadow: 0 14rpx 30rpx rgba(18, 92, 82, 0.1);
+  color: #fff;
+  background: linear-gradient(135deg, #12384f 0%, #0f7f73 100%);
+  box-shadow: 0 20rpx 42rpx rgba(16, 35, 63, 0.13);
 }
 
 .guide-hero .hero-meta {
-  color: #315c56;
+  color: #fff;
   opacity: 1;
 }
 
 .map-wrap {
   position: relative;
   margin-top: 18rpx;
-  border-radius: 22rpx;
+  border-radius: 18rpx;
   overflow: hidden;
+  background: #f0efec;
 }
 
 .map {
@@ -28,7 +29,7 @@
   left: 20rpx;
   right: 20rpx;
   bottom: 20rpx;
-  border-radius: 18rpx;
+  border-radius: 16rpx;
   padding: 14rpx 16rpx;
   background: rgba(255, 255, 255, 0.92);
   color: var(--c-muted);
@@ -48,7 +49,7 @@
   display: grid;
   gap: 8rpx;
   margin-top: 18rpx;
-  border-radius: 20rpx;
+  border-radius: 16rpx;
   padding: 18rpx;
   background: var(--c-primary-soft);
   color: var(--c-primary-dark);
@@ -70,13 +71,17 @@
 .report-button {
   height: 60rpx;
   border: 0;
-  border-radius: 16rpx;
+  border-radius: 14rpx;
   margin: 0;
   padding: 0;
   background: var(--c-primary);
   color: #fff;
   font-size: 22rpx;
   font-weight: 900;
+}
+
+.tracking-search {
+  background: #f7fbff;
 }
 
 .report-button::after {

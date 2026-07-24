@@ -1,5 +1,28 @@
 @import "../../app.wxss";
 
+.mode-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.mode-button {
+  height: 60rpx;
+  margin: 0;
+  border-radius: 18rpx;
+  background: #eef2f7;
+  color: var(--c-muted);
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 60rpx;
+}
+
+.mode-button-active {
+  background: var(--c-primary);
+  color: #fff;
+}
+
 .button-row,
 .preview-action-row {
   display: grid;

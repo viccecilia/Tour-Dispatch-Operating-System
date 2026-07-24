@@ -122,6 +122,12 @@ def _query_calendar_items(filters: dict[str, str], start_date: date_cls, end_dat
             o.dropoff_location,
             o.order_type,
             o.vehicle_type,
+            o.agency_name,
+            o.guest_name,
+            o.guest_contact,
+            o.passenger_count,
+            o.luggage_count,
+            o.remark,
             o.dispatch_status,
             o.execution_status,
             o.settlement_status,
@@ -174,6 +180,12 @@ def _query_calendar_items(filters: dict[str, str], start_date: date_cls, end_dat
                 o.dropoff_location,
                 o.order_type,
                 o.vehicle_type,
+                o.agency_name,
+                o.guest_name,
+                o.guest_contact,
+                o.passenger_count,
+                o.luggage_count,
+                o.remark,
                 o.dispatch_status,
                 'unconfirmed' AS execution_status,
                 o.settlement_status,
@@ -221,7 +233,10 @@ def _list_vehicles() -> list[dict[str, Any]]:
                 SELECT id, plate_number, vehicle_type, seat_count, status
                 FROM vehicles
                 WHERE tenant_id = ?
-                  AND COALESCE(status, 'available') NOT IN ('retired', 'deleted')
+                  AND COALESCE(status, 'available') NOT IN (
+                    'retired', 'removed', 'decommissioned', 'deleted',
+                    '减车', '已减车', '出售', '已出售', '报废'
+                  )
                 ORDER BY plate_number ASC, id ASC
                 """
                 ,
@@ -306,6 +321,9 @@ def _is_unconfirmed_row(item: dict[str, Any]) -> bool:
 
 
 def _should_include_unassigned_orders(filters: dict[str, str]) -> bool:
+    include_unassigned = str(filters.get("include_unassigned") or "").strip().lower()
+    if include_unassigned in {"0", "false", "no"}:
+        return False
     if filters.get("vehicle_id") or filters.get("driver_id"):
         return False
     dispatch_status = filters.get("dispatch_status")
@@ -317,9 +335,7 @@ def _date_range(view: str, base_date: date_cls) -> tuple[date_cls, date_cls]:
         start = base_date - timedelta(days=base_date.weekday())
         return start, start + timedelta(days=6)
     if view == "month":
-        start = base_date.replace(day=1)
-        next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
-        return start, next_month - timedelta(days=1)
+        return base_date, base_date + timedelta(days=29)
     return base_date, base_date
 
 

@@ -2,10 +2,12 @@
 
 ## Roles
 
-- `admin`: can manage accounts and access finance.
-- `dispatcher`: can use dispatch operations, but cannot manage accounts or access finance.
-- `operations_manager`: can view vehicle, driver, maintenance, map, incidents, and operational reminders, but cannot manage accounts or access finance.
+- `admin`: can manage accounts, access finance, and use the carrier public order hall.
+- `dispatcher`: can use dispatch operations and execution-pool orders, but cannot access the public order hall, manage accounts, or access finance.
+- `operations_manager`: can view vehicle, driver, maintenance, map, incidents, and operational reminders, but cannot access the public order hall, manage accounts, or access finance.
 - `driver`: uses only the driver-side runtime and sees only their own work data.
+
+The detailed page-level matrix is maintained in `docs/MINIAPP_ROLE_PERMISSION_MATRIX.md`.
 
 ## Account Lifecycle
 
@@ -36,3 +38,7 @@ The following actions write to `audit_logs`:
 ## Finance Visibility
 
 Finance APIs and the React sidebar finance entry are admin-only. Dispatchers and operations managers cannot access finance data.
+
+## Public Order Hall Visibility
+
+The carrier public order hall is admin-only. Dispatchers and operations managers only see orders after they have entered their own company's execution pool.

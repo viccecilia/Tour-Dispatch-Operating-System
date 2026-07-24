@@ -125,6 +125,14 @@
             <text>车辆</text>
             <text>{{item.plate_number || item.vehicle_plate || '-'}}</text>
           </view>
+          <view wx:if="{{item.flightDisplay.show}}" class="flight-tip">
+            <view class="flight-tip-head">Flight {{item.flightDisplay.flightNumber}}</view>
+            <view class="flight-tip-line">{{item.flightDisplay.statusLine}}</view>
+            <view wx:if="{{item.flightDisplay.route}}" class="flight-tip-line">{{item.flightDisplay.route}}</view>
+            <view wx:if="{{item.flightDisplay.timingLine}}" class="flight-tip-line">{{item.flightDisplay.timingLine}}</view>
+            <view wx:if="{{item.flightDisplay.checkedLine}}" class="flight-tip-line">{{item.flightDisplay.checkedLine}}</view>
+            <view wx:if="{{item.flightDisplay.note}}" class="flight-tip-note">{{item.flightDisplay.note}}</view>
+          </view>
         </view>
 
         <view wx:else class="task-collapsed-route">{{item.routeText}}</view>

@@ -1,13 +1,13 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .guide-hero {
-  color: #0f3f3a;
-  background: linear-gradient(135deg, #e8faf5 0%, #dff4ee 100%);
-  box-shadow: 0 14rpx 30rpx rgba(18, 92, 82, 0.1);
+  color: #fff;
+  background: linear-gradient(135deg, #12384f 0%, #0f7f73 100%);
+  box-shadow: 0 20rpx 42rpx rgba(16, 35, 63, 0.13);
 }
 
 .guide-hero .hero-meta {
-  color: #315c56;
+  color: #fff;
   opacity: 1;
 }
 
@@ -36,7 +36,7 @@
   justify-content: center;
   border: 0;
   margin: 0;
-  background: var(--c-soft);
+  background: #f7fbff;
   color: var(--c-text);
   font-weight: 950;
 }
@@ -86,14 +86,14 @@
 .month-grid {
   margin-top: 10rpx;
   border: 1rpx solid var(--c-border);
-  border-radius: 22rpx;
+  border-radius: 18rpx;
   overflow: hidden;
   background: #fff;
 }
 
 .day-cell {
   position: relative;
-  min-height: 86rpx;
+  min-height: 88rpx;
   border-right: 1rpx solid var(--c-border);
   border-bottom: 1rpx solid var(--c-border);
   padding: 10rpx 8rpx;
@@ -110,7 +110,7 @@
 }
 
 .day-muted {
-  background: #f8fbff;
+  background: #f7fbff;
 }
 
 .day-muted .day-number {
@@ -183,6 +183,7 @@
   flex-wrap: wrap;
   gap: 10rpx 14rpx;
   margin-top: 18rpx;
+  justify-content: center;
 }
 
 .legend-item {
@@ -207,7 +208,7 @@
 
 .order-card {
   border: 1rpx solid var(--c-border);
-  border-radius: 20rpx;
+  border-radius: 16rpx;
   padding: 18rpx;
   background: #fff;
 }

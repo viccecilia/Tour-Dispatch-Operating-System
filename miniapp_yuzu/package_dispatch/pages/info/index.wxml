@@ -97,14 +97,15 @@
         <view class="info-row-head" data-id="{{item.id}}" bindtap="toggleDriverRow">
           <view>
             <view class="row-title-line">
-              <picker wx:if="{{section === 'drivers'}}" mode="selector" range="{{driverStatusLabels}}" value="{{item.statusIndex}}" data-resource-id="{{item.resourceId}}" data-driver-code="{{item.driverCode}}" data-phone="{{item.phone}}" data-title="{{item.title}}" bindchange="updateDriverStatus" catchtap="noop">
-                <view class="status-dot {{item.statusValue}}"></view>
-              </picker>
+              <view wx:if="{{section === 'drivers'}}" class="status-dot {{item.statusValue}}"></view>
               <view class="row-title">{{item.title}}</view>
             </view>
             <view class="muted">{{item.meta}}</view>
           </view>
           <view class="info-row-actions">
+            <picker wx:if="{{section === 'drivers'}}" mode="selector" range="{{driverStatusLabels}}" value="{{item.statusIndex}}" data-resource-id="{{item.resourceId}}" data-driver-code="{{item.driverCode}}" data-phone="{{item.phone}}" data-title="{{item.title}}" bindchange="updateDriverStatus" catchtap="noop">
+              <view class="status-pill {{item.statusValue}}">{{item.statusLabel}}</view>
+            </picker>
             <picker wx:if="{{section === 'vehicles'}}" mode="selector" range="{{vehicleStatusLabels}}" value="{{item.statusIndex}}" data-resource-id="{{item.resourceId}}" data-suffix="{{item.suffix}}" data-title="{{item.title}}" bindchange="updateVehicleStatus" catchtap="noop">
               <view class="status-pill {{item.statusValue}}">{{item.statusLabel}}</view>
             </picker>
@@ -120,10 +121,10 @@
             <strong>{{item.healthExamDate || '-'}}</strong>
           </view>
           <view class="driver-health-actions">
-            <picker mode="date" value="{{item.healthExamDate}}" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" bindchange="updateDriverHealthDate">
+            <picker mode="date" value="{{item.healthExamDate}}" data-key="{{item.title || item.driverCode}}" data-title="{{item.title}}" bindchange="updateDriverHealthDate">
               <view class="health-edit-button">更新体检</view>
             </picker>
-            <view class="health-upload-button" data-key="{{item.driverCode || item.title}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" bindtap="uploadDriverHealthDocument">上传资料</view>
+            <view class="health-upload-button" data-key="{{item.title || item.driverCode}}" data-title="{{item.title}}" data-date="{{item.healthExamDate}}" bindtap="uploadDriverHealthDocument">上传资料</view>
           </view>
         </view>
         <view wx:if="{{section === 'vehicles' && expandedDriverId === item.id}}" class="driver-health-edit">

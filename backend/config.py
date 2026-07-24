@@ -65,6 +65,22 @@ DEFAULT_ADMIN = {
 }
 
 
+def validate_security_config() -> None:
+    """Reject public/non-demo startup with repository default credentials."""
+    if DEMO_MODE:
+        return
+    unsafe: list[str] = []
+    if JWT_SECRET == "wx-dispatch-demo-secret-change-me":
+        unsafe.append("WX_DISPATCH_JWT_SECRET")
+    if DEFAULT_ADMIN["password"] == "admin123":
+        unsafe.append("WX_DISPATCH_ADMIN_PASSWORD")
+    if unsafe:
+        raise RuntimeError(f"unsafe_default_security_config:{','.join(unsafe)}")
+
+
+validate_security_config()
+
+
 def ensure_runtime_dirs() -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

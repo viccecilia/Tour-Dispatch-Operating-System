@@ -267,6 +267,14 @@ export function CompanyRegistrationPage() {
               <input className="field" value={draft.review_note || ""} onChange={(event) => setDraft({ ...draft, review_note: event.target.value })} />
             </Field>
           </div>
+          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3">
+            <div className="text-sm font-bold text-slate-950">初始登录账号</div>
+            <div className="mt-1 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
+              <div>入口：{draft.company_type === "agency" ? "旅行社门户/小程序" : "车公司后台"}</div>
+              <div>账号：{draft.company_type === "agency" ? `${normalizeCode(draft.company_code || "") || "公司代码"}${getCurrentTenantHint()}` : `${normalizeCode(draft.company_code || "") || "公司代码"}-联系电话`}</div>
+              <div>初始密码：{draft.company_type === "agency" ? "同门户代码，首次登录后修改" : "联系电话后 6 位，首次登录后修改"}</div>
+            </div>
+          </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-slate-500">{fieldErrors.length ? `还缺：${fieldErrors.join("、")}` : "必填资料已完成，可以保存草稿或提交审核。"}</div>
             <div className="flex flex-wrap gap-2">
@@ -316,7 +324,7 @@ export function CompanyRegistrationPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[1320px] text-left text-sm">
+            <table className="w-full min-w-[1480px] text-left text-sm">
               <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-3">类型</th>
@@ -325,6 +333,7 @@ export function CompanyRegistrationPage() {
                   <th className="px-3 py-3">法人 / 地址</th>
                   <th className="px-3 py-3">联系</th>
                   <th className="px-3 py-3">银行</th>
+                  <th className="px-3 py-3">初始登录</th>
                   <th className="px-3 py-3">状态</th>
                   <th className="px-3 py-3">文件</th>
                   <th className="px-3 py-3">操作</th>
@@ -332,9 +341,9 @@ export function CompanyRegistrationPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {registrations.isLoading ? (
-                  <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={9}>正在加载公司注册资料...</td></tr>
+                  <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={10}>正在加载公司注册资料...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={9}>{statusView === "archived" ? "暂无归档记录" : "暂无公司注册资料"}</td></tr>
+                  <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={10}>{statusView === "archived" ? "暂无归档记录" : "暂无公司注册资料"}</td></tr>
                 ) : rows.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50">
                     <td className="px-3 py-3">{row.company_type === "agency" ? "旅行社" : "车公司"}</td>
@@ -343,6 +352,10 @@ export function CompanyRegistrationPage() {
                     <td className="px-3 py-3"><div>{safeText(row.representative_name, "-")}</div><div className="text-xs text-slate-500">{safeText(row.address, "-")}</div></td>
                     <td className="px-3 py-3"><div>{safeText(row.contact_name, "-")}</div><div className="text-xs text-slate-500">{row.contact_phone || "-"}</div></td>
                     <td className="px-3 py-3"><div>{safeText(row.bank_name, "-")} {safeText(row.bank_branch, "")}</div><div className="text-xs text-slate-500">{safeText(row.bank_account_holder, "-")}</div></td>
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-slate-950">{row.initial_login_account || "-"}</div>
+                      <div className="text-xs text-slate-500">{row.initial_login_channel || "-"} · {row.initial_password_hint || "-"}</div>
+                    </td>
                     <td className="px-3 py-3">
                       {statusBadge(row.status)}
                       {validateReadableText(row).length ? <div className="mt-1 text-xs font-semibold text-red-500">疑似乱码</div> : null}
@@ -496,6 +509,10 @@ function normalizeRegistration(payload: Partial<CompanyRegistration>) {
 
 function normalizeCode(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+}
+
+function getCurrentTenantHint() {
+  return "1";
 }
 
 function normalizeRegistrationStatus(status?: string) {

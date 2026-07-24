@@ -6,6 +6,7 @@ const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
 const DEFAULT_BASE_URL = TRIAL_BASE_URL;
 const CLOUD_BASE_URL = TRIAL_BASE_URL;
+const REQUEST_TIMEOUT_MS = 15000;
 
 const API_CONFIG = {
   baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
@@ -115,10 +116,12 @@ function canAccess(feature, session = getSession()) {
 function request(path, options = {}) {
   const session = getSession();
   return new Promise((resolve, reject) => {
+    const requestPayload = options.data || {};
     wx.request({
       url: `${API_CONFIG.baseUrl}${path}`,
       method: options.method || 'GET',
-      data: options.data || {},
+      data: requestPayload,
+      timeout: options.timeout || REQUEST_TIMEOUT_MS,
       header: {
         'Content-Type': 'application/json',
         ...(session && session.token ? { Authorization: `Bearer ${session.token}` } : {})
@@ -129,7 +132,7 @@ function request(path, options = {}) {
             path,
             method: options.method || 'GET',
             statusCode: res.statusCode,
-            requestPayload: options.data || {},
+            requestPayload,
             responseBody: res.data
           });
           if (res.statusCode === 401 && path.indexOf('/login') < 0) {
@@ -145,10 +148,17 @@ function request(path, options = {}) {
         console.error('[dispatch-mobile api network failed]', {
           path,
           method: options.method || 'GET',
-          requestPayload: options.data || {},
+          baseUrl: API_CONFIG.baseUrl,
+          requestPayload,
           error: err
         });
-        reject(err);
+        const errMsg = err && err.errMsg ? String(err.errMsg) : '';
+        reject({
+          error: errMsg.indexOf('timeout') >= 0 ? 'network_timeout' : 'network_failed',
+          detail: errMsg,
+          path,
+          base_url: API_CONFIG.baseUrl
+        });
       }
     });
   });
@@ -220,7 +230,12 @@ module.exports = {
   loginPhone: (phone, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
   loginWechat: (wxCode, overrides = {}) => request('/api/dispatch-mobile/wechat-login', { method: 'POST', data: buildWechatLoginPayload(wxCode, overrides) }),
   registerPhone: (data) => request('/api/auth/register', { method: 'POST', data: { ...data, client_type: data.client_type || 'dispatch_miniapp' } }),
-  context: () => request('/api/dispatch-mobile/context'),
+  context: () => {
+    const session = getSession();
+    const dispatcher = session && session.dispatcher ? session.dispatcher : {};
+    const query = dispatcher.dispatcher_id ? `?dispatcher_id=${dispatcher.dispatcher_id}` : '';
+    return request(`/api/dispatch-mobile/context${query}`);
+  },
   dashboard: () => {
     const session = getSession();
     const dispatcher = session && session.dispatcher ? session.dispatcher : {};
@@ -228,7 +243,7 @@ module.exports = {
     return request(`/api/dispatch-mobile/dashboard${query}`);
   },
   sharedState: () => request('/api/dispatch-mobile/shared-state'),
-  parseText: (text) => request('/api/dispatch-mobile/parser/text', { method: 'POST', data: withDispatcher({ text, batch: true }) }),
+  parseText: (text, batch = true) => request('/api/dispatch-mobile/parser/text', { method: 'POST', data: withDispatcher({ text, batch }) }),
   drafts: () => request('/api/dispatch-mobile/drafts'),
   updateDraft: (id, data) => request(`/api/dispatch-mobile/drafts/${id}`, { method: 'PUT', data: withDispatcher(data) }),
   updateOrder: (id, data) => request(`/api/dispatch-mobile/orders/${id}/update`, { method: 'POST', data: withDispatcher(data) }),

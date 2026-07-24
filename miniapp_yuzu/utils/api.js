@@ -1,7 +1,9 @@
 const API_STORAGE_KEY = 'yuzu_api_base_url';
+const FORCE_LOCAL_KEY = 'yuzu_force_local_api';
 const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
 const DEFAULT_BASE_URL = TRIAL_BASE_URL;
+const REQUEST_TIMEOUT_MS = 15000;
 
 const API_CONFIG = {
   baseUrl: wx.getStorageSync(API_STORAGE_KEY) || DEFAULT_BASE_URL
@@ -29,15 +31,7 @@ function getRuntimeInfo() {
 }
 
 function syncEnvironmentBaseUrl() {
-  try {
-    const runtime = getRuntimeInfo();
-    if (runtime.platform === 'devtools') {
-      setBaseUrl(LOCAL_BASE_URL);
-      return;
-    }
-  } catch (err) {
-    // Keep cloud endpoint when runtime detection is not available.
-  }
+  wx.removeStorageSync(FORCE_LOCAL_KEY);
   setBaseUrl(TRIAL_BASE_URL);
 }
 
@@ -55,10 +49,12 @@ function request(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
   return new Promise((resolve, reject) => {
+    const requestPayload = options.data || {};
     wx.request({
       url: `${API_CONFIG.baseUrl}${path}`,
       method: options.method || 'GET',
-      data: options.data || {},
+      data: requestPayload,
+      timeout: options.timeout || REQUEST_TIMEOUT_MS,
       header: headers,
       success: (res) => {
         const payload = res.data || {};
@@ -67,11 +63,14 @@ function request(path, options = {}) {
             path,
             method: options.method || 'GET',
             statusCode: res.statusCode,
-            requestPayload: options.data || {},
+            requestPayload,
             responseBody: payload
           });
           reject(payload.error ? payload : { error: `request_failed_${res.statusCode}` });
           return;
+        }
+        if (path.indexOf('/login') >= 0) {
+          console.info('[yuzu api success]', { path, statusCode: res.statusCode, hasToken: !!payload.token });
         }
         resolve(payload);
       },
@@ -79,10 +78,17 @@ function request(path, options = {}) {
         console.error('[yuzu api network failed]', {
           path,
           method: options.method || 'GET',
-          requestPayload: options.data || {},
+          baseUrl: API_CONFIG.baseUrl,
+          requestPayload,
           error
         });
-        reject(error);
+        const errMsg = error && error.errMsg ? String(error.errMsg) : '';
+        reject({
+          error: errMsg.indexOf('timeout') >= 0 ? 'network_timeout' : 'network_failed',
+          detail: errMsg,
+          path,
+          base_url: API_CONFIG.baseUrl
+        });
       }
     });
   });

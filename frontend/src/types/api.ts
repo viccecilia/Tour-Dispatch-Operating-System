@@ -444,6 +444,7 @@ export type Driver = {
   language?: string;
   driver_code?: string;
   office?: string;
+  note?: string;
   driver_external_id?: string;
   license_number?: string;
   residence_status?: string;
@@ -513,6 +514,49 @@ export type ResourceDocument = {
   file_url?: string;
   download_url?: string;
   download_path?: string;
+};
+
+export type ResourceLibraryFile = {
+  name?: string;
+  category?: string;
+  date?: string;
+  size?: number;
+  size_label?: string;
+  file_key?: string;
+  download_path?: string;
+  download_url?: string;
+};
+
+export type ResourceLibraryVehicle = {
+  id?: string;
+  plate_number?: string;
+  suffix?: string;
+  chassis_number?: string;
+  model_code?: string;
+  vehicle_type?: string;
+  vehicle_inspection_due_date?: string;
+  shaken_date?: string;
+  three_month_inspection_date?: string;
+  annual_inspection_date?: string;
+  status?: string;
+  folder?: string;
+  file_count?: number;
+  categories?: string[];
+  docs?: ResourceLibraryFile[];
+};
+
+export type ResourceLibraryResponse = {
+  source?: string;
+  root_available?: boolean;
+  summary?: {
+    vehicles?: number;
+    drivers?: number;
+    pdf_files?: number;
+    categories?: number;
+  };
+  vehicles?: ResourceLibraryVehicle[];
+  drivers?: Array<Record<string, string>>;
+  categories?: string[];
 };
 
 export type VehicleInspectionRecord = {

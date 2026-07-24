@@ -8,6 +8,7 @@ const SAMPLE_TEXT = [
 
 Page({
   data: {
+    entryMode: 'batch',
     rawText: SAMPLE_TEXT,
     parsedOrders: [],
     pickupRows: [],
@@ -46,16 +47,30 @@ Page({
     this.setData({ rawText: SAMPLE_TEXT, parsedOrders: [], message: '' });
   },
 
+  switchEntryMode(e) {
+    const mode = e.currentTarget.dataset.mode || 'batch';
+    this.setData({
+      entryMode: mode,
+      message: mode === 'single' ? '单条模式已开启，解析后会生成 1 条可校对订单。' : ''
+    });
+  },
+
   parseOrders() {
     if (!this.data.rawText.trim()) {
       wx.showToast({ title: '请输入订单文本', icon: 'none' });
       return;
     }
     this.setData({ parseLoading: true, message: '' });
-    api.parseOrders(this.data.rawText, 'mixed_batch', true)
+    const singleMode = this.data.entryMode === 'single';
+    api.parseOrders(this.data.rawText, 'mixed_batch', !singleMode)
       .then((res) => {
         const parsedOrders = (res.orders || []).map((item, index) => this.decorateOrder(item, index));
-        this.applyParsedOrders(parsedOrders, `已解析 ${parsedOrders.length} 单，已按接机、送机、包车分类。`);
+        this.applyParsedOrders(
+          parsedOrders,
+          singleMode
+            ? '单条订单已解析，可直接在下方校对并入单。'
+            : `已解析 ${parsedOrders.length} 单，已按接机、送机、包车分类。`
+        );
       })
       .catch((err) => {
         this.setData({ parseLoading: false, message: `解析失败：${err.error || err.message || '请检查格式'}` });

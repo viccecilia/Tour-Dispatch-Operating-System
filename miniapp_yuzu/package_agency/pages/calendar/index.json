@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "旅行社日历"
+  "navigationBarTitleText": "旅行社日历",
+  "usingComponents": {
+    "custom-tab-bar": "/custom-tab-bar/index"
+  }
 }

@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .expense-hero {
   background: linear-gradient(135deg, #1748c7 0%, #246bfe 100%);

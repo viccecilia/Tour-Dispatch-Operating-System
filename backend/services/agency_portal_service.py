@@ -832,13 +832,15 @@ def withdraw_agency_order_from_hall(token: str, order_id: Any) -> dict[str, Any]
             FROM auction_listings
             WHERE order_id = ?
               AND seller_tenant_id = ?
-              AND status IN ('listed', 'bidding', 'claimed')
+              AND status IN ('listed', 'bidding', 'expired', 'cancelled', 'claimed')
             ORDER BY id DESC
             LIMIT 1
             """,
             (order_id_int, tenant_id),
         ).fetchone()
-        if listing and listing["status"] in ("listed", "bidding") and not listing["buyer_tenant_id"]:
+        if listing and listing["buyer_tenant_id"]:
+            raise ValueError("order_already_claimed_requires_carrier_confirmation")
+        if listing and listing["status"] in ("listed", "bidding", "expired", "cancelled"):
             conn.execute(
                 """
                 UPDATE auction_listings
@@ -850,17 +852,30 @@ def withdraw_agency_order_from_hall(token: str, order_id: Any) -> dict[str, Any]
             conn.execute(
                 """
                 UPDATE orders
-                SET dispatch_status = 'auction_cancelled',
-                    execution_status = 'unassigned',
+                SET dispatch_status = 'agency_cancelled',
+                    execution_status = 'cancelled',
+                    is_deleted = 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND tenant_id = ?
                 """,
                 (order_id_int, tenant_id),
             )
             conn.commit()
-            return {"success": True, "mode": "direct_withdraw", "order_id": order_id_int, "listing_id": listing["id"]}
-        if order["dispatch_status"] in ("unassigned", "auction_cancelled"):
-            return {"success": True, "mode": "nothing_to_withdraw", "order_id": order_id_int}
+            return {"success": True, "mode": "direct_cancel", "order_id": order_id_int, "listing_id": listing["id"]}
+        if order["dispatch_status"] in ("unassigned", "auction_cancelled", "auction_expired"):
+            conn.execute(
+                """
+                UPDATE orders
+                SET dispatch_status = 'agency_cancelled',
+                    execution_status = 'cancelled',
+                    is_deleted = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND tenant_id = ?
+                """,
+                (order_id_int, tenant_id),
+            )
+            conn.commit()
+            return {"success": True, "mode": "direct_cancel", "order_id": order_id_int}
     raise ValueError("order_already_claimed_requires_carrier_confirmation")
 
 

@@ -1,4 +1,5 @@
 import base64
+import json
 import math
 import re
 import uuid
@@ -75,6 +76,7 @@ WORKFLOW_LABELS = {
     "alcohol_test_in": "入库酒精测试",
     "roll_call_in": "点呼入库",
     "return_yard": "车辆入库 / 今日收工",
+    "daily_report": "司机日报",
 }
 
 
@@ -412,6 +414,11 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
     if not driver_id or not event_type:
         return {"success": False, "error": "invalid_workflow_event"}
     event_time = _normalize_event_time(payload.get("event_time"))
+    try:
+        attachments = _save_workflow_attachments(driver_id, event_type, payload)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+    note = _merge_workflow_note(payload.get("note"), attachments)
 
     assignment = None
     if assignment_id:
@@ -439,7 +446,7 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
                 _optional_float(payload.get("latitude")),
                 _optional_float(payload.get("longitude")),
                 payload.get("location_text"),
-                payload.get("note"),
+                note,
                 event_time,
             ),
         )
@@ -464,6 +471,65 @@ def submit_driver_workflow_event(payload: dict[str, Any]) -> dict[str, Any]:
         )
         conn.commit()
     return {"success": True, "event_id": event_id, "event_type": event_type, "label": WORKFLOW_LABELS.get(event_type, event_type)}
+
+
+def _save_workflow_attachments(driver_id: int, event_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_items = payload.get("attachments")
+    if raw_items is None:
+        raw_items = []
+    if isinstance(raw_items, dict):
+        raw_items = [raw_items]
+    if not isinstance(raw_items, list):
+        raise ValueError("invalid_workflow_attachments")
+
+    single_image = str(payload.get("image_base64") or "").strip()
+    if single_image:
+        raw_items.append({
+            "kind": payload.get("attachment_kind") or event_type,
+            "name": payload.get("file_name") or f"{event_type}.jpg",
+            "image_base64": single_image,
+        })
+
+    saved: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            raise ValueError("invalid_workflow_attachment")
+        image_data = str(item.get("image_base64") or "").strip()
+        if not image_data:
+            continue
+        suffix, raw = _decode_image_payload(image_data)
+        kind = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(item.get("kind") or event_type)).strip("_") or event_type
+        UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+        file_name = f"driver{driver_id}_workflow_{event_type}_{kind}_{index}_{uuid.uuid4().hex[:10]}.{suffix}"
+        file_path = UPLOAD_ROOT / file_name
+        file_path.write_bytes(raw)
+        saved.append({
+            "kind": kind,
+            "name": item.get("name") or file_name,
+            "file_name": file_name,
+            "file_url": f"/uploads/driver_evidence/{file_name}",
+        })
+    return saved
+
+
+def _merge_workflow_note(note: Any, attachments: list[dict[str, Any]]) -> str | None:
+    if not attachments:
+        return note
+    data: dict[str, Any]
+    if isinstance(note, dict):
+        data = dict(note)
+    else:
+        text = str(note or "").strip()
+        if text:
+            try:
+                parsed = json.loads(text)
+                data = parsed if isinstance(parsed, dict) else {"text": text}
+            except json.JSONDecodeError:
+                data = {"text": text}
+        else:
+            data = {}
+    data["attachments"] = attachments
+    return json.dumps(data, ensure_ascii=False)
 
 
 def list_driver_workflow_events(driver_id: Any, day: str | None = None) -> list[dict[str, Any]]:
@@ -1458,6 +1524,9 @@ SELECT
     a.status AS assignment_status,
     a.execution_status,
     a.assigned_at,
+    a.published_by_user_id,
+    a.published_by_name,
+    a.published_at,
     o.oid,
     o.order_date,
     o.end_date,
@@ -1477,6 +1546,23 @@ SELECT
     o.guest_contact,
     o.agency_name,
     o.remark,
+    o.flight_number,
+    o.flight_date,
+    o.flight_airline,
+    o.flight_origin,
+    o.flight_destination,
+    o.flight_terminal,
+    o.flight_gate,
+    o.flight_status,
+    o.flight_scheduled_departure,
+    o.flight_scheduled_arrival,
+    o.flight_estimated_departure,
+    o.flight_estimated_arrival,
+    o.flight_actual_departure,
+    o.flight_actual_arrival,
+    o.flight_provider,
+    o.flight_last_checked_at,
+    o.flight_manual_note,
     o.dispatch_status,
     o.settlement_status,
     d.name AS driver_name,

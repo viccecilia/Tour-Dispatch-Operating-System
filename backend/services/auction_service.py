@@ -1,22 +1,114 @@
+import logging
 from typing import Any
 
 from backend.db.database import get_connection
 from backend.services.auth_service import company_code_for_tenant
 from backend.services.flight_info_service import FLIGHT_INFO_FIELDS, ensure_flight_info_schema
+from backend.services.notification_service import create_notification
 from backend.services.order_number_service import actor_account_code, append_company_order_oid
 from backend.services.tenant_context import get_current_tenant_id
+
+logger = logging.getLogger(__name__)
 
 AUCTION_LISTING_COLUMNS = {
     "listing_code": "TEXT",
     "publish_round": "INTEGER NOT NULL DEFAULT 1",
     "current_bidder_tenant_id": "INTEGER",
+    "buyer_order_id": "INTEGER",
 }
+
+
+def _carrier_contact_select(prefix: str, tenant_expr: str) -> str:
+    return f"""
+            COALESCE(
+                (
+                    SELECT cr.contact_name
+                    FROM company_registrations cr
+                    WHERE cr.tenant_id = {tenant_expr}
+                      AND cr.company_type = 'carrier'
+                      AND COALESCE(cr.status, '') != 'archived'
+                    ORDER BY CASE WHEN cr.status = 'approved' THEN 0 ELSE 1 END, cr.updated_at DESC, cr.id DESC
+                    LIMIT 1
+                ),
+                (
+                    SELECT u.display_name
+                    FROM users u
+                    WHERE u.tenant_id = {tenant_expr}
+                      AND u.role = 'admin'
+                      AND COALESCE(u.is_active, 1) = 1
+                    ORDER BY u.id ASC
+                    LIMIT 1
+                )
+            ) AS {prefix}_contact_name,
+            COALESCE(
+                (
+                    SELECT cr.contact_phone
+                    FROM company_registrations cr
+                    WHERE cr.tenant_id = {tenant_expr}
+                      AND cr.company_type = 'carrier'
+                      AND COALESCE(cr.status, '') != 'archived'
+                    ORDER BY CASE WHEN cr.status = 'approved' THEN 0 ELSE 1 END, cr.updated_at DESC, cr.id DESC
+                    LIMIT 1
+                ),
+                (
+                    SELECT u.phone
+                    FROM users u
+                    WHERE u.tenant_id = {tenant_expr}
+                      AND u.role = 'admin'
+                      AND COALESCE(u.is_active, 1) = 1
+                    ORDER BY u.id ASC
+                    LIMIT 1
+                )
+            ) AS {prefix}_contact_phone,
+            (
+                SELECT cr.contact_email
+                FROM company_registrations cr
+                WHERE cr.tenant_id = {tenant_expr}
+                  AND cr.company_type = 'carrier'
+                  AND COALESCE(cr.status, '') != 'archived'
+                ORDER BY CASE WHEN cr.status = 'approved' THEN 0 ELSE 1 END, cr.updated_at DESC, cr.id DESC
+                LIMIT 1
+            ) AS {prefix}_contact_email
+    """
+
+
+def _ensure_carrier_contact_schema(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS company_registrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER,
+            company_type TEXT,
+            company_code TEXT,
+            company_name TEXT,
+            contact_name TEXT,
+            contact_phone TEXT,
+            contact_email TEXT,
+            status TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(company_registrations)").fetchall()}
+    for column, definition in {
+        "tenant_id": "INTEGER",
+        "company_type": "TEXT",
+        "company_code": "TEXT",
+        "company_name": "TEXT",
+        "contact_name": "TEXT",
+        "contact_phone": "TEXT",
+        "contact_email": "TEXT",
+        "status": "TEXT",
+        "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    }.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE company_registrations ADD COLUMN {column} {definition}")
 
 
 def list_auction_listings(status: str | None = "listed") -> list[dict[str, Any]]:
     ensure_flight_info_schema()
     sql = [
-        """
+        f"""
         SELECT
             l.*,
             CASE WHEN l.expires_at IS NOT NULL THEN CAST(ROUND((julianday(l.expires_at) - julianday(l.published_at)) * 24) AS INTEGER) END AS auction_duration_hours,
@@ -29,6 +121,8 @@ def list_auction_listings(status: str | None = "listed") -> list[dict[str, Any]]
             o.dropoff_location,
             o.order_type,
             o.vehicle_type,
+            o.guest_name,
+            o.guest_contact,
             o.passenger_count,
             o.luggage_count,
             o.flight_number,
@@ -65,7 +159,9 @@ def list_auction_listings(status: str | None = "listed") -> list[dict[str, Any]]
             seller.name AS seller_company_name,
             seller.slug AS seller_company_code,
             buyer.name AS buyer_company_name,
-            buyer.slug AS buyer_company_code
+            buyer.slug AS buyer_company_code,
+            {_carrier_contact_select("seller", "l.seller_tenant_id")},
+            {_carrier_contact_select("buyer", "l.buyer_tenant_id")}
         FROM auction_listings l
         JOIN orders o ON o.id = l.order_id
         LEFT JOIN tenants seller ON seller.id = l.seller_tenant_id
@@ -80,6 +176,7 @@ def list_auction_listings(status: str | None = "listed") -> list[dict[str, Any]]
     sql.append("ORDER BY l.published_at DESC, l.id DESC")
     with get_connection() as conn:
         ensure_auction_listing_schema(conn)
+        _ensure_carrier_contact_schema(conn)
         _expire_auction_listings(conn)
         return [_public_listing(dict(row)) for row in conn.execute(" ".join(sql), params).fetchall()]
 
@@ -236,9 +333,20 @@ def claim_auction_listing(listing_id: int | str, payload: dict[str, Any] | None 
         _expire_auction_listings(conn)
         listing = conn.execute(
             """
-            SELECT l.*, o.tenant_id AS order_tenant_id, o.oid, o.order_date
+            SELECT l.*,
+                   o.tenant_id AS order_tenant_id,
+                   o.oid,
+                   o.order_date,
+                   o.start_time,
+                   o.pickup_location,
+                   o.dropoff_location,
+                   o.order_type,
+                   o.vehicle_type,
+                   seller.name AS seller_company_name,
+                   seller.slug AS seller_company_code
             FROM auction_listings l
             JOIN orders o ON o.id = l.order_id
+            LEFT JOIN tenants seller ON seller.id = l.seller_tenant_id
             WHERE l.id = ?
             """,
             (listing_id_int,),
@@ -262,7 +370,9 @@ def claim_auction_listing(listing_id: int | str, payload: dict[str, Any] | None 
             "SELECT slug, name FROM tenants WHERE id = ?",
             (buyer_tenant_id,),
         ).fetchone()
-        buyer_code = _tenant_order_code(dict(buyer_tenant) if buyer_tenant else None, buyer_tenant_id)
+        buyer_tenant_dict = dict(buyer_tenant) if buyer_tenant else {}
+        listing_dict = dict(listing)
+        buyer_code = _tenant_order_code(buyer_tenant_dict if buyer_tenant_dict else None, buyer_tenant_id)
         serial = _next_buyer_order_serial(conn, buyer_tenant_id, listing["order_date"], buyer_code, listing_id_int)
         claimed_oid = _unique_claimed_oid(
             conn,
@@ -298,10 +408,94 @@ def claim_auction_listing(listing_id: int | str, payload: dict[str, Any] | None 
             """,
             (claimed_oid, listing["order_id"], listing["seller_tenant_id"]),
         )
+        buyer_order_id = _create_buyer_order_copy(conn, listing_id_int, buyer_tenant_id, claimed_oid, actor)
+        conn.execute(
+            """
+            UPDATE auction_listings
+            SET buyer_order_id = ?
+            WHERE id = ?
+            """,
+            (buyer_order_id, listing_id_int),
+        )
         conn.commit()
+    _notify_listing_claimed(
+        listing_dict,
+        buyer_tenant_dict,
+        buyer_tenant_id,
+        final_price,
+        claimed_oid,
+        listing_id_int,
+    )
     claimed = list_auction_listings("claimed")
     match = next((item for item in claimed if int(item["id"]) == listing_id_int), None)
     return match or {"id": listing_id_int, "status": "claimed", "buyer_tenant_id": buyer_tenant_id, "current_bid_jpy": final_price}
+
+
+def _notify_listing_claimed(
+    listing: dict[str, Any],
+    buyer_tenant: dict[str, Any],
+    buyer_tenant_id: int,
+    final_price: float,
+    claimed_oid: str,
+    listing_id: int,
+) -> None:
+    seller_tenant_id = _int_value(listing.get("seller_tenant_id"))
+    if seller_tenant_id <= 0 or buyer_tenant_id <= 0:
+        return
+    buyer_name = str(buyer_tenant.get("name") or buyer_tenant.get("slug") or "接单车公司").strip()
+    seller_oid = str(listing.get("oid") or f"listing-{listing_id}").strip()
+    route = _notice_route_text(listing)
+    schedule = " ".join(part for part in [str(listing.get("order_date") or "").strip(), str(listing.get("start_time") or "").strip()] if part)
+    price_text = _notice_money_text(final_price)
+    try:
+        create_notification({
+            "tenant_id": seller_tenant_id,
+            "notification_type": "auction_claimed",
+            "title": f"订单已被{buyer_name}一口价接单",
+            "body": f"{seller_oid} {schedule} {route}，成交价 {price_text}。订单已进入对方车公司，后续派车和执行状态会同步更新。",
+            "priority": "high",
+            "target_role": "admin",
+            "link": "/package_dispatch/pages/auction/index",
+            "source_type": "auction_claim",
+            "source_id": f"{listing_id}:seller",
+        })
+        create_notification({
+            "tenant_id": buyer_tenant_id,
+            "notification_type": "auction_claimed",
+            "title": "一口价接单成功",
+            "body": f"{claimed_oid} {schedule} {route}，成交价 {price_text}。订单已进入本公司订单池，请到派车页安排司机和车辆。",
+            "priority": "high",
+            "target_role": "admin",
+            "link": "/package_dispatch/pages/dispatch/index",
+            "source_type": "auction_claim",
+            "source_id": f"{listing_id}:buyer",
+        })
+    except Exception:
+        logger.exception("failed to create auction claim notifications for listing %s", listing_id)
+
+
+def _notice_route_text(item: dict[str, Any]) -> str:
+    pickup = str(item.get("pickup_location") or "").strip()
+    dropoff = str(item.get("dropoff_location") or "").strip()
+    if pickup and dropoff:
+        return f"{pickup} -> {dropoff}"
+    return pickup or dropoff or "路线未填写"
+
+
+def _notice_money_text(value: Any) -> str:
+    amount = _money(value)
+    if amount <= 0:
+        return "-"
+    if float(amount).is_integer():
+        return f"￥{int(amount):,}"
+    return f"￥{amount:,.0f}"
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def bid_auction_listing(listing_id: int | str, payload: dict[str, Any] | None = None, actor: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -566,6 +760,68 @@ def _buyer_tenant_id(payload: dict[str, Any], actor: dict[str, Any] | None) -> i
         return 0
 
 
+def _create_buyer_order_copy(conn, listing_id: int, buyer_tenant_id: int, claimed_oid: str, actor: dict[str, Any] | None) -> int:
+    existing = conn.execute(
+        """
+        SELECT buyer_order_id
+        FROM auction_listings
+        WHERE id = ?
+          AND buyer_order_id IS NOT NULL
+        """,
+        (listing_id,),
+    ).fetchone()
+    if existing and existing["buyer_order_id"]:
+        return int(existing["buyer_order_id"])
+
+    source = conn.execute(
+        """
+        SELECT o.*
+        FROM auction_listings l
+        JOIN orders o ON o.id = l.order_id
+        WHERE l.id = ?
+        """,
+        (listing_id,),
+    ).fetchone()
+    if not source:
+        raise ValueError("order_not_found")
+
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(orders)").fetchall()]
+    source_dict = dict(source)
+    copy_data = {
+        column: source_dict.get(column)
+        for column in columns
+        if column not in {"id", "created_at", "updated_at"}
+    }
+    actor_id = actor.get("id") if actor else None
+    actor_name = (actor.get("display_name") or actor.get("name") or actor.get("username")) if actor else None
+    copy_data.update(
+        {
+            "tenant_id": buyer_tenant_id,
+            "oid": _unique_claimed_oid(conn, f"{claimed_oid}-B"),
+            "dispatch_status": "unassigned",
+            "execution_status": "auction_claimed",
+            "created_by_dispatcher_id": actor_id,
+            "created_by_dispatcher": actor_name,
+            "created_by_dispatcher_code": actor_account_code(actor, "A1") if actor else None,
+            "updated_by_dispatcher_id": actor_id,
+            "updated_by_dispatcher": actor_name,
+            "updated_by_dispatcher_code": actor_account_code(actor, "A1") if actor else None,
+            "source_channel": "auction_claim",
+        }
+    )
+    valid_data = {key: value for key, value in copy_data.items() if key in columns}
+    insert_columns = list(valid_data.keys())
+    placeholders = ", ".join(["?"] * len(insert_columns))
+    cursor = conn.execute(
+        f"""
+        INSERT INTO orders ({", ".join(insert_columns)}, created_at, updated_at)
+        VALUES ({placeholders}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        [valid_data[column] for column in insert_columns],
+    )
+    return int(cursor.lastrowid)
+
+
 def _auction_duration_hours(value: Any) -> int:
     try:
         hours = int(value or 1)
@@ -669,6 +925,7 @@ def _public_listing(row: dict[str, Any]) -> dict[str, Any]:
         "owner_tenant_id": row.get("owner_tenant_id"),
         "seller_tenant_id": row.get("seller_tenant_id"),
         "buyer_tenant_id": row.get("buyer_tenant_id"),
+        "buyer_order_id": row.get("buyer_order_id"),
         "status": row.get("status"),
         "start_price_jpy": row.get("start_price_jpy"),
         "buyout_price_jpy": row.get("buyout_price_jpy"),
@@ -691,6 +948,8 @@ def _public_listing(row: dict[str, Any]) -> dict[str, Any]:
         "dropoff_location": row.get("dropoff_location"),
         "order_type": row.get("order_type"),
         "vehicle_type": row.get("vehicle_type"),
+        "guest_name": row.get("guest_name"),
+        "guest_contact": row.get("guest_contact"),
         "passenger_count": row.get("passenger_count"),
         "luggage_count": row.get("luggage_count"),
         **{field: row.get(field) for field in FLIGHT_INFO_FIELDS},
@@ -708,6 +967,16 @@ def _public_listing(row: dict[str, Any]) -> dict[str, Any]:
         "carrier_payment_confirmed_at": row.get("carrier_payment_confirmed_at"),
         "carrier_payment_confirmed_by": row.get("carrier_payment_confirmed_by"),
         "has_itinerary_pdf": bool(row.get("has_itinerary_pdf")),
+        "seller_company_name": row.get("seller_company_name"),
+        "seller_company_code": row.get("seller_company_code"),
+        "seller_contact_name": row.get("seller_contact_name"),
+        "seller_contact_phone": row.get("seller_contact_phone"),
+        "seller_contact_email": row.get("seller_contact_email"),
+        "buyer_company_name": row.get("buyer_company_name"),
+        "buyer_company_code": row.get("buyer_company_code"),
+        "buyer_contact_name": row.get("buyer_contact_name"),
+        "buyer_contact_phone": row.get("buyer_contact_phone"),
+        "buyer_contact_email": row.get("buyer_contact_email"),
     }
 
 
@@ -720,8 +989,9 @@ def get_auction_listing_detail(listing_id: int | str, actor: dict[str, Any] | No
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         ensure_auction_listing_schema(conn)
+        _ensure_carrier_contact_schema(conn)
         row = conn.execute(
-            """
+            f"""
             SELECT l.*,
                    o.*,
                    ag.contact_name AS agency_contact_name,
@@ -731,7 +1001,9 @@ def get_auction_listing_detail(listing_id: int | str, actor: dict[str, Any] | No
                    ag.contact_whatsapp AS agency_contact_whatsapp,
                    seller.name AS seller_company_name,
                    buyer.name AS buyer_company_name,
-                   buyer.slug AS buyer_company_code
+                   buyer.slug AS buyer_company_code,
+                   {_carrier_contact_select("seller", "l.seller_tenant_id")},
+                   {_carrier_contact_select("buyer", "l.buyer_tenant_id")}
             FROM auction_listings l
             JOIN orders o ON o.id = l.order_id
             LEFT JOIN agencies ag ON ag.id = o.agency_id AND ag.tenant_id = o.tenant_id

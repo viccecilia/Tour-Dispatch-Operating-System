@@ -72,8 +72,8 @@ export function DriverMonitorPage() {
       <section className="runtime-strip">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="runtime-eyebrow">LIVE DRIVER RUNTIME</p>
-            <h2 className="runtime-title">司机实时监控</h2>
+            <p className="runtime-eyebrow">LIVE TASK RUNTIME</p>
+            <h2 className="runtime-title">任务实时监控</h2>
             <p className="runtime-subtitle">接单、出库、到达、服务中、入库和位置上报自动刷新。</p>
           </div>
           <div className="grid min-w-[560px] grid-cols-4 gap-2">
@@ -144,7 +144,7 @@ export function DriverMonitorPage() {
                 <RadioTower size={20} />
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-950">司机执行监控</h2>
+                <h2 className="text-base font-bold text-slate-950">任务执行监控</h2>
                 <p className="mt-1 text-sm text-slate-500">查看当前任务、下一步状态、最新报备和最新位置。</p>
               </div>
             </div>

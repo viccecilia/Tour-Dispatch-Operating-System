@@ -95,7 +95,8 @@ def normalize_vehicle_type_code(*values: Any) -> str:
 
 def plate_short_code(value: Any) -> str:
     chars = re.sub(r"[^0-9A-Za-z]", "", str(value or ""))
-    return (chars[-4:] or "0000").upper()
+    short = (chars[-4:] or "0000").upper()
+    return str(int(short)) if short.isdigit() else short
 
 
 def driver_short_code(name: Any = None, explicit_code: Any = None) -> str:

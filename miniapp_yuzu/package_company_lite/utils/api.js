@@ -51,15 +51,6 @@ function isLocalBaseUrl() {
 }
 
 function syncEnvironmentBaseUrl() {
-  try {
-    const runtimeInfo = getRuntimeInfo();
-    if (runtimeInfo.platform === 'devtools') {
-      setBaseUrl(LOCAL_BASE_URL);
-      return;
-    }
-  } catch (err) {
-    // Keep the configured cloud endpoint when platform detection is unavailable.
-  }
   useCloudBaseUrl();
 }
 

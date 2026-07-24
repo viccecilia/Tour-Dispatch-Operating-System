@@ -63,3 +63,5 @@
   <button class="button-primary bottom-action" loading="{{saving}}" bindtap="saveProfile">保存设置</button>
   <view wx:if="{{message}}" class="message">{{message}}</view>
 </view>
+
+<custom-tab-bar />

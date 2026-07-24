@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .finance-page {
   padding-bottom: 150rpx;
@@ -136,4 +136,94 @@
 .message {
   color: #b91c1c;
   font-weight: 800;
+}
+
+/* Visual parity pass: stronger finance dashboard hierarchy. */
+.finance-page {
+  padding-left: 22rpx;
+  padding-right: 22rpx;
+}
+
+.finance-hero {
+  min-height: 170rpx;
+  padding: 32rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #153b92 0%, #2563eb 100%);
+}
+
+.finance-hero .hero-eyebrow {
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.finance-hero .hero-title {
+  margin-top: 8rpx;
+  font-size: 40rpx;
+  font-weight: 900;
+  line-height: 1.08;
+}
+
+.finance-hero .hero-desc {
+  margin-top: 12rpx;
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.panel {
+  border-radius: 24rpx;
+  border-color: #d5e0ee;
+  box-shadow: 0 16rpx 34rpx rgba(15, 23, 42, 0.08);
+}
+
+.finance-overview {
+  padding: 24rpx;
+}
+
+.panel-title {
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.finance-focus-grid {
+  gap: 14rpx;
+}
+
+.finance-focus,
+.metric {
+  min-height: 112rpx;
+  padding: 18rpx;
+  border-radius: 20rpx;
+}
+
+.finance-focus .label,
+.metric .label,
+.finance-focus text,
+.metric text {
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.amount,
+.finance-focus strong {
+  margin-top: 10rpx;
+  font-size: 36rpx;
+  font-weight: 900;
+}
+
+.finance-row {
+  padding: 18rpx;
+  border-radius: 18rpx;
+}
+
+.mini-btn {
+  min-height: 42rpx;
+  padding: 0 18rpx;
+  font-size: 21rpx;
+}
+
+.empty-state {
+  min-height: 118rpx;
+  border-radius: 22rpx;
+  font-size: 24rpx;
 }

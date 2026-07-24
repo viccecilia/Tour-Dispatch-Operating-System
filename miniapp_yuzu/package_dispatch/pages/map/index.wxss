@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .map-page {
   position: relative;
@@ -33,6 +33,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 18rpx;
+}
+
+.map-action-group {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
 }
 
 .title-with-help {
@@ -74,9 +81,11 @@
 
 .refresh-button {
   flex: 0 0 auto;
-  min-width: 92rpx;
-  max-width: 124rpx;
+  width: 108rpx;
+  min-width: 108rpx;
+  max-width: 108rpx;
   height: 48rpx;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -88,11 +97,37 @@
   font-size: 20rpx;
   font-weight: 900;
   line-height: 48rpx;
-  padding: 0 14rpx;
+  padding: 0;
 }
 
 .refresh-button::after {
   border: 0;
+}
+
+.locate-button {
+  flex: 0 0 auto;
+  width: 108rpx;
+  min-width: 108rpx;
+  max-width: 108rpx;
+  height: 48rpx;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 999rpx;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 18rpx;
+  font-weight: 900;
+  line-height: 48rpx;
+  padding: 0;
+}
+
+.locate-button::after {
+  border: 1rpx solid #99f6e4;
+  border-radius: 999rpx;
 }
 
 .help-mask {
@@ -319,6 +354,11 @@
   background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
 }
 
+.driver-task-panel .locate-button {
+  background: #ecfeff;
+  color: #0f766e;
+}
+
 .current-task-card {
   margin-top: 18rpx;
   padding: 18rpx;
@@ -346,6 +386,23 @@
   color: var(--c-text);
   font-size: 26rpx;
   font-weight: 900;
+}
+
+.route-nav-button {
+  width: 100%;
+  height: 60rpx;
+  line-height: 60rpx;
+  margin-top: 14rpx;
+  border-radius: 18rpx;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.route-nav-button::after {
+  border: 1rpx solid #99f6e4;
+  border-radius: 18rpx;
 }
 
 .node-action {

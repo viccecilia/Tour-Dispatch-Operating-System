@@ -20,8 +20,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setLoading(true);
     setError("");
     try {
-      const loginAccount = normalizeLoginAccount(account);
-      const result = await api.loginPhone(loginAccount, password);
+      const result = await api.loginPhone(normalizeLoginAccount(account), password);
       setAuthToken(result.token);
       if (result.user.must_change_password) {
         setPendingUser(result.user);
@@ -31,7 +30,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
       }
       onLogin(result.user);
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "登录失败，请检查账号密码。");
+      setError(exc instanceof Error ? exc.message : "登录失败，请检查账号或密码。");
     } finally {
       setLoading(false);
     }
@@ -42,7 +41,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setLoading(true);
     setError("");
     try {
-      if (newPassword.length < 6) throw new Error("新密码至少 6 位。");
+      if (newPassword.length < 6) throw new Error("新密码至少需要 6 位。");
       if (newPassword !== confirmPassword) throw new Error("两次输入的新密码不一致。");
       const result = await api.changePassword(oldPassword, newPassword);
       onLogin(result.user);
@@ -59,16 +58,26 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
         <form className="grid gap-4" onSubmit={changePassword}>
           <label className="grid gap-1 text-sm font-semibold text-slate-600">
             新密码
-            <input className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            <input
+              className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary"
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+            />
           </label>
           <label className="grid gap-1 text-sm font-semibold text-slate-600">
-            再输入一次
-            <input className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            确认新密码
+            <input
+              className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
           </label>
           {error ? <div className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</div> : null}
           <Button type="submit" className="h-12" disabled={loading}>
             <KeyRound size={17} />
-            {loading ? "保存中..." : "修改密码并进入"}
+            {loading ? "保存中..." : "保存新密码并进入"}
           </Button>
         </form>
       </Shell>
@@ -80,17 +89,27 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
       <form className="grid gap-4" onSubmit={submit}>
         <label className="grid gap-1 text-sm font-semibold text-slate-600">
           公司账号
-          <input className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary" value={account} onChange={(event) => setAccount(event.target.value)} placeholder="SKR-08070010000" />
+          <input
+            className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary"
+            value={account}
+            onChange={(event) => setAccount(event.target.value)}
+            placeholder="0667109861"
+          />
         </label>
         <label className="grid gap-1 text-sm font-semibold text-slate-600">
           密码
-          <input className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <input
+            className="h-12 rounded-md border border-border px-3 text-base outline-none focus:border-primary"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
         </label>
         {error ? <div className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</div> : null}
         <Button type="submit" className="h-12" disabled={loading}>
           {loading ? "登录中..." : "登录"}
         </Button>
-        <p className="text-xs text-slate-500">账号格式为公司代码-手机号数字，例如 SKR-08070010000。初始密码为手机号后 6 位，Web 首次登录后必须修改。</p>
+        <p className="text-xs text-slate-500">账号统一使用手机号数字登录。初始密码为手机号后 6 位，Web 首次登录后必须修改。</p>
       </form>
     </Shell>
   );
@@ -116,12 +135,14 @@ function Shell({ title, subtitle, children }: { title: string; subtitle: string;
 }
 
 function normalizeLoginAccount(value: string) {
-  const text = value.trim();
-  if (!text || text.includes("-")) return text;
-  if (/^\+?[\d\s-]{6,}$/.test(text)) return `DAITORA-${text.replace(/[^\d]/g, "")}`;
-  return text;
+  return value.trim();
 }
 
 function roleLabel(role: string) {
-  return { admin: "管理员", dispatcher: "调度", operations_manager: "运行管理", driver: "司机" }[role] || role;
+  return {
+    admin: "管理员",
+    dispatcher: "调度",
+    operations_manager: "运行管理",
+    driver: "司机",
+  }[role] || role;
 }

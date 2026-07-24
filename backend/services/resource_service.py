@@ -15,6 +15,7 @@ DRIVER_FIELDS = [
     "driver_code",
     "driver_language",
     "office",
+    "note",
     "driver_external_id",
     "license_number",
     "residence_status",
@@ -75,6 +76,7 @@ def _normalize_vehicle_status(status: Any) -> str:
 RESOURCE_COLUMNS = {
     "drivers": {
         "driver_status": "TEXT",
+        "note": "TEXT",
         "license_due_date": "TEXT",
         "health_check_due_date": "TEXT",
         "license_file_url": "TEXT",
@@ -113,7 +115,7 @@ def list_drivers(status: str | None = None, tenant_id: int | None | object = _DE
     sql = [
         """
         SELECT d.id, d.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
-               d.name, d.phone, d.status, d.driver_status, d.driver_code, d.driver_language, d.office,
+               d.name, d.phone, d.status, d.driver_status, d.driver_code, d.driver_language, d.office, d.note,
                d.driver_external_id, d.license_number, d.residence_status, d.residence_due_date,
                health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
@@ -147,12 +149,12 @@ def create_driver(payload: dict[str, Any], tenant_id: int | None = None) -> dict
         cursor = conn.execute(
             """
             INSERT INTO drivers (
-                tenant_id, name, phone, status, driver_status, driver_code, driver_language, office,
+                tenant_id, name, phone, status, driver_status, driver_code, driver_language, office, note,
                 driver_external_id, license_number, residence_status, residence_due_date,
                 health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                 license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 tenant_id or get_current_tenant_id(),
@@ -163,6 +165,7 @@ def create_driver(payload: dict[str, Any], tenant_id: int | None = None) -> dict
                 data.get("driver_code"),
                 data.get("driver_language"),
                 data.get("office"),
+                data.get("note"),
                 data.get("driver_external_id"),
                 data.get("license_number"),
                 data.get("residence_status"),
@@ -194,7 +197,7 @@ def get_driver(driver_id: str, tenant_id: int | None = None) -> Optional[dict[st
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, tenant_id, name, phone, status, driver_status, driver_code, driver_language, office,
+            SELECT id, tenant_id, name, phone, status, driver_status, driver_code, driver_language, office, note,
                    driver_external_id, license_number, residence_status, residence_due_date,
                    health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                    license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
@@ -272,6 +275,8 @@ def list_vehicles(status: str | None = None, tenant_id: int | None | object = _D
     if status:
         sql.append("AND v.status = ?")
         params.append(status)
+    else:
+        sql.append("AND COALESCE(v.status, '') NOT IN ('retired', 'removed', 'decommissioned')")
     sql.append("ORDER BY t.name, CASE v.status WHEN 'available' THEN 0 WHEN 'maintenance' THEN 1 ELSE 2 END, v.id")
     with get_connection() as conn:
         return [_with_resource_alert(dict(row), "vehicle") for row in conn.execute(" ".join(sql), params).fetchall()]

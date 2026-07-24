@@ -10,7 +10,22 @@ function setSelectedPort(port) {
 }
 
 function getSession() {
-  return wx.getStorageSync(SESSION_KEY) || null;
+  const current = wx.getStorageSync(SESSION_KEY);
+  const selectedPort = getSelectedPort() || (current && current.port) || '';
+  const agency = wx.getStorageSync('tourflow_agency_session');
+  if ((selectedPort === 'agency' || !current) && agency && agency.token) {
+    return { ...agency, port: 'agency' };
+  }
+  const baseUrl = wx.getStorageSync('wx_dispatch_api_base_url') || 'https://api-trial.taxi-airport.jp';
+  const dispatch = wx.getStorageSync(`dispatcher_session:${baseUrl}`) || wx.getStorageSync('dispatcher_session');
+  if ((selectedPort === 'dispatch' || !current) && dispatch && dispatch.token) {
+    return { ...dispatch, port: 'dispatch' };
+  }
+  if (selectedPort && current && current.port && current.port !== selectedPort) {
+    return null;
+  }
+  if (current) return current;
+  return null;
 }
 
 function setSession(session) {
@@ -28,7 +43,7 @@ function getRole(session = getSession()) {
   }
   const dispatcher = session.dispatcher || {};
   const user = session.user || {};
-  return session.role || user.role || dispatcher.dispatcher_role || '';
+  return user.role || dispatcher.dispatcher_role || session.role || '';
 }
 
 module.exports = {

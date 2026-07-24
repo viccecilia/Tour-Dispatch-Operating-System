@@ -1,7 +1,9 @@
 const api = require('../../utils/api');
 
 const LOCATION_CACHE_KEY = 'dispatch_driver_location_cache';
+const LOCATION_DENIED_CACHE_KEY = 'dispatch_driver_location_denied_cache';
 const LOCATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const LOCATION_DENIED_TTL_MS = 60 * 60 * 1000;
 
 Page({
   data: {
@@ -16,6 +18,7 @@ Page({
     filteredDrivers: [],
     filteredOrders: [],
     markers: [],
+    circles: [],
     latitude: 34.6937,
     longitude: 135.5023,
     scale: 11,
@@ -82,6 +85,7 @@ Page({
         locations,
         assignments,
         markers,
+        circles: [],
         latitude: first ? first.latitude : this.data.latitude,
         longitude: first ? first.longitude : this.data.longitude,
         selected: null
@@ -112,6 +116,7 @@ Page({
         filteredOrders: assignments,
         selected: null
       });
+      this.ensureDriverLocationMarker();
     });
   },
 
@@ -184,6 +189,63 @@ Page({
           display: 'BYCLICK'
         }
       }));
+  },
+
+  ensureDriverLocationMarker() {
+    const cached = this.getCachedLocation();
+    if (cached) {
+      this.applyDriverLocationMarker(cached);
+      return;
+    }
+    if (this.getDeniedLocationCache()) return;
+    wx.getLocation({
+      type: 'gcj02',
+      success: (res) => {
+        const location = { latitude: res.latitude, longitude: res.longitude };
+        this.setCachedLocation(location);
+        this.applyDriverLocationMarker(location);
+      },
+      fail: () => {
+        this.setDeniedLocationCache();
+      }
+    });
+  },
+
+  applyDriverLocationMarker(location) {
+    if (!location || location.latitude == null || location.longitude == null) return;
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
+    this.setData({
+      latitude,
+      longitude,
+      scale: 14,
+      markers: [{
+        id: 1,
+        latitude,
+        longitude,
+        title: '我的位置',
+        width: 28,
+        height: 28,
+        callout: {
+          content: '我的位置',
+          color: '#0f172a',
+          fontSize: 12,
+          borderRadius: 8,
+          bgColor: '#ffffff',
+          padding: 8,
+          display: 'ALWAYS'
+        }
+      }],
+      circles: [{
+        latitude,
+        longitude,
+        radius: 80,
+        color: '#14b8a655',
+        fillColor: '#14b8a61f',
+        strokeWidth: 1
+      }]
+    });
   },
 
   onSearchInput(e) {
@@ -320,6 +382,24 @@ Page({
       wx.setStorageSync(LOCATION_CACHE_KEY, { ...location, created_at: Date.now() });
     } catch (err) {
       console.warn('[driver location cache failed]', err);
+    }
+  },
+
+  getDeniedLocationCache() {
+    try {
+      const cached = wx.getStorageSync(LOCATION_DENIED_CACHE_KEY);
+      const createdAt = Number(cached && cached.created_at || 0);
+      return Boolean(createdAt && Date.now() - createdAt <= LOCATION_DENIED_TTL_MS);
+    } catch (err) {
+      return false;
+    }
+  },
+
+  setDeniedLocationCache() {
+    try {
+      wx.setStorageSync(LOCATION_DENIED_CACHE_KEY, { created_at: Date.now() });
+    } catch (err) {
+      console.warn('[driver location denied cache failed]', err);
     }
   },
 

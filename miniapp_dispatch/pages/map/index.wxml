@@ -3,7 +3,10 @@
     class="fleet-map"
     latitude="{{latitude}}"
     longitude="{{longitude}}"
+    markers="{{markers}}"
+    circles="{{circles}}"
     scale="{{scale}}"
+    show-location="{{true}}"
   ></map>
 
   <view class="map-top driver-task-panel">
@@ -70,6 +73,7 @@
     longitude="{{longitude}}"
     markers="{{markers}}"
     scale="{{scale}}"
+    show-location="{{true}}"
     bindmarkertap="onMarkerTap"
   ></map>
 

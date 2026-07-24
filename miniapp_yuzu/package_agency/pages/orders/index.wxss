@@ -1,4 +1,4 @@
-@import "../../app.wxss";
+@import "../../../app.wxss";
 
 .button-row,
 .preview-action-row {
@@ -21,10 +21,23 @@
   font-size: 24rpx;
 }
 
+.button-row .button-primary,
+.preview-action-row .button-primary {
+  background: var(--c-primary);
+}
+
+.button-row .button-secondary,
+.preview-action-row .button-secondary {
+  background: var(--c-primary-soft);
+  color: var(--c-primary-dark);
+}
+
 .sample-button {
-  width: 100%;
+  width: 52%;
   height: 58rpx;
   margin-top: 12rpx;
+  margin-left: auto;
+  margin-right: auto;
   border-radius: 18rpx;
   background: #eefdfb;
   color: var(--c-primary-dark);
@@ -49,8 +62,8 @@
 .summary-card {
   min-width: 0;
   padding: 14rpx;
-  border-radius: 18rpx;
-  background: #ffffff;
+  border-radius: 16rpx;
+  background: #f7fbff;
   border: 1rpx solid var(--c-border);
 }
 
@@ -72,7 +85,7 @@
 .action-panel {
   margin: 12rpx 0;
   padding: 14rpx;
-  border-radius: 20rpx;
+  border-radius: 18rpx;
   background: #ffffff;
   border: 1rpx solid var(--c-border);
 }
@@ -90,6 +103,16 @@
 .result-panel {
   margin-top: 14rpx;
   padding: 18rpx;
+}
+
+.page > .panel:first-of-type {
+  padding: 22rpx;
+}
+
+.page > .panel:first-of-type .textarea {
+  min-height: 300rpx;
+  border-radius: 16rpx;
+  background: #f7fbff;
 }
 
 .section-head {
@@ -117,7 +140,7 @@
   width: 100%;
   margin-top: 12rpx;
   border: 1rpx solid var(--c-border);
-  border-radius: 18rpx;
+  border-radius: 16rpx;
   background: #fff;
   box-sizing: border-box;
 }
@@ -137,7 +160,7 @@
 
 .parsed-order-header {
   min-height: 54rpx;
-  background: #f8fafc;
+  background: #f7fbff;
   color: var(--c-muted);
   font-size: 20rpx;
   font-weight: 900;

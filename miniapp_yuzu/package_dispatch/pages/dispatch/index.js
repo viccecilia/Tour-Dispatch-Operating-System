@@ -10,21 +10,6 @@ const DAILY_STORAGE_KEY = 'dispatch_daily_assignment_draft';
 const DAILY_PUBLISHED_KEY = 'dispatch_daily_assignment_published';
 const DAILY_CONFIRM_QUEUE_KEY = 'dispatch_daily_driver_confirm_queue';
 const YUZU_DEV_TENANT_ID = 529;
-const HIDDEN_DRIVER_NAMES = [
-  '刘明海',
-  '劉明海',
-  '刘晟',
-  '劉晟',
-  '王爽',
-  '楊増福',
-  '滝澤雅禾',
-  '富塚紀子',
-  '陳鈴',
-  '唐洋洲',
-  '谷口張延瑾',
-  '谷口延瑾',
-  '福田弘一'
-];
 const DAILY_EXAMPLE_TEXT = `林泽群 3893
 1.31 10:00 京都单送关西酒店 3代 绿800
 1.31 12:30 关西接机大阪 3代 绿470
@@ -63,33 +48,21 @@ const DAILY_DRIVER_ALIAS_MAP = {
   吕云龙: '呂雲龍',
   呂云龍: '呂雲龍',
   王启超: '王啓超',
+  林泽群: '林澤群',
   万强: '万強',
   白石贤志: '白石賢志',
   先山: '先山武志'
 };
 
-function normalizeHiddenDriverName(value) {
-  return String(value || '').replace(/[\s\u3000()（）·・]/g, '');
-}
-
-function isHiddenDispatchDriver(driver) {
-  const text = [
-    driver && driver.name,
-    driver && driver.driver_name,
-    driver && driver.display_name,
-    driver && driver.title,
-    driver && driver['運転手名']
-  ].filter(Boolean).join('');
-  const normalized = normalizeHiddenDriverName(text);
-  if (!normalized) return false;
-  return HIDDEN_DRIVER_NAMES.some((name) => {
-    const target = normalizeHiddenDriverName(name);
-    return normalized === target || normalized.indexOf(target) >= 0 || target.indexOf(normalized) >= 0;
-  });
-}
-
 function pad2(value) {
   return String(value).padStart(2, '0');
+}
+
+function stripDailyOrdinal(value) {
+  return String(value || '')
+    .replace(/^\s*(?:\d+\uFE0F?\u20E3|[①-⑳❶-❿])\s*/, '')
+    .replace(/^\s*\d+[、)）]\s*/, '')
+    .trim();
 }
 
 function plateShortCode(value) {
@@ -117,9 +90,13 @@ function normalizeDailyDate(raw) {
 
 function normalizeDailyTime(raw) {
   if (!raw) return '';
-  const match = String(raw).match(/(\d{1,2})[:：](\d{2})/);
+  const match = String(raw).trim().match(/(\d{1,2})[:：](\d{2})\s*(am|pm)?/i);
   if (!match) return '';
-  return `${pad2(match[1])}:${match[2]}`;
+  let hour = Number(match[1]);
+  const meridiem = String(match[3] || '').toLowerCase();
+  if (meridiem === 'pm' && hour < 12) hour += 12;
+  if (meridiem === 'am' && hour === 12) hour = 0;
+  return `${pad2(hour)}:${match[2]}`;
 }
 
 function detectDailyType(text) {
@@ -156,9 +133,9 @@ function detectDailyPrice(text) {
 }
 
 function cleanupDailyRoute(text) {
-  let route = text;
+  let route = stripDailyOrdinal(text);
   route = route.replace(/\d{1,2}[./-]\d{1,2}/g, '');
-  route = route.replace(/\d{1,2}[:：]\d{2}/g, '');
+  route = route.replace(/\d{1,2}[:：]\d{2}\s*(?:am|pm)?/gi, '');
   route = route.replace(/司机收\s*\d{3,6}\s*日?元?/g, '');
   route = route.replace(/绿牌?\s*[（(]?\s*\d{3,6}(?:\+\d{3,6})?(?:\s*[×x*]\s*\d+|\s*[*])?\s*[）)]?/g, '');
   route = route.replace(/[（(]\s*\d{3,6}(?:\+\d{3,6})?(?:\s*[×x*]\s*\d+|\s*[*])?\s*[）)]/g, '');
@@ -174,32 +151,58 @@ function cleanupDailyRoute(text) {
 }
 
 function parseDailyOrderLine(line) {
-  const dateMatch = line.match(/\d{1,2}[./-]\d{1,2}/);
-  const timeMatch = line.match(/\d{1,2}[:：]\d{2}/);
+  const normalizedLine = stripDailyOrdinal(line);
+  const dateMatch = normalizedLine.match(/\d{1,2}[./-]\d{1,2}/);
+  const timeMatch = normalizedLine.match(/\d{1,2}[:：]\d{2}\s*(?:am|pm)?/i);
   return {
     id: buildDailyId('order'),
     date: normalizeDailyDate(dateMatch ? dateMatch[0] : ''),
     time: normalizeDailyTime(timeMatch ? timeMatch[0] : ''),
-    type: detectDailyType(line),
-    vehicleType: detectDailyVehicle(line),
-    route: cleanupDailyRoute(line),
-    price: detectDailyPrice(line),
-    status: /取消|作废/.test(line) ? '作废' : '待发布',
-    remark: line.trim()
+    type: detectDailyType(normalizedLine),
+    vehicleType: detectDailyVehicle(normalizedLine),
+    route: cleanupDailyRoute(normalizedLine),
+    price: detectDailyPrice(normalizedLine),
+    status: /取消|作废/.test(normalizedLine) ? '作废' : '待发布',
+    remark: normalizedLine
   };
 }
 
 function parseDailyDriverHeader(line) {
-  const trimmed = line.trim();
-  const codeMatch = trimmed.match(/([A-Za-z]?\d{3,4})\s*$/);
+  const trimmed = stripDailyOrdinal(line);
+  const dateMatch = trimmed.match(/^\s*(\d{1,2}[./-]\d{1,2})\s*/);
+  const serviceDate = normalizeDailyDate(dateMatch ? dateMatch[1] : '');
+  let body = dateMatch ? trimmed.slice(dateMatch[0].length).trim() : trimmed;
+  const officeMatch = body.match(/\s*[（(]([^）)]*)[）)]\s*$/);
+  const officeNote = officeMatch ? officeMatch[1].trim() : '';
+  if (officeMatch) body = body.slice(0, officeMatch.index).trim();
+  const codeMatch = body.match(/([A-Za-z]?\d{3,4})\s*$/);
   const vehicleCode = codeMatch ? codeMatch[1] : '';
-  const driverName = vehicleCode ? trimmed.slice(0, trimmed.length - vehicleCode.length).replace(/[-－—–·\s]+$/g, '').trim() : trimmed;
+  const driverName = vehicleCode ? body.slice(0, body.length - vehicleCode.length).replace(/[-－—–·\s]+$/g, '').trim() : body;
   return {
     id: buildDailyId('driver'),
     driverName: driverName || '未命名司机',
     vehicleCode,
+    serviceDate,
+    officeNote,
     orders: []
   };
+}
+
+function looksLikeDailyDriverHeader(line, nextLine) {
+  const text = stripDailyOrdinal(line);
+  if (!text || /\d{1,2}[:：]\d{2}/.test(text)) return false;
+  if (/追加|补充|備考|备注|說明|说明|注意|待定|有合适|在群/.test(text)) return false;
+  const withoutOffice = text.replace(/\s*[（(][^）)]*[）)]\s*$/, '').trim();
+  const withoutDate = withoutOffice.replace(/^\s*\d{1,2}[./-]\d{1,2}\s*/, '').trim();
+  if (/^.+?[A-Za-z]?\d{3,4}$/.test(withoutDate) && !DAILY_ORDER_KEYWORDS.some((key) => withoutDate.indexOf(key) !== -1)) {
+    return true;
+  }
+  const next = stripDailyOrdinal(nextLine);
+  return !!next &&
+    text.length <= 12 &&
+    !/\s/.test(text) &&
+    !hasDailyOrderSignal(text) &&
+    hasDailyOrderSignal(next);
 }
 
 function splitDailyDriverVehicle(value) {
@@ -224,12 +227,14 @@ function splitDailyDriverVehicle(value) {
 
 function normalizeDailyGroups(groups) {
   return (groups || []).map((group) => {
-    const orders = (group.orders || []).map((order, index) => ({
+    const sourceOrders = group.orders || [];
+    const serviceDate = group.serviceDate || ((sourceOrders.find((order) => order.date) || {}).date) || '';
+    const orders = sourceOrders.map((order, index) => ({
       ...order,
       id: order.id || buildDailyId('order'),
+      date: order.date || serviceDate,
       displayIndex: index + 1
     }));
-    const serviceDate = group.serviceDate || ((orders.find((order) => order.date) || {}).date) || '';
     const driverName = group.driverName || '未命名司机';
     const vehicleCode = group.vehicleCode || '';
     return {
@@ -265,7 +270,13 @@ function blankDailyOverview() {
     assignedDrivers: 0,
     assignedOrders: 0,
     idleDrivers: 0,
+    driverTotal: 0,
     idleVehicles: 0,
+    vehicleTotal: 0,
+    idleTenSeat: 0,
+    tenSeatTotal: 0,
+    idleAlphard: 0,
+    alphardTotal: 0,
     missingDriverGroups: [],
     missingVehicleGroups: [],
     driverNav: []
@@ -273,16 +284,30 @@ function blankDailyOverview() {
 }
 
 function parseDailyGroups(sourceText) {
-  const lines = String(sourceText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = String(sourceText || '').split(/\r?\n/);
   const groups = [];
   let current = null;
-  lines.forEach((line) => {
-    const orderLike = hasDailyOrderSignal(line) &&
-      (/\d{1,2}[./-]\d{1,2}/.test(line) ||
-        /\d{1,2}[:：]\d{2}/.test(line) ||
-        DAILY_ORDER_KEYWORDS.some((key) => line.indexOf(key) !== -1));
-    if (!orderLike) {
+  lines.forEach((rawLine, index) => {
+    const line = String(rawLine || '').trim();
+    if (!line) return;
+    const nextLine = lines.slice(index + 1).find((item) => String(item || '').trim()) || '';
+    if (looksLikeDailyDriverHeader(line, nextLine)) {
       current = parseDailyDriverHeader(line);
+      groups.push(current);
+      return;
+    }
+    const normalizedLine = stripDailyOrdinal(line);
+    const orderLike = hasDailyOrderSignal(normalizedLine) &&
+      (/\d{1,2}[./-]\d{1,2}/.test(normalizedLine) ||
+        /\d{1,2}[:：]\d{2}/.test(normalizedLine) ||
+        DAILY_ORDER_KEYWORDS.some((key) => normalizedLine.indexOf(key) !== -1));
+    if (!orderLike) {
+      if (current && current.orders.length) {
+        const lastOrder = current.orders[current.orders.length - 1];
+        lastOrder.remark = [lastOrder.remark, normalizedLine].filter(Boolean).join('\n');
+        return;
+      }
+      current = parseDailyDriverHeader(normalizedLine);
       groups.push(current);
       return;
     }
@@ -290,7 +315,9 @@ function parseDailyGroups(sourceText) {
       current = parseDailyDriverHeader('未分组司机');
       groups.push(current);
     }
-    current.orders.push(parseDailyOrderLine(line));
+    const order = parseDailyOrderLine(normalizedLine);
+    if (!order.date && current.serviceDate) order.date = current.serviceDate;
+    current.orders.push(order);
   });
   return normalizeDailyGroups(groups.filter((group) => group.driverName || (group.orders && group.orders.length)));
 }
@@ -455,19 +482,6 @@ function findExistingDailyAssignment(order, item, assignments) {
   }) || null;
 }
 
-function mergeDailyResources(primary, fallback) {
-  const seen = {};
-  return []
-    .concat(primary || [], fallback || [])
-    .filter((item) => item && item.id)
-    .filter((item) => {
-      const key = String(item.id);
-      if (seen[key]) return false;
-      seen[key] = true;
-      return true;
-    });
-}
-
 function normalizeResourceStatus(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -482,6 +496,23 @@ function isDriverUsable(driver) {
   const status = normalizeResourceStatus(driver && driver.status);
   if (!status) return true;
   return ['available', 'idle', 'ready', '空闲', '可用'].indexOf(status) >= 0;
+}
+
+function vehicleTypeBucket(vehicle) {
+  const text = [
+    vehicle && vehicle.vehicle_type,
+    vehicle && vehicle.vehicle_model,
+    vehicle && vehicle.model,
+    vehicle && vehicle.body_type,
+    vehicle && vehicle.seat_count,
+    vehicle && vehicle.capacity,
+    vehicle && vehicle.note,
+    vehicle && vehicle.remark
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (text.indexOf('alphard') >= 0 || text.indexOf('アルファ') >= 0 || text.indexOf('阿尔法') >= 0 || text.indexOf('3代') >= 0 || text.indexOf('7座') >= 0) {
+    return 'Alphard';
+  }
+  return '10座';
 }
 
 function isAirportTransferOrder(orderType) {
@@ -527,6 +558,8 @@ Page({
     dailyStats: calcDailyStats([]),
     dailyOverview: blankDailyOverview(),
     dailyMessage: '',
+    dailySwipeGroupIndex: -1,
+    dailySwipeOrderIndex: -1,
     singleParsed: false,
     singleDraftId: '',
     singleForm: blankSingleForm(),
@@ -632,7 +665,9 @@ Page({
     const patch = {
       dailyGroups: next,
       dailyStats: calcDailyStats(next),
-      dailyOverview: this.buildDailyOverview(next)
+      dailyOverview: this.buildDailyOverview(next),
+      dailySwipeGroupIndex: -1,
+      dailySwipeOrderIndex: -1
     };
     if (typeof dailyMessage === 'string') patch.dailyMessage = dailyMessage;
     this.setData(patch);
@@ -646,6 +681,7 @@ Page({
     const normalized = normalizeDailyGroups(groups);
     const currentDrivers = resources.drivers || this.data.drivers || [];
     const currentVehicles = resources.vehicles || this.data.vehicles || [];
+    const currentAssignments = resources.assignments || this.data.assignments || [];
     const missingDriverGroups = [];
     const missingVehicleGroups = [];
     const driverNav = [];
@@ -655,11 +691,16 @@ Page({
       const orderCount = (group.orders || []).filter((order) => order.status !== '作废').length;
       if (!driverName || driverName === '未命名司机' || driverName === '未分组司机') {
         missingDriverGroups.push({ index, label: `第 ${index + 1} 组`, orderCount });
+      } else if (currentDrivers.length && !matchDailyDriver(currentDrivers, driverName)) {
+        missingDriverGroups.push({ index, label: `${driverName}（资料库无匹配）`, orderCount });
+        driverNav.push({ index, name: driverName, orderCount, vehicleCode: vehicleCode || '未填车辆' });
       } else {
         driverNav.push({ index, name: driverName, orderCount, vehicleCode: vehicleCode || '未填车辆' });
       }
       if (!vehicleCode) {
         missingVehicleGroups.push({ index, label: driverName || `第 ${index + 1} 组`, orderCount });
+      } else if (currentVehicles.length && !matchDailyVehicle(currentVehicles, vehicleCode)) {
+        missingVehicleGroups.push({ index, label: `${driverName || `第 ${index + 1} 组`}（车辆 ${vehicleCode} 不可派）`, orderCount });
       }
     });
     const assignedOrders = normalized.reduce((sum, group) => {
@@ -670,12 +711,31 @@ Page({
         .map((group) => String(group.vehicleCode || '').trim())
         .filter(Boolean)
     );
-    const idleVehicleCount = currentVehicles.filter((vehicle) => isVehicleUsable(vehicle) && !vehicle.disabled).length;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    const todayAssignments = currentAssignments.filter((item) => String(item.order_date || '').slice(0, 10) === today);
+    const assignedDriverIds = new Set(todayAssignments.map((item) => String(item.driver_id || '')).filter(Boolean));
+    const assignedVehicleIds = new Set(todayAssignments.map((item) => String(item.vehicle_id || '')).filter(Boolean));
+    const availableDrivers = currentDrivers.filter((driver) => isDriverUsable(driver));
+    const availableVehicles = currentVehicles.filter((vehicle) => isVehicleUsable(vehicle));
+    const idleDriverCount = availableDrivers.filter((driver) => !assignedDriverIds.has(String(driver.id || ''))).length;
+    const idleVehicles = availableVehicles.filter((vehicle) => !assignedVehicleIds.has(String(vehicle.id || '')));
+    const idleVehicleCount = idleVehicles.length;
+    const tenSeatTotal = availableVehicles.filter((vehicle) => vehicleTypeBucket(vehicle) === '10座').length;
+    const alphardTotal = availableVehicles.filter((vehicle) => vehicleTypeBucket(vehicle) === 'Alphard').length;
+    const idleTenSeat = idleVehicles.filter((vehicle) => vehicleTypeBucket(vehicle) === '10座').length;
+    const idleAlphard = idleVehicles.filter((vehicle) => vehicleTypeBucket(vehicle) === 'Alphard').length;
     return {
       assignedDrivers: driverNav.length,
       assignedOrders,
-      idleDrivers: currentDrivers.filter((driver) => isDriverUsable(driver) && !driver.disabled).length,
+      idleDrivers: idleDriverCount,
+      driverTotal: availableDrivers.length,
       idleVehicles: currentVehicles.length ? idleVehicleCount : filledVehicleCodes.size,
+      vehicleTotal: availableVehicles.length,
+      idleTenSeat,
+      tenSeatTotal,
+      idleAlphard,
+      alphardTotal,
       missingDriverGroups,
       missingVehicleGroups,
       driverNav
@@ -703,7 +763,9 @@ Page({
       dailyGroups: [],
       dailyStats: calcDailyStats([]),
       dailyOverview: blankDailyOverview(),
-      dailyMessage: '已清空。'
+      dailyMessage: '已清空。',
+      dailySwipeGroupIndex: -1,
+      dailySwipeOrderIndex: -1
     });
   },
 
@@ -784,7 +846,41 @@ Page({
     const groups = normalizeDailyGroups(this.data.dailyGroups);
     if (!groups[groupIndex] || !groups[groupIndex].orders[orderIndex]) return;
     groups[groupIndex].orders.splice(orderIndex, 1);
+    this.setData({
+      dailySwipeGroupIndex: -1,
+      dailySwipeOrderIndex: -1
+    });
     this.updateDailyGroups(groups, '已删除订单。');
+  },
+
+  onDailyOrderTouchStart(e) {
+    const touch = e.touches && e.touches[0];
+    if (!touch) return;
+    this._dailySwipeStart = {
+      x: Number(touch.clientX || 0),
+      y: Number(touch.clientY || 0)
+    };
+  },
+
+  onDailyOrderTouchEnd(e) {
+    const start = this._dailySwipeStart;
+    const touch = e.changedTouches && e.changedTouches[0];
+    this._dailySwipeStart = null;
+    if (!start || !touch) return;
+    const deltaX = Number(touch.clientX || 0) - start.x;
+    const deltaY = Number(touch.clientY || 0) - start.y;
+    if (Math.abs(deltaX) < 28 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+    if (deltaX < 0) {
+      this.setData({
+        dailySwipeGroupIndex: Number(e.currentTarget.dataset.groupIndex),
+        dailySwipeOrderIndex: Number(e.currentTarget.dataset.orderIndex)
+      });
+      return;
+    }
+    this.setData({
+      dailySwipeGroupIndex: -1,
+      dailySwipeOrderIndex: -1
+    });
   },
 
   saveDailyDraft() {
@@ -802,13 +898,16 @@ Page({
     return Promise.all([
       api.drivers(),
       api.vehicles(),
-      api.assignments().catch(() => ({ assignments: [] }))
-    ]).then(([driversRes, vehiclesRes, assignmentsRes]) => ({
-      drivers: mergeDailyResources((driversRes && driversRes.drivers) || [], this.data.drivers)
-        .filter((driver) => !isHiddenDispatchDriver(driver)),
-      vehicles: mergeDailyResources((vehiclesRes && vehiclesRes.vehicles) || [], this.data.vehicles),
-      assignments: (assignmentsRes && assignmentsRes.assignments) || this.data.assignments || []
-    }));
+      api.assignments()
+    ]).then(([driversRes, vehiclesRes, assignmentsRes]) => {
+      const drivers = (driversRes && driversRes.drivers) || [];
+      const vehicles = (vehiclesRes && vehiclesRes.vehicles) || [];
+      return {
+        drivers: drivers.length ? drivers : (this.data.drivers || []),
+        vehicles: vehicles.length ? vehicles : (this.data.vehicles || []),
+        assignments: (assignmentsRes && assignmentsRes.assignments) || this.data.assignments || []
+      };
+    });
   },
 
   validateDailyPublishPlan(groups, resources) {
@@ -1253,7 +1352,8 @@ Page({
           publishedRows,
           dailyOverview: this.buildDailyOverview(this.data.dailyGroups, {
             drivers: decoratedDrivers,
-            vehicles: decoratedVehicles
+            vehicles: decoratedVehicles,
+            assignments
           }),
           loading: false
         });
@@ -1566,7 +1666,7 @@ Page({
     }).sort((a, b) => {
       if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
       return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
-    }).slice(0, 15);
+    });
   },
 
   formatDriverDisplayName(driver) {
@@ -1591,7 +1691,7 @@ Page({
     }).sort((a, b) => {
       if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
       return String(a.plate_number || '').localeCompare(String(b.plate_number || ''), 'ja-JP');
-    }).slice(0, 15);
+    });
   },
 
   toggleRowByKey(key) {

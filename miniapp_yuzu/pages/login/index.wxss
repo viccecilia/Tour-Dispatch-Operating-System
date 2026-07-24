@@ -1,3 +1,87 @@
+.login-page {
+  padding-top: 30rpx;
+}
+
+.login-hero {
+  min-height: 210rpx;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 10rpx;
+}
+
+.title-row .title {
+  margin-top: 0;
+}
+
+.help-icon {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32rpx;
+  height: 32rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.82);
+  border-radius: 999rpx;
+  color: #fff;
+  font-size: 21rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.help-popover {
+  position: relative;
+  z-index: 2;
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  color: #eafffb;
+  background: rgba(15, 35, 54, 0.26);
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.login-panel {
+  margin-top: 22rpx;
+}
+
+.port-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8rpx;
+  padding: 8rpx;
+  border-radius: 24rpx;
+  background: #edf5fb;
+}
+
+.port-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 76rpx;
+  border-radius: 18rpx;
+  color: #29405a;
+  font-size: 29rpx;
+  font-weight: 900;
+}
+
+.port-pill.active {
+  background: #fff;
+  box-shadow: 0 10rpx 24rpx rgba(25, 47, 78, 0.12);
+}
+
+.port-pill.agency-active {
+  color: #0f766e;
+}
+
+.port-pill.dispatch-active {
+  color: #1d4ed8;
+}
+
 .login-button {
-  margin-top: 26rpx;
+  margin-top: 28rpx;
 }

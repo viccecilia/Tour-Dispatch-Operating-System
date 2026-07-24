@@ -4,18 +4,14 @@ const router = require('../../utils/role-router');
 
 const PORT_META = {
   agency: {
-    title: '旅行社登录',
-    eyebrow: 'AGENCY',
-    accountLabel: '登录代码',
+    accountLabel: '登录账号',
     placeholder: 'AGA2026 / 080-7101-0000',
-    button: '进入旅行社'
+    button: '登录旅行社端'
   },
   dispatch: {
-    title: '车公司登录',
-    eyebrow: 'DISPATCH',
-    accountLabel: '公司账号',
-    placeholder: 'SKR-08070010000',
-    button: '进入车公司'
+    accountLabel: '登录账号',
+    placeholder: '08070010000',
+    button: '登录车公司端'
   }
 };
 
@@ -25,11 +21,39 @@ function bridgeLegacySession(port, payload, baseUrl) {
     wx.setStorageSync('tourflow_agency_session', payload);
     return;
   }
+  const dispatchSession = Object.assign({}, payload, { port: 'dispatch' });
   wx.setStorageSync('wx_dispatch_api_base_url', baseUrl);
-  wx.setStorageSync(`dispatcher_session:${baseUrl}`, payload);
+  wx.setStorageSync('dispatcher_session', dispatchSession);
+  wx.setStorageSync(`dispatcher_session:${baseUrl}`, dispatchSession);
+  wx.setStorageSync('dispatcher_session:http://127.0.0.1:18765', dispatchSession);
+  wx.setStorageSync('yuzu_session', dispatchSession);
+  wx.setStorageSync('yuzu_selected_port', 'dispatch');
   wx.setStorageSync('dispatch_active_tab_path', '/package_dispatch/pages/home/index');
-  wx.removeStorageSync('dispatcher_session');
   wx.removeStorageSync('dispatch_manual_logout');
+}
+
+function forceRoute(url, page, reason = 'login') {
+  console.info('[yozi force route]', { url, reason });
+  wx.reLaunch({
+    url,
+    success: () => console.info('[yozi relaunch success]', { url, reason }),
+    fail: (error) => {
+      console.error('[yozi relaunch failed]', error);
+      wx.redirectTo({
+        url,
+        success: () => console.info('[yozi redirect success]', { url, reason }),
+        fail: (redirectError) => {
+          console.error('[yozi redirect failed]', redirectError);
+          if (page) {
+            page.setData({
+              message: `登录成功，但跳转失败：${redirectError && redirectError.errMsg ? redirectError.errMsg : url}`
+            });
+          }
+        }
+      });
+    },
+    complete: (res) => console.info('[yozi relaunch complete]', { url, reason, errMsg: res && res.errMsg })
+  });
 }
 
 Page({
@@ -39,15 +63,44 @@ Page({
     loginCode: '',
     password: '',
     loading: false,
-    message: ''
+    message: '',
+    showHelp: false
   },
 
   onLoad(query = {}) {
-    const port = query.port || session.getSelectedPort() || 'agency';
+    api.syncEnvironmentBaseUrl();
+    const port = PORT_META[query.port] ? query.port : (session.getSelectedPort() || 'agency');
+    session.setSelectedPort(port);
     this.setData({
       port,
       meta: PORT_META[port] || PORT_META.agency
     });
+  },
+
+  onShow() {
+    api.syncEnvironmentBaseUrl();
+    const currentSession = session.getSession();
+    if (currentSession && currentSession.token && currentSession.port) {
+      const homeUrl = router.homeForSession(currentSession);
+      if (homeUrl && homeUrl !== '/pages/entry/index') {
+        forceRoute(homeUrl, this, 'login-onshow');
+      }
+    }
+  },
+
+  switchPort(event) {
+    const port = event.currentTarget.dataset.port || 'agency';
+    if (!PORT_META[port]) return;
+    session.setSelectedPort(port);
+    this.setData({
+      port,
+      meta: PORT_META[port],
+      message: ''
+    });
+  },
+
+  toggleHelp() {
+    this.setData({ showHelp: !this.data.showHelp });
   },
 
   onLoginCodeInput(event) {
@@ -59,36 +112,51 @@ Page({
   },
 
   async submit() {
+    api.syncEnvironmentBaseUrl();
     const loginCode = String(this.data.loginCode || '').trim();
     const password = String(this.data.password || '').trim();
     if (!loginCode || !password) {
       this.setData({ message: '请输入账号和密码。' });
       return;
     }
+    if (loginCode.toLowerCase() === 'admin') {
+      this.setData({ message: 'admin / admin123 是平台总后台账号，请在 Web 总后台登录。' });
+      return;
+    }
     this.setData({ loading: true, message: '' });
     try {
+      console.info('[yozi login submit]', { port: this.data.port, baseUrl: api.getBaseUrl(), loginCode });
       const payload = this.data.port === 'agency'
         ? await api.loginAgency(loginCode, password)
         : await api.loginDispatch(loginCode, password);
-      const nextSession = {
-        ...payload,
+      console.info('[yozi login success]', {
+        port: this.data.port,
+        role: payload && payload.user ? payload.user.role : payload.role,
+        hasToken: !!(payload && payload.token)
+      });
+      const nextSession = Object.assign({}, payload, {
         port: this.data.port,
         login_code: loginCode,
         display_name: payload.agency_name
           || payload.company_name
           || (payload.dispatcher && payload.dispatcher.dispatcher_name)
           || loginCode
-      };
+      });
+      session.setSelectedPort(this.data.port);
       session.setSession(nextSession);
       bridgeLegacySession(this.data.port, nextSession, api.getBaseUrl());
       getApp().globalData.session = nextSession;
-      wx.redirectTo({ url: router.homeForSession(nextSession) });
+      const homeUrl = router.homeForSession(nextSession);
+      console.info('[yozi login route]', { homeUrl, selectedPort: this.data.port });
+      forceRoute(homeUrl, this, 'login-submit');
+      return;
     } catch (err) {
+      console.error('[yozi login failed]', err);
       this.setData({
         message: err && err.error ? `登录失败：${err.error}` : '登录失败，请检查账号密码或 API。'
       });
     } finally {
-      this.setData({ loading: false });
+      if (this.data.loading) this.setData({ loading: false });
     }
   }
 });

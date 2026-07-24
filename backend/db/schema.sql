@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     driver_code TEXT,
     driver_language TEXT,
     office TEXT,
+    note TEXT,
     driver_external_id TEXT,
     license_number TEXT,
     residence_status TEXT,

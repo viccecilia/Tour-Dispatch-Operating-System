@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
 from backend.db.database import get_connection
+from backend.services.geocoding_service import geocode_order_locations
 from backend.services.order_number_service import build_order_oid, normalize_source_code, normalize_vehicle_type_code
 from backend.services.tenant_context import get_current_tenant_id
 
@@ -13,6 +14,10 @@ ORDER_FIELDS = [
     "end_time",
     "pickup_location",
     "dropoff_location",
+    "pickup_latitude",
+    "pickup_longitude",
+    "dropoff_latitude",
+    "dropoff_longitude",
     "order_type",
     "vehicle_type",
     "order_note_code",
@@ -155,6 +160,7 @@ def get_order(order_id: str) -> Optional[dict[str, Any]]:
 
 def create_order(payload: dict[str, Any]) -> dict[str, Any]:
     data = _normalize_payload(payload, partial=False)
+    data.update(_resolve_location_fields(data))
     data["tenant_id"] = get_current_tenant_id()
     with get_connection() as conn:
         if data.get("oid"):
@@ -181,10 +187,14 @@ def create_order(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_order(order_id: str, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
-    if not get_order(order_id):
+    existing = get_order(order_id)
+    if not existing:
         return None
 
     data = _normalize_payload(payload, partial=True)
+    if any(key in data for key in ("pickup_location", "dropoff_location", "pickup_latitude", "pickup_longitude", "dropoff_latitude", "dropoff_longitude")):
+        merged = {**existing, **data}
+        data.update(_resolve_location_fields(merged))
     if not data:
         return get_order(order_id)
 
@@ -252,6 +262,10 @@ def _normalize_payload(payload: dict[str, Any], partial: bool) -> dict[str, Any]
         if money_field in data:
             data[money_field] = None if data[money_field] in ("", None) else float(data[money_field])
 
+    for coord_field in ("pickup_latitude", "pickup_longitude", "dropoff_latitude", "dropoff_longitude"):
+        if coord_field in data:
+            data[coord_field] = None if data[coord_field] in ("", None) else float(data[coord_field])
+
     if "price" in data and "price_rmb" not in data and data.get("price") is not None:
         data["price_rmb"] = data["price"]
     if "vehicle_type_code" in data and not data.get("vehicle_type_code"):
@@ -263,6 +277,20 @@ def _normalize_payload(payload: dict[str, Any], partial: bool) -> dict[str, Any]
         if isinstance(value, str):
             data[key] = value.strip()
     return data
+
+
+def _resolve_location_fields(data: dict[str, Any]) -> dict[str, float | None]:
+    if all(
+        data.get(key) not in ("", None)
+        for key in ("pickup_latitude", "pickup_longitude", "dropoff_latitude", "dropoff_longitude")
+    ):
+        return {
+            "pickup_latitude": float(data["pickup_latitude"]),
+            "pickup_longitude": float(data["pickup_longitude"]),
+            "dropoff_latitude": float(data["dropoff_latitude"]),
+            "dropoff_longitude": float(data["dropoff_longitude"]),
+        }
+    return geocode_order_locations(data)
 
 
 def _numeric_id(order_id: str) -> int:
