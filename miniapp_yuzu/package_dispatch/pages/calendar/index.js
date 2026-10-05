@@ -187,6 +187,37 @@ Page({
     }
   },
 
+  previousPeriod() {
+    this.movePeriod(-1);
+  },
+
+  nextPeriod() {
+    this.movePeriod(1);
+  },
+
+  movePeriod(offset) {
+    const baseText = this.data.selectedDate || this.data.anchorDate || this.formatDate(new Date());
+    const nextDate = this.data.mode === '7d'
+      ? this.addDays(baseText, offset * 7)
+      : this.shiftMonth(baseText, offset);
+    const windowState = this.buildCalendarWindowState(nextDate, this.data.mode);
+    this.setData({
+      anchorDate: nextDate,
+      selectedDate: nextDate,
+      activeDriverKey: '',
+      displayMonth: windowState.displayMonth,
+      displayYear: windowState.displayYear,
+      displayMonthLabel: windowState.displayMonthLabel,
+      visibleRangeStart: windowState.visibleRangeStart,
+      visibleRangeEnd: windowState.visibleRangeEnd,
+      timelineScrollTopTarget: 0,
+      viewportStartRowIndex: 0,
+      weekScrollLeftTarget: 0,
+      weekTimelineStart: ''
+    });
+    this.rebuildCalendar();
+  },
+
   onDriverFilterChange(e) {
     this.setData({ driverFilterIndex: Number(e.detail.value || 0) });
     this.rebuildCalendar();
@@ -204,6 +235,7 @@ Page({
       this.setData({
         selectedDate: date,
         anchorDate: date,
+        activeDriverKey: '',
         weekDays: this.annotateWeekDays(this.data.weekDays || [], date)
       });
       this.rebuildDriverGroups(date);
@@ -217,6 +249,7 @@ Page({
     this.setData({
       selectedDate: date,
       anchorDate: date,
+      activeDriverKey: '',
       displayMonth: baseDisplayMonth,
       displayYear: baseDisplayMonth.slice(0, 4),
       displayMonthLabel: baseDisplayMonth.slice(5, 7),
@@ -318,7 +351,7 @@ Page({
 
   selectDriverGroup(e) {
     const key = e.currentTarget.dataset.key || '';
-    this.setData({ activeDriverKey: key });
+    this.setData({ activeDriverKey: this.data.activeDriverKey === key ? '' : key });
     this.rebuildDriverGroups(this.data.selectedDate || this.data.anchorDate);
   },
 
@@ -360,22 +393,20 @@ Page({
       viewportStartRowIndex = 0;
       timelineScrollTopTarget = 0;
     } else {
-      const weekBounds = this.computeWeekTimelineBounds(anchorDate);
-      const baseDays = this.buildWeekTimelineDays(weekBounds.start, weekBounds.end);
-      const selectedIndex = Math.max(0, baseDays.findIndex((item) => item.date === selectedDate));
-      const weekStartCell = baseDays[selectedIndex] || baseDays[0];
-      const weekEndCell = baseDays[Math.min(baseDays.length - 1, selectedIndex + 6)] || weekStartCell;
-      const weekMidCell = baseDays[Math.min(baseDays.length - 1, selectedIndex + 3)] || weekStartCell;
-      const weekStart = weekStartCell ? weekStartCell.date : selectedDate;
-      const weekEnd = weekEndCell ? weekEndCell.date : selectedDate;
+      const weekStart = this.startOfWeekMonday(selectedDate);
+      const weekEnd = this.addDays(weekStart, 6);
+      const baseDays = this.buildWeekTimelineDays(weekStart, weekEnd);
+      const weekStartCell = baseDays[0];
+      const weekEndCell = baseDays[baseDays.length - 1] || weekStartCell;
+      const weekMidCell = baseDays[3] || weekStartCell;
       const effectiveSelectedDate = this.isDateWithinRange(selectedDate, weekStart, weekEnd) ? selectedDate : weekStart;
       weekDays = this.annotateWeekDays(baseDays, effectiveSelectedDate);
       rangeStart = weekStart;
       rangeEnd = weekEnd;
       visibleRangeStart = weekStart;
       visibleRangeEnd = weekEnd;
-      weekTimelineStart = weekBounds.start;
-      weekScrollLeftTarget = selectedIndex * Math.max(1, Number(this.data.weekCardStepPx || 46));
+      weekTimelineStart = weekStart;
+      weekScrollLeftTarget = 0;
       if (weekMidCell && weekMidCell.date) {
         displayMonth = `${weekMidCell.date.slice(0, 7)}-01`;
         displayYear = displayMonth.slice(0, 4);
@@ -413,7 +444,7 @@ Page({
     const grouped = this.groupRowsByDriver(rows);
     let activeDriverKey = this.data.activeDriverKey;
     if (!grouped.some((item) => item.key === activeDriverKey)) {
-      activeDriverKey = grouped[0] ? grouped[0].key : '';
+      activeDriverKey = '';
     }
     const active = grouped.find((item) => item.key === activeDriverKey);
     this.setData({
@@ -449,7 +480,7 @@ Page({
       ? this.resolveDisplayMonthForWindow(seedDate, mode)
       : `${seedDate.slice(0, 7)}-01`;
     const visibleRangeStart = mode === '7d'
-      ? seedDate
+      ? this.startOfWeekMonday(seedDate)
       : this.startOfWeekMonday(displayMonth);
     const visibleRangeEnd = mode === '7d'
       ? this.addDays(visibleRangeStart, 6)
@@ -495,7 +526,7 @@ Page({
   buildCalendarMonths(baseMonthText, selectedDate) {
     const baseMonth = `${(baseMonthText || selectedDate || this.formatDate(new Date())).slice(0, 7)}-01`;
     const months = [];
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 1; index += 1) {
       const monthDate = new Date(`${baseMonth}T00:00:00`);
       monthDate.setMonth(monthDate.getMonth() + index);
       const monthText = this.formatDate(monthDate).slice(0, 7) + '-01';
@@ -725,6 +756,16 @@ Page({
   addDays(dateText, days) {
     const cursor = new Date(`${dateText}T00:00:00`);
     cursor.setDate(cursor.getDate() + days);
+    return this.formatDate(cursor);
+  },
+
+  shiftMonth(dateText, offset) {
+    const cursor = new Date(`${dateText}T00:00:00`);
+    const day = cursor.getDate();
+    cursor.setDate(1);
+    cursor.setMonth(cursor.getMonth() + offset);
+    const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+    cursor.setDate(Math.min(day, lastDay));
     return this.formatDate(cursor);
   },
 

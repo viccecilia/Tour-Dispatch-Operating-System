@@ -20,7 +20,36 @@
   </view>
 
   <view wx:else>
-    <view wx:if="{{canDispatch}}" class="dispatch-command-grid compact-switch-grid">
+    <view wx:if="{{isOperationsManager}}" class="panel ops-today-panel">
+      <view class="ops-today-head">
+        <view>
+          <view class="ops-today-kicker">TODAY</view>
+          <view class="panel-title">今日运营</view>
+        </view>
+        <view class="ops-today-state">运行中</view>
+      </view>
+      <view class="ops-today-primary">
+        <view class="ops-today-metric">
+          <text>待委派订单</text>
+          <strong>{{dispatchOverview.unassignedToday}}</strong>
+        </view>
+        <view class="ops-today-metric">
+          <text>联勤</text>
+          <strong>{{driverStats.length}}</strong>
+        </view>
+      </view>
+      <view class="ops-capacity-line">
+        <view><strong>{{dispatchOverview.driverTotal}}</strong><text>司机</text></view>
+        <view><strong>{{dispatchOverview.hiaceTotal}}</strong><text>10座</text></view>
+        <view><strong>{{dispatchOverview.alphardTotal}}</strong><text>Alphard</text></view>
+      </view>
+      <view class="ops-resource-links">
+        <view data-section="drivers" bindtap="goInfo">司机资料 <text>›</text></view>
+        <view data-section="vehicles" bindtap="goInfo">车辆资料 <text>›</text></view>
+      </view>
+    </view>
+
+    <view wx:if="{{canDispatch && !isOperationsManager}}" class="dispatch-command-grid compact-switch-grid">
       <view class="command-card command-resources info-card {{panelMode === 'resources' ? 'active' : ''}}" data-mode="resources" bindtap="switchPanel">
         <view class="command-label">车辆 / 人员</view>
         <view class="resource-command-lines">

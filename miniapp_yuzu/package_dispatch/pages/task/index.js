@@ -27,6 +27,7 @@ Page({
     allAssignments: [],
     assignments: [],
     readyAssignments: [],
+    runDocuments: [],
     today: '',
     selectedDate: '',
     selectedLabel: '',
@@ -112,9 +113,10 @@ Page({
     this.setData({ loading: true, message: '' });
     Promise.all([
       api.driverAssignments(this.data.driverId),
-      api.driverWorkbench(this.data.driverId).catch(() => ({}))
+      api.driverWorkbench(this.data.driverId).catch(() => ({})),
+      api.driverRunDocuments(this.data.driverId).catch(() => ({ documents: [] }))
     ])
-      .then(([res, workbench]) => {
+      .then(([res, workbench, documentsRes]) => {
         const allRows = (res.assignments || []).map((item) => this.decorateAssignment(item));
         const selectedDate = this.data.selectedDate || this.data.today;
         const selectedRows = allRows.filter((item) => this.isOnDate(item, selectedDate));
@@ -130,6 +132,11 @@ Page({
           vehicleStatusText,
           departSubmitted: departed || returned,
           returnSubmitted: returned,
+          runDocuments: (documentsRes.documents || []).map((item) => ({
+            ...item,
+            title: `${item.business_date} 运行文件`,
+            meta: `${item.plate_number || ''} · PDF V${item.version} · ${item.page_count || 0}页`
+          })),
           loading: false
         });
         this.applySelectedDate();
@@ -144,6 +151,19 @@ Page({
           allAssignments: [],
           ...this.buildCalendarState([], selectedDate, this.data.today || selectedDate)
         });
+      });
+  },
+
+  openRunDocument(e) {
+    const url = String((e.currentTarget.dataset || {}).url || '');
+    if (!url) return;
+    wx.showLoading({ title: '打开 PDF' });
+    api.downloadAndOpenDocument(url)
+      .then(() => wx.hideLoading())
+      .catch((err) => {
+        console.warn('[driver run document open failed]', err);
+        wx.hideLoading();
+        wx.showToast({ title: '运行文件打开失败', icon: 'none' });
       });
   },
 

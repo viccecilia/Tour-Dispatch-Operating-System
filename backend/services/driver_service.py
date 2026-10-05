@@ -88,6 +88,7 @@ def list_driver_assignments(driver_id: Any) -> list[dict[str, Any]]:
                 f"""
                 {DRIVER_ASSIGNMENT_SELECT}
                 WHERE a.status = 'active'
+                  AND a.published_at IS NOT NULL
                   AND a.tenant_id = ?
                   AND o.tenant_id = ?
                   AND a.driver_id = ?
@@ -105,6 +106,7 @@ def get_driver_assignment(driver_id: Any, assignment_id: Any) -> dict[str, Any] 
             f"""
             {DRIVER_ASSIGNMENT_SELECT}
             WHERE a.status = 'active'
+              AND a.published_at IS NOT NULL
               AND a.tenant_id = ?
               AND o.tenant_id = ?
               AND a.driver_id = ?

@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Iterable
 
@@ -9,6 +10,7 @@ from backend.app.config import DB_PATH, DEFAULT_ADMIN
 
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+MIGRATIONS_PATH = Path(__file__).with_name("migrations")
 
 ORDER_COLUMNS: dict[str, str] = {
     "oid": "TEXT",
@@ -96,6 +98,15 @@ ORDER_COLUMNS: dict[str, str] = {
     "updated_by_dispatcher_code": "TEXT",
     "is_deleted": "INTEGER NOT NULL DEFAULT 0",
     "updated_at": "TEXT",
+    "operations_business_area": "TEXT",
+    "run_confirmation_status": "TEXT NOT NULL DEFAULT 'pending'",
+    "run_confirmed_at": "TEXT",
+    "run_confirmed_by_user_id": "INTEGER",
+    "run_confirmed_by": "TEXT",
+    "run_revision": "INTEGER NOT NULL DEFAULT 1",
+    "daily_import_group_key": "TEXT",
+    "daily_import_content_hash": "TEXT",
+    "daily_import_line_index": "INTEGER",
 }
 
 DRIVER_COLUMNS: dict[str, str] = {
@@ -453,8 +464,9 @@ def hash_password(password: str) -> str:
 
 
 def init_db(seed: bool = True) -> None:
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        apply_migrations(conn)
         ensure_user_schema(conn)
         ensure_order_schema(conn)
         ensure_driver_vehicle_schema(conn)
@@ -483,6 +495,26 @@ def init_db(seed: bool = True) -> None:
             seed_dispatch_resources(conn)
             seed_locations(conn)
         conn.commit()
+
+
+def apply_migrations(conn: sqlite3.Connection) -> None:
+    """Apply additive, versioned migrations before compatibility repairs run."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    if not MIGRATIONS_PATH.exists():
+        return
+    applied = {row["name"] for row in conn.execute("SELECT name FROM schema_migrations")}
+    for migration in sorted(MIGRATIONS_PATH.glob("*.sql")):
+        if migration.name in applied:
+            continue
+        conn.executescript(migration.read_text(encoding="utf-8"))
+        conn.execute("INSERT INTO schema_migrations (name) VALUES (?)", (migration.name,))
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
@@ -568,6 +600,15 @@ def ensure_order_schema(conn: sqlite3.Connection) -> None:
     for name, definition in ORDER_COLUMNS.items():
         if name not in existing:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {name} {definition}")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_daily_import_line
+        ON orders (tenant_id, daily_import_group_key, daily_import_line_index)
+        WHERE daily_import_group_key IS NOT NULL
+          AND daily_import_line_index IS NOT NULL
+          AND COALESCE(is_deleted, 0) = 0
+        """
+    )
 
     refreshed = {
         row["name"]

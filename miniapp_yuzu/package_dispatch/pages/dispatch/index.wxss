@@ -140,6 +140,12 @@
   box-shadow: 0 14rpx 30rpx rgba(37, 99, 235, 0.24);
 }
 
+.tool-button.flow-demo {
+  color: #075d54;
+  border-color: #82d9cd;
+  background: #e6fbf6;
+}
+
 .tool-button.primary.active,
 .tool-button.secondary.active {
   color: #1d4ed8;
@@ -1851,4 +1857,792 @@
   color: #94a3b8;
   font-size: 20rpx;
   font-weight: 750;
+}
+
+/* Real operations daily review: bright, dense and grouped by driver/vehicle. */
+.dispatch-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6rpx;
+  padding: 6rpx;
+  border-radius: 20rpx;
+  background: #eaf0f8;
+}
+
+.dispatch-mode-option {
+  height: 62rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.dispatch-mode-option.active {
+  color: #1d4ed8;
+  background: #ffffff;
+  box-shadow: 0 8rpx 22rpx rgba(15, 23, 42, 0.08);
+}
+
+.daily-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 30rpx 6rpx 20rpx;
+}
+
+.daily-page-kicker {
+  color: #2563eb;
+  font-size: 18rpx;
+  font-weight: 900;
+  letter-spacing: 1.5rpx;
+}
+
+.daily-page-title {
+  margin-top: 4rpx;
+  color: #0f172a;
+  font-size: 48rpx;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.daily-page-sub {
+  margin-top: 10rpx;
+  color: #64748b;
+  font-size: 22rpx;
+  font-weight: 750;
+}
+
+.daily-import-button,
+.daily-primary-action,
+.daily-release-button,
+.daily-confirm-import,
+.daily-review-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: #2563eb;
+  font-weight: 900;
+}
+
+.daily-import-button {
+  height: 62rpx;
+  padding: 0 22rpx;
+  border-radius: 18rpx;
+  font-size: 22rpx;
+}
+
+.daily-date-bar {
+  display: grid;
+  grid-template-columns: 54rpx auto 54rpx 1fr;
+  align-items: center;
+  gap: 8rpx;
+  padding: 14rpx;
+  border: 1rpx solid #dbe5f2;
+  border-radius: 20rpx;
+  background: #ffffff;
+}
+
+.daily-date-arrow {
+  width: 54rpx;
+  height: 54rpx;
+  border-radius: 15rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  background: #f1f5f9;
+  font-size: 40rpx;
+  line-height: 1;
+}
+
+.daily-date-value {
+  padding: 0 10rpx;
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 950;
+}
+
+.daily-date-summary {
+  text-align: right;
+  color: #64748b;
+  font-size: 21rpx;
+  font-weight: 850;
+}
+
+.daily-status-tabs {
+  display: flex;
+  gap: 12rpx;
+  margin: 16rpx 0;
+}
+
+.daily-status-tab {
+  padding: 11rpx 20rpx;
+  border-radius: 999rpx;
+  color: #64748b;
+  background: #eef2f7;
+  font-size: 21rpx;
+  font-weight: 850;
+}
+
+.daily-status-tab.active {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.daily-group-list {
+  display: grid;
+  gap: 14rpx;
+}
+
+.daily-run-card {
+  padding: 20rpx;
+  border-radius: 22rpx;
+  border: 1rpx solid #dbe5f2;
+  background: #ffffff;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.06);
+}
+
+.daily-run-card.selected {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2rpx #dbeafe;
+}
+
+.daily-run-head {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.daily-check {
+  flex: 0 0 34rpx;
+  width: 34rpx;
+  height: 34rpx;
+  border: 2rpx solid #cbd5e1;
+  border-radius: 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 21rpx;
+  font-weight: 950;
+}
+
+.daily-check.checked {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.daily-run-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.daily-run-driver {
+  color: #0f172a;
+  font-size: 28rpx;
+  font-weight: 950;
+}
+
+.daily-run-driver text {
+  margin-left: 8rpx;
+  color: #2563eb;
+}
+
+.daily-run-meta {
+  margin-top: 4rpx;
+  color: #94a3b8;
+  font-size: 19rpx;
+  font-weight: 750;
+}
+
+.daily-run-state {
+  flex: 0 0 auto;
+  padding: 7rpx 12rpx;
+  border-radius: 999rpx;
+  color: #a16207;
+  background: #fef3c7;
+  font-size: 18rpx;
+  font-weight: 900;
+}
+
+.daily-run-state.reviewed {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.daily-run-state.ready {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.daily-run-state.published {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.daily-import-warning.safe {
+  color: #047857;
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.daily-pdf-review-body {
+  padding-top: 40rpx;
+}
+
+.daily-pdf-file {
+  margin-top: 28rpx;
+  color: #0f172a;
+  font-size: 28rpx;
+  font-weight: 900;
+  word-break: break-all;
+}
+
+.daily-pdf-meta {
+  margin-top: 8rpx;
+  color: #64748b;
+  font-size: 23rpx;
+}
+
+.daily-pdf-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 82rpx;
+  margin-top: 28rpx;
+  border-radius: 22rpx;
+  color: #1d4ed8;
+  border: 1rpx solid #bfdbfe;
+  background: #eff6ff;
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.daily-pdf-review-footer {
+  grid-template-columns: 0.8fr 1.4fr 0.8fr;
+}
+
+.daily-pdf-issues {
+  margin-top: 24rpx;
+  padding: 22rpx 24rpx;
+  border: 1rpx solid #fed7aa;
+  border-radius: 20rpx;
+  color: #9a3412;
+  background: #fff7ed;
+  font-size: 23rpx;
+  line-height: 1.7;
+}
+
+.daily-pdf-canvas {
+  min-height: 480rpx;
+  margin-top: 28rpx;
+  padding: 80rpx 40rpx;
+  border: 1rpx solid #dbe4ef;
+  border-radius: 24rpx;
+  color: #475569;
+  background: #fff;
+  box-shadow: 0 16rpx 40rpx rgba(15, 23, 42, 0.08);
+  text-align: center;
+}
+
+.daily-pdf-canvas-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112rpx;
+  height: 136rpx;
+  margin: 0 auto 32rpx;
+  border-radius: 12rpx;
+  color: #fff;
+  background: #2563eb;
+  font-size: 27rpx;
+  font-weight: 900;
+}
+
+.daily-run-orders {
+  margin: 16rpx 0 0 48rpx;
+  border-top: 1rpx solid #eef2f7;
+}
+
+.daily-run-order {
+  display: grid;
+  grid-template-columns: 86rpx 1fr;
+  gap: 8rpx;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid #f1f5f9;
+  font-size: 22rpx;
+}
+
+.daily-run-time {
+  color: #0f172a;
+  font-weight: 950;
+}
+
+.daily-run-route {
+  color: #475569;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.daily-more {
+  padding-top: 10rpx;
+  color: #2563eb;
+  font-size: 20rpx;
+  font-weight: 850;
+}
+
+.daily-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.daily-doc-state {
+  margin-top: 10rpx;
+  color: #64748b;
+  font-size: 21rpx;
+  text-align: right;
+}
+
+.daily-text-action.disabled {
+  color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.daily-text-action,
+.daily-primary-action {
+  min-width: 92rpx;
+  height: 54rpx;
+  border-radius: 15rpx;
+  font-size: 21rpx;
+}
+
+.daily-text-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  background: #f1f5f9;
+  font-weight: 900;
+}
+
+.daily-empty {
+  padding: 100rpx 30rpx;
+  border-radius: 22rpx;
+  text-align: center;
+  background: #ffffff;
+  border: 1rpx dashed #cbd5e1;
+}
+
+.daily-empty-title {
+  color: #334155;
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.daily-empty-sub {
+  margin-top: 10rpx;
+  color: #94a3b8;
+  font-size: 21rpx;
+  line-height: 1.5;
+}
+
+.daily-release-bar {
+  position: fixed;
+  z-index: 40;
+  left: 28rpx;
+  right: 28rpx;
+  bottom: calc(126rpx + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 1fr 96rpx 180rpx;
+  align-items: center;
+  gap: 10rpx;
+  padding: 14rpx;
+  border-radius: 22rpx;
+  background: #ffffff;
+  border: 1rpx solid #dbe5f2;
+  box-shadow: 0 18rpx 48rpx rgba(15, 23, 42, 0.18);
+}
+
+.daily-release-bar > view:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 7rpx;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.daily-release-bar strong {
+  color: #0f172a;
+  font-size: 30rpx;
+}
+
+.daily-release-pdf,
+.daily-release-button {
+  height: 58rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21rpx;
+  font-weight: 900;
+}
+
+.daily-release-pdf {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.daily-fullscreen {
+  position: fixed;
+  z-index: 1600;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f7f9fc;
+}
+
+.daily-fullscreen-head {
+  flex: 0 0 auto;
+  min-height: 92rpx;
+  padding: calc(22rpx + env(safe-area-inset-top)) 28rpx 18rpx;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  border-bottom: 1rpx solid #e2e8f0;
+  background: #ffffff;
+}
+
+.daily-back,
+.daily-review-edit {
+  color: #2563eb;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.daily-review-edit {
+  justify-self: end;
+}
+
+.daily-fullscreen-title,
+.daily-review-progress {
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 950;
+}
+
+.daily-fullscreen-body {
+  flex: 1;
+  min-height: 0;
+  padding: 24rpx 28rpx;
+  box-sizing: border-box;
+}
+
+.daily-source-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 380rpx;
+  padding: 22rpx;
+  border-radius: 20rpx;
+  border: 1rpx solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 23rpx;
+  line-height: 1.65;
+}
+
+.daily-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.daily-secondary-button {
+  padding: 12rpx 22rpx;
+  border-radius: 15rpx;
+  color: #334155;
+  background: #eaf0f8;
+  font-size: 21rpx;
+  font-weight: 900;
+}
+
+.daily-import-message {
+  margin-top: 14rpx;
+  color: #2563eb;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.daily-import-warning {
+  margin-top: 12rpx;
+  padding: 14rpx 16rpx;
+  border-radius: 14rpx;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1rpx solid #fde68a;
+  font-size: 19rpx;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.daily-import-group {
+  margin-top: 14rpx;
+  padding: 18rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  border: 1rpx solid #dbe5f2;
+}
+
+.daily-import-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  color: #64748b;
+  font-size: 20rpx;
+}
+
+.daily-import-group-head strong {
+  color: #0f172a;
+  font-size: 25rpx;
+}
+
+.daily-area-warning {
+  margin: 10rpx 0 2rpx;
+  color: #b45309;
+  font-size: 20rpx;
+  font-weight: 850;
+}
+
+.daily-area-warning-detail {
+  display: block;
+  margin-top: 4rpx;
+  color: #b45309;
+  font-size: 18rpx;
+  line-height: 1.4;
+}
+
+.daily-import-line {
+  display: grid;
+  grid-template-columns: 120rpx 1fr;
+  gap: 10rpx;
+  padding-top: 12rpx;
+  color: #475569;
+  font-size: 21rpx;
+  line-height: 1.4;
+}
+
+.daily-fullscreen-footer,
+.daily-review-footer {
+  flex: 0 0 auto;
+  padding: 14rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid #e2e8f0;
+  background: #ffffff;
+}
+
+.daily-confirm-import {
+  height: 72rpx;
+  border-radius: 18rpx;
+  font-size: 24rpx;
+}
+
+.daily-confirm-import.disabled,
+.daily-review-nav.disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.daily-review-title {
+  color: #0f172a;
+  font-size: 34rpx;
+  font-weight: 950;
+}
+
+.daily-review-summary {
+  margin-top: 8rpx;
+  color: #64748b;
+  font-size: 23rpx;
+}
+
+.daily-review-order-list {
+  display: grid;
+  gap: 10rpx;
+  margin-top: 22rpx;
+}
+
+.daily-review-order-card {
+  padding: 18rpx;
+  border: 1rpx solid #dbe3ee;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.daily-review-order-card.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.daily-review-order-card > view:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #0f172a;
+  font-size: 24rpx;
+}
+
+.daily-review-order-card > view:first-child text {
+  color: #0f766e;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.daily-review-order-route {
+  margin-top: 8rpx;
+  color: #1e293b;
+  font-size: 23rpx;
+}
+
+.daily-review-order-meta {
+  margin-top: 5rpx;
+  color: #64748b;
+  font-size: 20rpx;
+}
+
+.daily-picker-value {
+  box-sizing: border-box;
+  min-height: 68rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
+  color: #0f172a;
+  background: #f8fafc;
+  font-size: 24rpx;
+}
+
+.daily-review-order-no {
+  margin-top: 7rpx;
+  color: #94a3b8;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.daily-review-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12rpx;
+  margin-top: 24rpx;
+}
+
+.daily-review-field {
+  padding: 16rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  border: 1rpx solid #dbe5f2;
+}
+
+.daily-review-field.wide {
+  grid-column: 1 / -1;
+}
+
+.daily-review-field > text {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #64748b;
+  font-size: 19rpx;
+  font-weight: 850;
+}
+
+.daily-review-field input {
+  min-height: 52rpx;
+  color: #0f172a;
+  font-size: 24rpx;
+  font-weight: 850;
+  border-bottom: 1rpx solid transparent;
+}
+
+.daily-price-reference {
+  display: block;
+  margin-top: 8rpx;
+  color: #6f7d8d;
+  font-size: 21rpx;
+  line-height: 1.45;
+}
+
+.daily-review-field input:not(:last-child) {
+  margin-bottom: 8rpx;
+}
+
+.daily-review-field input[disabled] {
+  color: #0f172a;
+  opacity: 1;
+}
+
+.daily-review-edit + .daily-review-field input,
+.daily-review-field:not(.locked) input:focus {
+  border-bottom-color: #93c5fd;
+}
+
+.daily-review-field.locked {
+  background: #f8fafc;
+}
+
+.daily-field-note {
+  margin-top: 7rpx;
+  color: #94a3b8;
+  font-size: 17rpx;
+  line-height: 1.35;
+}
+
+.daily-doc-preview {
+  margin-top: 18rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  color: #475569;
+  background: #ffffff;
+  border: 1rpx solid #dbe5f2;
+  font-size: 21rpx;
+  line-height: 1.7;
+}
+
+.daily-doc-head {
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 950;
+}
+
+.daily-doc-note {
+  margin-top: 8rpx;
+  color: #b45309;
+}
+
+.daily-review-footer {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  gap: 10rpx;
+}
+
+.daily-review-nav,
+.daily-review-confirm {
+  height: 68rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.daily-review-nav {
+  color: #334155;
+  background: #eaf0f8;
 }

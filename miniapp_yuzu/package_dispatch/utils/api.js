@@ -128,13 +128,36 @@ function getRole(session = getSession()) {
 function canAccess(feature, session = getSession()) {
   const role = getRole(session);
   const rules = {
-    dispatch: ['admin', 'dispatcher'],
+    dispatch: ['admin', 'dispatcher', 'operations_manager'],
     auction: ['admin'],
     map: ['admin', 'dispatcher', 'operations_manager', 'driver'],
     finance: ['admin'],
     profile: ['admin', 'dispatcher', 'operations_manager', 'driver']
   };
   return (rules[feature] || []).indexOf(role) >= 0;
+}
+
+function errorMessage(err) {
+  const statusCode = Number(err && err.statusCode || 0);
+  const code = String(err && (err.backendError || err.error) || '').trim();
+  const pendingCount = Number(err && (err.pending_count || err.pendingCount) || 0);
+  if (statusCode === 403 || code === 'forbidden') return '当前账号无此操作权限';
+  if (statusCode >= 500 || code === 'internal_server_error') return '服务器处理失败，请稍后重试';
+  if (code === 'network_timeout') return '后端请求超时，请稍后重试';
+  if (code === 'network_failed') return '连接服务器失败，请检查网络后重试';
+  if (/confirm/i.test(code) && /order/i.test(code)) {
+    return pendingCount > 0 ? `还有 ${pendingCount} 单未确认` : '还有订单未确认，请先完成审核';
+  }
+  if (/review/i.test(code) && /document|pdf/i.test(code)) return '请先确认 PDF';
+  return String(err && (err.userMessage || err.message || err.detail) || code || '请求失败，请稍后重试');
+}
+
+function normalizeApiError(body, statusCode) {
+  const payload = body && typeof body === 'object' ? { ...body } : { error: 'request_failed' };
+  payload.statusCode = Number(statusCode || 0);
+  payload.backendError = String(payload.error || 'request_failed');
+  payload.userMessage = errorMessage(payload);
+  return payload;
 }
 
 function request(path, options = {}) {
@@ -163,7 +186,7 @@ function request(path, options = {}) {
             clearSession();
             wx.reLaunch({ url: '/package_dispatch/pages/home/index' });
           }
-          reject(res.data || { error: 'request_failed' });
+          reject(normalizeApiError(res.data, res.statusCode));
           return;
         }
         resolve(res.data);
@@ -184,6 +207,30 @@ function request(path, options = {}) {
           base_url: API_CONFIG.baseUrl
         });
       }
+    });
+  });
+}
+
+function downloadAndOpenDocument(path) {
+  const session = getSession();
+  return new Promise((resolve, reject) => {
+    wx.downloadFile({
+      url: `${API_CONFIG.baseUrl}${path}`,
+      header: session && session.token ? { Authorization: `Bearer ${session.token}` } : {},
+      success: (res) => {
+        if (res.statusCode !== 200) {
+          reject({ error: 'document_download_failed', statusCode: res.statusCode });
+          return;
+        }
+        wx.openDocument({
+          filePath: res.tempFilePath,
+          fileType: 'pdf',
+          showMenu: true,
+          success: () => resolve(res),
+          fail: reject
+        });
+      },
+      fail: reject
     });
   });
 }
@@ -247,8 +294,10 @@ module.exports = {
   clearManualLogout,
   getRole,
   canAccess,
+  errorMessage,
   withDispatcher,
   request,
+  downloadAndOpenDocument,
   appConfig: () => request('/api/dispatch-mobile/app-config'),
   login: (username, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
   loginPhone: (phone, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
@@ -268,6 +317,7 @@ module.exports = {
   },
   sharedState: () => request('/api/dispatch-mobile/shared-state'),
   parseText: (text, batch = true) => request('/api/dispatch-mobile/parser/text', { method: 'POST', data: withDispatcher({ text, batch }) }),
+  parseDailyText: (text) => request('/api/dispatch-mobile/parser/daily', { method: 'POST', data: withDispatcher({ text }) }),
   drafts: () => request('/api/dispatch-mobile/drafts'),
   updateDraft: (id, data) => request(`/api/dispatch-mobile/drafts/${id}`, { method: 'PUT', data: withDispatcher(data) }),
   updateOrder: (id, data) => request(`/api/dispatch-mobile/orders/${id}/update`, { method: 'POST', data: withDispatcher(data) }),
@@ -319,7 +369,15 @@ module.exports = {
   updateResourceVehicleStatus: (data) => request('/api/dispatch-mobile/resource-library/vehicle-status', { method: 'POST', data }),
   resourceLibraryFileUrl: (fileKey) => `${API_CONFIG.baseUrl}/api/dispatch-mobile/resource-library/file${toQuery({ file: fileKey })}`,
   assignOrders: (payload) => request('/api/dispatch-mobile/dispatch/assign', { method: 'POST', data: withDispatcher(payload) }),
+  importDailyAssignments: (payload) => request('/api/dispatch-mobile/daily-import/assign', { method: 'POST', data: withDispatcher(payload) }),
   assignments: () => request('/api/dispatch-mobile/assignments'),
+  runGroups: (date) => request(`/api/dispatch-mobile/run-groups${toQuery({ date })}`),
+  confirmRunOrder: (data) => request('/api/dispatch-mobile/run-confirm', { method: 'POST', data: withDispatcher(data) }),
+  generateRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/generate', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
+  reviewRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
+  reviewAndPublishRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review-publish', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
+  publishRunDocuments: (groupKeys) => request('/api/dispatch-mobile/run-documents/publish', { method: 'POST', data: withDispatcher({ group_keys: groupKeys }) }),
+  driverRunDocuments: (driverId) => request(`/api/driver/run-documents${toQuery({ driver_id: driverId })}`),
   auctionListings: () => request('/api/auction/listings?status=all'),
   createAuctionListing: (payload) => request('/api/auction/listings', { method: 'POST', data: withDispatcher(payload) }),
   bidAuctionListing: (listingId, payload) => request(`/api/auction/listings/${listingId}/bid`, { method: 'POST', data: withDispatcher(payload) }),

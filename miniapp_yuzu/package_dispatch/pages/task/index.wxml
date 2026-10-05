@@ -86,6 +86,22 @@
     </view>
   </view>
 
+  <view wx:if="{{runDocuments.length}}" class="panel run-doc-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">运行文件</view>
+        <view class="muted">运行指示书与运行引受书，可下载或打印。</view>
+      </view>
+      <view class="soft-count">{{runDocuments.length}} 份</view>
+    </view>
+    <view class="run-doc-list">
+      <view wx:for="{{runDocuments}}" wx:key="id" class="run-doc-row" data-url="{{item.file_url}}" bindtap="openRunDocument">
+        <view><view class="run-doc-title">{{item.title}}</view><view class="muted">{{item.meta}}</view></view>
+        <view class="run-doc-open">PDF</view>
+      </view>
+    </view>
+  </view>
+
   <view wx:if="{{readyAssignments.length}}" class="panel ready-panel">
     <view class="panel-header-lite">
       <view>

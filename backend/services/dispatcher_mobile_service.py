@@ -7,7 +7,13 @@ from backend.db.database import get_connection
 from backend.services.auth_service import create_jwt, public_user, authenticate, authenticate_phone, authenticate_wechat, normalize_phone, split_company_account
 from backend.services.dispatch_mobile_audit_service import record_dispatch_mobile_audit
 from backend.services.notification_service import sync_operation_notifications
-from backend.services.parser_service import get_draft, parse_batch_text_to_drafts, parse_text_to_draft, update_draft
+from backend.services.parser_service import (
+    get_draft,
+    parse_batch_text_to_drafts,
+    parse_daily_assignment_text,
+    parse_text_to_draft,
+    update_draft,
+)
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -256,6 +262,25 @@ def parse_dispatcher_text(payload: dict[str, Any]) -> dict[str, Any]:
         source_path="/api/dispatch-mobile/parser/text",
     )
     return {"ok": True, "count": len(refreshed), "drafts": refreshed, "dispatcher_context": dispatcher}
+
+
+def parse_dispatcher_daily_text(payload: dict[str, Any]) -> dict[str, Any]:
+    dispatcher = _payload_dispatcher(payload)
+    result = parse_daily_assignment_text(payload.get("text", ""))
+    record_dispatch_mobile_audit(
+        "mobile_daily_parse",
+        dispatcher,
+        entity_type="daily_assignment_preview",
+        entity_id=None,
+        after={
+            "group_count": result["group_count"],
+            "order_count": result["order_count"],
+            "ignored_count": len(result["ignored_lines"]),
+        },
+        summary=f"Mobile daily parsed {result['group_count']} group(s), {result['order_count']} order(s)",
+        source_path="/api/dispatch-mobile/parser/daily",
+    )
+    return {"ok": True, **result, "dispatcher_context": dispatcher}
 
 
 def update_dispatcher_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:

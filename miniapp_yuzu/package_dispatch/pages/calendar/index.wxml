@@ -1,31 +1,8 @@
 <view class="page calendar-page">
-  <view class="hero calendar-hero">
-    <view class="hero-eyebrow">OPERATIONS CALENDAR</view>
-    <view class="hero-title">订单日历</view>
-  </view>
-
-  <view class="calendar-filter-bar">
-    <picker range="{{driverFilterOptions}}" value="{{driverFilterIndex}}" bindchange="onDriverFilterChange">
-      <view class="calendar-filter-pill">{{driverFilterOptions[driverFilterIndex] || '全部司机'}}</view>
-    </picker>
-    <picker range="{{vehicleFilterOptions}}" value="{{vehicleFilterIndex}}" bindchange="onVehicleFilterChange">
-      <view class="calendar-filter-pill">{{vehicleFilterOptions[vehicleFilterIndex] || '全部车辆'}}</view>
-    </picker>
-  </view>
-
-  <view class="calendar-kpi-grid">
-    <view class="calendar-kpi-card">
-      <view class="calendar-kpi-label">当日订单</view>
-      <view class="calendar-kpi-value">{{summary.total}}</view>
-    </view>
-    <view class="calendar-kpi-card">
-      <view class="calendar-kpi-label">空闲司机</view>
-      <view class="calendar-kpi-value">{{summary.idleDrivers}}</view>
-    </view>
-    <view class="calendar-kpi-card">
-      <view class="calendar-kpi-label">空闲车辆</view>
-      <view class="calendar-kpi-value">{{summary.idleVehicles}}</view>
-    </view>
+  <view class="calendar-page-head">
+    <view class="calendar-page-kicker">OPERATIONS</view>
+    <view class="calendar-page-title">日历</view>
+    <view class="calendar-page-sub">选择日期，再查看出勤司机与订单</view>
   </view>
 
   <view wx:if="{{mode === '30d'}}" class="month-section-list">
@@ -37,7 +14,11 @@
           </view>
         </picker>
         <view wx:else class="month-window-title">{{month.year}}年{{month.monthLabel}}月</view>
-        <view wx:if="{{month.isFirst}}" class="range-switch month-range-switch" bindtap="toggleRange">切到7日</view>
+        <view wx:if="{{month.isFirst}}" class="calendar-period-actions">
+          <view class="period-button" bindtap="previousPeriod">上月</view>
+          <view class="range-switch month-range-switch" bindtap="toggleRange">周历</view>
+          <view class="period-button primary" bindtap="nextPeriod">下月</view>
+        </view>
       </view>
 
       <view class="weekday-row">
@@ -58,7 +39,7 @@
           >
             <view class="month-cell-inner">
               <text class="month-day">{{day.label}}</text>
-              <text wx:if="{{day.attendanceCount > 0}}" class="month-count">{{day.attendanceCount}}</text>
+              <text wx:if="{{day.attendanceCount > 0}}" class="month-count">{{day.attendanceCount}}车</text>
             </view>
           </view>
         </view>
@@ -73,7 +54,11 @@
           <view class="month-window-title">{{displayYear}}年{{displayMonthLabel}}月</view>
         </view>
       </picker>
-      <view class="range-switch month-range-switch" bindtap="toggleRange">切到30日</view>
+      <view class="calendar-period-actions">
+        <view class="period-button" bindtap="previousPeriod">上周</view>
+        <view class="range-switch month-range-switch" bindtap="toggleRange">月历</view>
+        <view class="period-button primary" bindtap="nextPeriod">下周</view>
+      </view>
     </view>
 
     <view class="weekday-row">
@@ -99,7 +84,7 @@
           bindtap="selectDay"
         >
           <view class="week-card-day">{{item.shortLabel}}</view>
-          <view wx:if="{{item.attendanceCount > 0}}" class="week-card-count">{{item.attendanceCount}}</view>
+          <view wx:if="{{item.attendanceCount > 0}}" class="week-card-count">{{item.attendanceCount}}车</view>
         </view>
       </view>
     </scroll-view>
@@ -109,7 +94,7 @@
     <view class="panel-header-lite">
       <view>
         <view class="panel-title">{{selectedDate}} 出勤司机</view>
-        <view class="muted">点击司机，下面只显示这位司机当天订单。</view>
+        <view class="muted">点击司机展开当天订单；切换月份可查看历史订单。</view>
       </view>
       <view class="soft-count">{{driverGroups.length}} 人</view>
     </view>
@@ -132,7 +117,7 @@
 
     <view wx:if="{{!driverGroups.length}}" class="empty-state">当前日期没有符合筛选条件的订单</view>
 
-    <view wx:if="{{dayRows.length}}" class="ledger-list">
+    <view wx:if="{{activeDriverKey && dayRows.length}}" class="ledger-list">
       <view class="selected-driver-head">
         <view>
           <view class="selected-driver-title">{{activeDriverTitle}}</view>

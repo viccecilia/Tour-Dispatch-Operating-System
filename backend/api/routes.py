@@ -85,6 +85,8 @@ from backend.services.data_scope_service import list_carrier_tenants, resolve_te
 from backend.services.dispatch_service import (
     assign_orders,
     cancel_assignment,
+    import_daily_assignment_group,
+    import_daily_assignment_batch,
     list_assignments,
     list_available_drivers,
     list_available_vehicles,
@@ -104,6 +106,7 @@ from backend.services.dispatcher_mobile_service import (
     login_dispatcher_by_wechat,
     login_dispatcher_dev_mock,
     mark_order_dispatcher_context,
+    parse_dispatcher_daily_text,
     parse_dispatcher_text,
     update_dispatcher_draft,
 )
@@ -196,6 +199,17 @@ from backend.services.resource_service import (
     update_vehicle_inspection_record,
 )
 from backend.services.resource_library_service import list_resource_library, resolve_resource_pdf, update_driver_health_check_date, update_driver_resource_status, update_vehicle_inspection_date, update_vehicle_resource_status, upload_vehicle_resource_document
+from backend.services.run_document_service import (
+    confirm_order as confirm_run_order,
+    generate_run_document,
+    list_driver_run_documents,
+    list_run_groups,
+    mark_order_changed as mark_run_order_changed,
+    publish_run_documents,
+    review_and_publish_run_document,
+    review_run_document,
+    resolve_run_document,
+)
 from backend.services.flight_info_service import build_flight_update, query_flight_info
 from backend.services.settings_service import (
     get_platform_auth_settings,
@@ -370,12 +384,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json(get_shared_runtime_state(params))
             return
         if path == "/api/dispatch-mobile/unassigned-orders":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json({"orders": list_dispatcher_unassigned_orders(params)})
             return
         if path == "/api/dispatch-mobile/drafts":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json({"drafts": list_drafts()})
             return
@@ -407,6 +421,18 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json({"assignments": list_assignments(params.get("status", "active"))})
+            return
+        if path == "/api/dispatch-mobile/run-groups":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json({"groups": list_run_groups(params.get("date"))})
+            return
+        if path == "/api/run-documents/file":
+            target = resolve_run_document(params.get("document_id") or 0, self.current_user())
+            if not target:
+                self.send_json({"error": "run_document_not_found_or_forbidden"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_pdf(target)
             return
         if path == "/api/dispatch-mobile/fleet/latest-locations":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -827,6 +853,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/driver/assignments":
             self.send_json({"assignments": list_driver_assignments(self.driver_id(params))})
+            return
+        if path == "/api/driver/run-documents":
+            user = self.require_role({"admin", "dispatcher", "operations_manager", "driver"})
+            if not user:
+                return
+            driver_id = int(user.get("profile_id") or 0) if user.get("role") == "driver" else self.driver_id(params)
+            if not driver_id:
+                self.send_json({"error": "driver_id_required"}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"documents": list_driver_run_documents(driver_id)})
             return
         driver_assignment_id = self.match_driver_assignment_path(path)
         if driver_assignment_id:
@@ -1544,20 +1580,91 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"draft": draft, "parse_result": draft.get("parse_result"), "parse_status": draft["parse_status"]}, HTTPStatus.CREATED)
             return
         if path == "/api/dispatch-mobile/parser/text":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json(parse_dispatcher_text(payload), HTTPStatus.CREATED)
             return
+        if path == "/api/dispatch-mobile/parser/daily":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json(parse_dispatcher_daily_text(payload), HTTPStatus.OK)
+            return
         if path == "/api/dispatch-mobile/order-context":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             order = mark_order_dispatcher_context(payload.get("order_id"), payload, bool(payload.get("update_only")))
             self.send_json({"ok": bool(order), "order": order} if order else {"ok": False, "error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
+        if path == "/api/dispatch-mobile/daily-import/assign":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.dispatch_daily_import_with_audit(payload, path)
+            return
         if path == "/api/dispatch-mobile/dispatch/assign":
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.dispatch_assign_with_audit(payload, path)
+            return
+        if path == "/api/dispatch-mobile/run-confirm":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                order = confirm_run_order(payload.get("order_id"), payload, user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            record_audit("run_order_confirm", "order", order.get("id"), after=order, actor=self.actor_label(), source_path=path, summary=f"Confirmed run order {order.get('oid') or order.get('id')}")
+            self.send_json({"order": order})
+            return
+        if path == "/api/dispatch-mobile/run-documents/generate":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                document = generate_run_document(payload.get("group_key"), user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            record_audit("run_document_generate", "run_document", document.get("id"), after=document, actor=self.actor_label(), source_path=path, summary=f"Generated run document V{document.get('version')}")
+            self.send_json({"document": document})
+            return
+        if path == "/api/dispatch-mobile/run-documents/review":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                document = review_run_document(payload.get("group_key"), user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            record_audit("run_document_review", "run_document", document.get("id"), after=document, actor=self.actor_label(), source_path=path, summary=f"Reviewed run document V{document.get('version')}")
+            self.send_json({"document": document})
+            return
+        if path == "/api/dispatch-mobile/run-documents/review-publish":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                result = review_and_publish_run_document(payload.get("group_key"), user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            document = result.get("document") or {}
+            record_audit("run_document_review_publish", "run_document", document.get("id"), after=result, actor=self.actor_label(), source_path=path, summary=f"Reviewed and published run document V{document.get('version')}")
+            self.send_json(result)
+            return
+        if path == "/api/dispatch-mobile/run-documents/publish":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                documents = publish_run_documents(payload.get("group_keys") or [], user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            record_audit("run_document_publish", "run_document", ",".join(str(item.get("id")) for item in documents), after={"documents": documents}, actor=self.actor_label(), source_path=path, summary=f"Published {len(documents)} run document(s)")
+            self.send_json({"documents": documents, "count": len(documents)})
             return
         if path == "/api/parser/excel":
             if not self.require_role({"admin", "dispatcher"}):
@@ -1573,14 +1680,14 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             draft = update_dispatcher_draft(mobile_draft_id, payload)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
             return
         mobile_confirm_id = self.match_dispatch_mobile_confirm_path(path)
         if mobile_confirm_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             result = confirm_draft(mobile_confirm_id)
             if result and result.get("order_id"):
@@ -1598,7 +1705,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         mobile_order_update_id = self.match_dispatch_mobile_order_update_path(path)
         if mobile_order_update_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             before = get_order(mobile_order_update_id)
             order = update_order(mobile_order_update_id, payload)
@@ -1625,6 +1732,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     source_path=path,
                 )
                 notify_order_changed_for_driver(before or {}, order, self.actor_label())
+                mark_run_order_changed(order.get("id"), before or {}, order, order.get("tenant_id"))
             self.send_json({"order": order} if order else {"error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/driver/report":
@@ -1692,7 +1800,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         payload = self.read_json()
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             draft = update_dispatcher_draft(mobile_draft_id, payload)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
@@ -1780,7 +1888,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             draft = update_dispatcher_draft(mobile_draft_id, payload)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
@@ -1975,13 +2083,13 @@ class ApiHandler(BaseHTTPRequestHandler):
         if role in {"admin", "dispatcher"}:
             return notifications
         if role == "operations_manager":
-            allowed_types = {"resource_reminder", "incident", "driver_confirm_overdue"}
+            allowed_types = {"resource_reminder", "incident", "driver_confirm_overdue", "run_document_published", "run_document_updated"}
             return [
                 item for item in notifications
                 if str(item.get("notification_type") or item.get("type") or "").lower() in allowed_types
             ]
         if role == "driver":
-            allowed_types = {"new_order", "upcoming_start", "delay_risk"}
+            allowed_types = {"new_order", "upcoming_start", "delay_risk", "run_document_published", "run_document_updated"}
             return [
                 item for item in notifications
                 if str(item.get("target_role") or "").lower() == "driver"
@@ -2091,31 +2199,83 @@ class ApiHandler(BaseHTTPRequestHandler):
             )
         self.send_json({"expense": expense} if expense else {"error": "driver_expense_not_found"}, HTTPStatus.OK if expense else HTTPStatus.NOT_FOUND)
 
-    def dispatch_assign_with_audit(self, payload: dict, path: str) -> None:
+    def dispatch_assign_with_audit(
+        self,
+        payload: dict,
+        path: str,
+        *,
+        notify_driver: bool = True,
+        publish_assignment: bool = True,
+        audit_action: str = "dispatch_assign",
+    ) -> None:
         try:
-            result = assign_orders(payload.get("order_ids", []), payload.get("driver_id"), payload.get("vehicle_id"), actor=self.current_user())
+            result = assign_orders(
+                payload.get("order_ids", []),
+                payload.get("driver_id"),
+                payload.get("vehicle_id"),
+                actor=self.current_user(),
+                notify_driver=notify_driver,
+                publish_assignment=publish_assignment,
+            )
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         entity_id = ",".join(str(item) for item in result.get("assignment_ids", [])) or ",".join(str(item) for item in payload.get("order_ids", []))
         record_audit(
-            "dispatch_assign",
+            audit_action,
             "assignment",
             entity_id,
             after={"payload": payload, "result": result},
             actor=self.actor_label(),
             source_path=path,
-            summary=f"Assigned {len(result.get('updated_order_ids', []))} order(s)",
+            summary=f"{'Imported' if not publish_assignment else 'Assigned'} {len(result.get('updated_order_ids', []))} order(s)",
         )
         record_dispatch_mobile_audit(
-            "mobile_dispatch_assign",
+            "mobile_daily_import_assign" if not publish_assignment else "mobile_dispatch_assign",
             payload,
             entity_type="assignment",
             entity_id=entity_id,
             after=result,
-            summary=f"Mobile assigned {len(result.get('updated_order_ids', []))} order(s)",
+            summary=f"Mobile {'imported' if not publish_assignment else 'assigned'} {len(result.get('updated_order_ids', []))} order(s)",
             source_path=path,
         )
+        self.send_json(result)
+
+    def dispatch_daily_import_with_audit(self, payload: dict, path: str) -> None:
+        try:
+            if payload.get("groups") is not None:
+                result = import_daily_assignment_batch(payload, actor=self.current_user())
+            else:
+                result = import_daily_assignment_group(payload, actor=self.current_user())
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        except Exception:
+            logging.exception("daily import transaction failed")
+            self.send_json({"error": "daily_import_transaction_failed"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        entity_id = ",".join(str(item) for item in result.get("assignment_ids", []))
+        try:
+            record_audit(
+                "daily_import_assign",
+                "assignment",
+                entity_id,
+                after={"payload": payload, "result": result},
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Imported {len(result.get('updated_order_ids', []))} daily order(s)",
+            )
+            record_dispatch_mobile_audit(
+                "mobile_daily_import_assign",
+                payload,
+                entity_type="assignment",
+                entity_id=entity_id,
+                after=result,
+                summary=f"Mobile imported {len(result.get('updated_order_ids', []))} daily order(s)",
+                source_path=path,
+            )
+        except Exception:
+            logging.exception("daily import succeeded but audit logging failed")
         self.send_json(result)
 
     def dispatch_cancel_with_audit(self, payload: dict, path: str) -> None:

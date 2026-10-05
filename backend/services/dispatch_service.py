@@ -1,4 +1,6 @@
 ﻿import re
+import hashlib
+import json
 from typing import Any
 
 from backend.db.database import get_connection
@@ -176,7 +178,15 @@ def list_assignments(status: str | None = "active", tenant_id: int | None | obje
         return [dict(row) for row in conn.execute(" ".join(sql), params).fetchall()]
 
 
-def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: dict[str, Any] | None = None) -> dict[str, Any]:
+def assign_orders(
+    order_ids: list[Any],
+    driver_id: Any,
+    vehicle_id: Any,
+    actor: dict[str, Any] | None = None,
+    *,
+    notify_driver: bool = True,
+    publish_assignment: bool = True,
+) -> dict[str, Any]:
     normalized_order_ids = _normalize_ids(order_ids)
     driver_id_int = _to_int(driver_id)
     vehicle_id_int = _to_int(vehicle_id)
@@ -201,8 +211,9 @@ def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: 
             }
 
         assignment_ids: list[int] = []
-        publisher_id = _actor_user_id(actor)
-        publisher_name = _actor_name(actor)
+        publisher_id = _actor_user_id(actor) if publish_assignment else None
+        publisher_name = _actor_name(actor) if publish_assignment else None
+        execution_status = "assigned" if publish_assignment else "draft"
         for order in orders:
             cursor = conn.execute(
                 """
@@ -210,9 +221,13 @@ def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: 
                     tenant_id, order_id, driver_id, vehicle_id, status, execution_status,
                     assigned_at, published_by_user_id, published_by_name, published_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, 'active', 'assigned', CURRENT_TIMESTAMP, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP, ?, ?,
+                        CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP)
                 """,
-                (get_current_tenant_id(), order["id"], driver_id_int, vehicle_id_int, publisher_id, publisher_name),
+                (
+                    get_current_tenant_id(), order["id"], driver_id_int, vehicle_id_int,
+                    execution_status, publisher_id, publisher_name, 1 if publish_assignment else 0,
+                ),
             )
             assignment_ids.append(cursor.lastrowid)
             assigned_oid = _build_assigned_oid(conn, order, vehicle, driver)
@@ -224,7 +239,7 @@ def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: 
                     driver_code = COALESCE(NULLIF(driver_code, ''), ?),
                     vehicle_type_code = COALESCE(NULLIF(vehicle_type_code, ''), ?),
                     dispatch_status = 'assigned',
-                    execution_status = 'assigned',
+                    execution_status = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND tenant_id = ?
                 """,
@@ -233,27 +248,374 @@ def assign_orders(order_ids: list[Any], driver_id: Any, vehicle_id: Any, actor: 
                     vehicle.get("plate_short_code") or plate_short_code(vehicle["plate_number"]),
                     driver.get("driver_code") or _driver_code(driver.get("name")),
                     vehicle.get("vehicle_type_code") or normalize_vehicle_type_code(order.get("vehicle_type"), vehicle.get("vehicle_type")),
+                    execution_status,
                     order["id"],
                     get_current_tenant_id(),
                 ),
             )
         conn.commit()
 
-    from backend.services.notification_service import notify_dispatch_assigned
+    if notify_driver:
+        from backend.services.notification_service import notify_dispatch_assigned
 
-    notify_dispatch_assigned(
-        assignment_ids,
-        [order["id"] for order in orders],
-        driver_id=driver_id_int,
-        driver_name=driver.get("name"),
-        plate_number=vehicle.get("plate_number"),
-    )
+        notify_dispatch_assigned(
+            assignment_ids,
+            [order["id"] for order in orders],
+            driver_id=driver_id_int,
+            driver_name=driver.get("name"),
+            plate_number=vehicle.get("plate_number"),
+        )
     return {
         "success": True,
         "assignment_ids": assignment_ids,
         "updated_order_ids": [order["id"] for order in orders],
         "conflicts": [],
+        "published": publish_assignment,
+        "driver_notified": bool(notify_driver),
     }
+
+
+def import_daily_assignment_group(
+    payload: dict[str, Any],
+    actor: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create or update one daily driver/vehicle group in one transaction."""
+    with get_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            result = _import_daily_assignment_group_tx(conn, payload, actor)
+            if not result.get("success"):
+                conn.rollback()
+                return result
+            conn.commit()
+            return result
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def import_daily_assignment_batch(
+    payload: dict[str, Any],
+    actor: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    groups = payload.get("groups") or []
+    if not isinstance(groups, list) or not groups:
+        raise ValueError("missing_daily_import_groups")
+    with get_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            results: list[dict[str, Any]] = []
+            for index, group in enumerate(groups):
+                if not isinstance(group, dict):
+                    raise ValueError(f"invalid_daily_import_group:{index + 1}")
+                result = _import_daily_assignment_group_tx(conn, group, actor)
+                result["group_index"] = index
+                result["client_group_index"] = group.get("client_group_index", index)
+                result["driver_name"] = group.get("driver_name")
+                result["vehicle_code"] = group.get("vehicle_code")
+                if not result.get("success"):
+                    conn.rollback()
+                    return {
+                        "success": False,
+                        "groups": [result],
+                        "failed_group_index": index,
+                        "conflicts": result.get("conflicts", []),
+                        "order_ids": [],
+                        "assignment_ids": [],
+                    }
+                results.append(result)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return {
+        "success": True,
+        "groups": results,
+        "order_ids": [item for result in results for item in result.get("order_ids", [])],
+        "assignment_ids": [item for result in results for item in result.get("assignment_ids", [])],
+        "updated_order_ids": [item for result in results for item in result.get("updated_order_ids", [])],
+        "reused": bool(results) and all(result.get("reused") for result in results),
+        "updated_existing": any(result.get("updated_existing") for result in results),
+        "conflicts": [],
+    }
+
+
+def _import_daily_assignment_group_tx(
+    conn: Any,
+    payload: dict[str, Any],
+    actor: dict[str, Any] | None,
+) -> dict[str, Any]:
+    from backend.services.order_service import _normalize_payload
+
+    driver_id = _to_int(payload.get("driver_id"))
+    vehicle_id = _to_int(payload.get("vehicle_id"))
+    raw_orders = payload.get("orders") or []
+    if not driver_id or not vehicle_id or not isinstance(raw_orders, list) or not raw_orders:
+        raise ValueError("missing_orders_driver_or_vehicle")
+    prepared: list[dict[str, Any]] = []
+    for index, raw_order in enumerate(raw_orders):
+        if not isinstance(raw_order, dict):
+            raise ValueError(f"invalid_daily_order:{index + 1}")
+        normalized = _normalize_payload(
+            {
+                **raw_order,
+                "pickup_location": raw_order.get("pickup_location") or "待补",
+                "dropoff_location": raw_order.get("dropoff_location") or "待补",
+                "dispatch_status": "unassigned",
+                "settlement_status": raw_order.get("settlement_status") or "pending",
+            },
+            partial=False,
+        )
+        normalized["execution_status"] = "draft"
+        normalized["created_by_dispatcher"] = _actor_name(actor)
+        normalized["created_by_dispatcher_id"] = _actor_user_id(actor)
+        normalized["updated_by_dispatcher"] = _actor_name(actor)
+        normalized["updated_by_dispatcher_id"] = _actor_user_id(actor)
+        prepared.append(normalized)
+    dates = {str(item.get("order_date") or "") for item in prepared}
+    if len(dates) != 1 or not next(iter(dates)):
+        raise ValueError("daily_import_requires_one_service_date")
+    service_date = next(iter(dates))
+    tenant_id = get_current_tenant_id()
+    group_key = hashlib.sha256(f"{tenant_id}|{service_date}|{driver_id}|{vehicle_id}".encode("utf-8")).hexdigest()
+    content_hash = hashlib.sha256(json.dumps(prepared, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    driver = _fetch_driver(conn, driver_id)
+    vehicle = _fetch_vehicle(conn, vehicle_id)
+    if not driver or not vehicle:
+        raise ValueError("driver_or_vehicle_not_found")
+    existing = _daily_import_group_rows(conn, group_key)
+    if not existing:
+        existing = _legacy_daily_import_group_rows(conn, service_date, driver_id, vehicle_id, _actor_user_id(actor))
+    if existing and any(_daily_row_is_published(item) for item in existing):
+        return _daily_import_conflict_result(existing, "published_assignment")
+    excluded = {int(item["assignment_id"]) for item in existing if item.get("assignment_id")}
+    conflicts = _find_daily_external_conflicts(conn, prepared, driver_id, vehicle_id, excluded)
+    if conflicts:
+        return {
+            "success": False, "assignment_ids": [], "updated_order_ids": [], "order_ids": [],
+            "reused": False, "updated_existing": False, "conflicts": conflicts,
+        }
+    if existing and len(existing) == len(prepared) and all(item.get("daily_import_content_hash") == content_hash for item in existing):
+        return {
+            "success": True,
+            "assignment_ids": [int(item["assignment_id"]) for item in existing],
+            "updated_order_ids": [int(item["id"]) for item in existing],
+            "order_ids": [int(item["id"]) for item in existing],
+            "conflicts": [], "reused": True, "updated_existing": False,
+            "group_key": group_key, "content_hash": content_hash,
+        }
+    order_ids: list[int] = []
+    assignment_ids: list[int] = []
+    for index, order_data in enumerate(prepared):
+        if index < len(existing):
+            order_id = int(existing[index]["id"])
+            assignment_id = int(existing[index]["assignment_id"])
+            _update_daily_import_order(conn, order_id, order_data, group_key, content_hash, index)
+            conn.execute(
+                """UPDATE assignments
+                   SET driver_id = ?, vehicle_id = ?, status = 'active', execution_status = 'draft',
+                       published_by_user_id = NULL, published_by_name = NULL, published_at = NULL,
+                       cancelled_at = NULL, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND tenant_id = ?""",
+                (driver_id, vehicle_id, assignment_id, tenant_id),
+            )
+        else:
+            order_id, assignment_id = _insert_daily_import_order(conn, order_data, group_key, content_hash, index, driver_id, vehicle_id)
+        order_ids.append(order_id)
+        assignment_ids.append(assignment_id)
+    for stale in existing[len(prepared):]:
+        conn.execute("UPDATE assignments SET status = 'cancelled', execution_status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?", (stale["assignment_id"], tenant_id))
+        conn.execute("UPDATE orders SET is_deleted = 1, dispatch_status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?", (stale["id"], tenant_id))
+    for order_id in order_ids:
+        order = dict(conn.execute("SELECT * FROM orders WHERE id = ? AND tenant_id = ?", (order_id, tenant_id)).fetchone())
+        conn.execute(
+            """UPDATE orders
+               SET oid = ?, plate_short_code = ?, driver_code = COALESCE(NULLIF(driver_code, ''), ?),
+                   vehicle_type_code = COALESCE(NULLIF(vehicle_type_code, ''), ?),
+                   dispatch_status = 'assigned', execution_status = 'draft', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND tenant_id = ?""",
+            (
+                _build_assigned_oid(conn, order, vehicle, driver),
+                vehicle.get("plate_short_code") or plate_short_code(vehicle.get("plate_number")),
+                driver.get("driver_code") or _driver_code(driver.get("name")),
+                vehicle.get("vehicle_type_code") or normalize_vehicle_type_code(order.get("vehicle_type"), vehicle.get("vehicle_type")),
+                order_id, tenant_id,
+            ),
+        )
+    return {
+        "success": True, "assignment_ids": assignment_ids, "updated_order_ids": order_ids,
+        "order_ids": order_ids, "conflicts": [], "reused": False,
+        "updated_existing": bool(existing), "group_key": group_key, "content_hash": content_hash,
+    }
+
+
+def _daily_import_group_rows(conn: Any, group_key: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT o.*, a.id AS assignment_id, a.execution_status AS assignment_execution_status,
+               a.status AS assignment_status, a.published_at AS assignment_published_at
+        FROM orders o
+        LEFT JOIN assignments a
+          ON a.order_id = o.id AND a.tenant_id = o.tenant_id AND a.status = 'active'
+        WHERE o.tenant_id = ? AND o.daily_import_group_key = ? AND COALESCE(o.is_deleted, 0) = 0
+        ORDER BY o.daily_import_line_index, o.id
+        """,
+        (get_current_tenant_id(), group_key),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _legacy_daily_import_group_rows(
+    conn: Any,
+    service_date: str,
+    driver_id: int,
+    vehicle_id: int,
+    dispatcher_id: int | None,
+) -> list[dict[str, Any]]:
+    if not dispatcher_id:
+        return []
+    rows = conn.execute(
+        """
+        SELECT o.*, a.id AS assignment_id, a.execution_status AS assignment_execution_status,
+               a.status AS assignment_status, a.published_at AS assignment_published_at
+        FROM assignments a
+        JOIN orders o ON o.id = a.order_id AND o.tenant_id = a.tenant_id
+        WHERE a.tenant_id = ? AND a.status = 'active' AND a.execution_status = 'draft'
+          AND a.driver_id = ? AND a.vehicle_id = ? AND o.order_date = ?
+          AND o.created_by_dispatcher_id = ? AND COALESCE(o.is_deleted, 0) = 0
+          AND o.daily_import_group_key IS NULL
+        ORDER BY o.start_time, o.id
+        """,
+        (get_current_tenant_id(), driver_id, vehicle_id, service_date, dispatcher_id),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _daily_row_is_published(row: dict[str, Any]) -> bool:
+    return bool(
+        row.get("assignment_published_at")
+        or row.get("assignment_execution_status") not in (None, "", "draft")
+        or row.get("run_confirmation_status") == "confirmed"
+    )
+
+
+def _daily_conflict(row: dict[str, Any], conflict_type: str) -> dict[str, Any]:
+    return {
+        "order_id": row.get("id"),
+        "oid": row.get("oid"),
+        "assignment_id": row.get("assignment_id"),
+        "start_time": row.get("start_time"),
+        "type": conflict_type,
+    }
+
+
+def _daily_import_conflict_result(rows: list[dict[str, Any]], conflict_type: str) -> dict[str, Any]:
+    return {
+        "success": False,
+        "assignment_ids": [],
+        "updated_order_ids": [],
+        "order_ids": [],
+        "reused": False,
+        "updated_existing": False,
+        "conflicts": [_daily_conflict(item, conflict_type) for item in rows],
+    }
+
+
+def _find_daily_external_conflicts(
+    conn: Any,
+    orders: list[dict[str, Any]],
+    driver_id: int,
+    vehicle_id: int,
+    excluded_assignment_ids: set[int],
+) -> list[dict[str, Any]]:
+    conflicts: list[dict[str, Any]] = []
+    for order in orders:
+        rows = conn.execute(
+            """
+            SELECT a.id AS assignment_id, a.driver_id, a.vehicle_id,
+                   a.execution_status AS assignment_execution_status, a.published_at,
+                   o.id, o.oid, o.order_date, o.start_time, o.end_time
+            FROM assignments a
+            JOIN orders o ON o.id = a.order_id AND o.tenant_id = a.tenant_id
+            WHERE a.tenant_id = ? AND a.status = 'active' AND COALESCE(o.is_deleted, 0) = 0
+              AND o.order_date = ? AND (a.driver_id = ? OR a.vehicle_id = ?)
+            """,
+            (get_current_tenant_id(), order.get("order_date"), driver_id, vehicle_id),
+        ).fetchall()
+        for raw in rows:
+            active = dict(raw)
+            if int(active.get("assignment_id") or 0) in excluded_assignment_ids:
+                continue
+            if not _orders_overlap(order, active):
+                continue
+            conflict_type = (
+                "published_assignment"
+                if active.get("published_at") or active.get("assignment_execution_status") != "draft"
+                else "unrelated_draft_assignment"
+            )
+            if active.get("driver_id") == driver_id:
+                conflicts.append({**_daily_conflict(active, conflict_type), "resource": "driver"})
+            if active.get("vehicle_id") == vehicle_id:
+                conflicts.append({**_daily_conflict(active, conflict_type), "resource": "vehicle"})
+    return conflicts
+
+
+def _insert_daily_import_order(
+    conn: Any,
+    order_data: dict[str, Any],
+    group_key: str,
+    content_hash: str,
+    line_index: int,
+    driver_id: int,
+    vehicle_id: int,
+) -> tuple[int, int]:
+    data = {
+        **order_data,
+        "tenant_id": get_current_tenant_id(),
+        "daily_import_group_key": group_key,
+        "daily_import_content_hash": content_hash,
+        "daily_import_line_index": line_index,
+    }
+    fields = list(data.keys())
+    cursor = conn.execute(
+        f"INSERT INTO orders ({', '.join(fields)}) VALUES ({', '.join(['?'] * len(fields))})",
+        [data[field] for field in fields],
+    )
+    order_id = int(cursor.lastrowid)
+    assignment = conn.execute(
+        """
+        INSERT INTO assignments (
+            tenant_id, order_id, driver_id, vehicle_id, status, execution_status,
+            assigned_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'active', 'draft', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (get_current_tenant_id(), order_id, driver_id, vehicle_id),
+    )
+    return order_id, int(assignment.lastrowid)
+
+
+def _update_daily_import_order(
+    conn: Any,
+    order_id: int,
+    order_data: dict[str, Any],
+    group_key: str,
+    content_hash: str,
+    line_index: int,
+) -> None:
+    data = {
+        **order_data,
+        "daily_import_group_key": group_key,
+        "daily_import_content_hash": content_hash,
+        "daily_import_line_index": line_index,
+        "is_deleted": 0,
+        "dispatch_status": "assigned",
+        "execution_status": "draft",
+    }
+    assignments = ", ".join(f"{field} = ?" for field in data)
+    conn.execute(
+        f"UPDATE orders SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?",
+        [*[data[field] for field in data], order_id, get_current_tenant_id()],
+    )
 
 
 def cancel_assignment(assignment_id: Any = None, order_id: Any = None) -> dict[str, Any]:

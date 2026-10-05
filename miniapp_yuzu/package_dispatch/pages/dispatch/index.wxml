@@ -1,4 +1,167 @@
 ﻿<view class="page dispatch-page">
+  <view class="dispatch-mode-switch">
+    <view class="dispatch-mode-option {{workbenchMode === 'daily' ? 'active' : ''}}" data-mode="daily" bindtap="switchWorkbenchMode">日配模式</view>
+    <view class="dispatch-mode-option {{workbenchMode === 'batch' ? 'active' : ''}}" data-mode="batch" bindtap="switchWorkbenchMode">批量导入</view>
+  </view>
+
+  <block wx:if="{{workbenchMode === 'daily'}}">
+    <view class="daily-page-head">
+      <view>
+        <view class="daily-page-kicker">DAILY DISPATCH</view>
+        <view class="daily-page-title">日配</view>
+        <view class="daily-page-sub">按司机与车辆核对当日订单</view>
+      </view>
+      <view class="daily-import-button" bindtap="openDailyImport">导入订单</view>
+    </view>
+
+    <view class="daily-date-bar">
+      <view class="daily-date-arrow" bindtap="previousDailyDate">‹</view>
+      <picker mode="date" value="{{dailyDate}}" bindchange="onDailyDateChange">
+        <view class="daily-date-value">{{dailyDate}}</view>
+      </picker>
+      <view class="daily-date-arrow" bindtap="nextDailyDate">›</view>
+      <view class="daily-date-summary">{{dailyRunSummary.vehicles}}司机 · 已发布{{dailyRunSummary.published}} · 待审核{{dailyRunSummary.pending}}</view>
+    </view>
+
+    <view class="daily-status-tabs">
+      <view wx:for="{{dailyStatusOptions}}" wx:key="value" class="daily-status-tab {{dailyStatusFilter === item.value ? 'active' : ''}}" data-status="{{item.value}}" bindtap="selectDailyStatus">{{item.label}}</view>
+    </view>
+
+    <view class="daily-group-list">
+      <view wx:for="{{dailyRunGroups}}" wx:key="key" class="daily-run-card {{item.selected ? 'selected' : ''}}">
+        <view class="daily-run-head">
+          <view class="daily-check {{item.selected ? 'checked' : ''}}" data-key="{{item.key}}" bindtap="toggleDailyGroupSelection">{{item.selected ? '✓' : ''}}</view>
+          <view class="daily-run-identity">
+            <view class="daily-run-driver">{{item.driver}} <text>{{item.vehicle}}</text></view>
+            <view class="daily-run-meta">{{item.orders.length}} 单 · {{item.vehicleFull}}</view>
+            <view wx:if="{{item.areaWarningCount}}" class="daily-area-warning">⚠ {{item.areaWarningCount}}单区域待确认</view>
+          </view>
+          <view class="daily-run-state {{item.status}}">{{item.statusText}}</view>
+        </view>
+        <view class="daily-run-orders">
+          <view wx:for="{{item.visibleOrders}}" wx:key="assignmentId" wx:for-item="order" class="daily-run-order">
+            <text class="daily-run-time">{{order.time}}</text>
+            <text class="daily-run-route">{{order.route}}</text>
+          </view>
+          <view wx:if="{{item.hiddenCount}}" class="daily-more">+{{item.hiddenCount}} 单</view>
+        </view>
+        <view class="daily-run-actions">
+          <view class="daily-primary-action" data-key="{{item.key}}" bindtap="openDailyPdf">{{dailyPdfLoadingKey === item.key ? '生成中…' : (item.workflowStatus === 'published' ? '查看PDF' : '审核PDF')}}</view>
+        </view>
+        <view wx:if="{{item.documentStatusText}}" class="daily-doc-state">{{item.documentStatusText}}</view>
+      </view>
+      <view wx:if="{{!dailyRunGroups.length}}" class="daily-empty">
+        <view class="daily-empty-title">当天暂无已派订单</view>
+        <view class="daily-empty-sub">可点击“导入订单”粘贴已配好司机与车辆的日配内容。</view>
+      </view>
+    </view>
+
+    <view wx:if="{{dailySelectedGroupKeys.length}}" class="daily-release-bar">
+      <view><strong>{{dailySelectedGroupKeys.length}}</strong><text>车已选</text></view>
+      <view class="daily-release-pdf" bindtap="openDailyPdf">PDF</view>
+      <view class="daily-release-button" bindtap="publishSelectedDailyGroups">确认发布</view>
+    </view>
+
+    <view wx:if="{{dailyImportOpen}}" class="daily-fullscreen">
+      <view class="daily-fullscreen-head">
+        <view class="daily-back" bindtap="closeDailyImport">‹ 返回</view>
+        <view class="daily-fullscreen-title">导入日配订单</view>
+        <view class="daily-fullscreen-spacer"></view>
+      </view>
+      <scroll-view scroll-y enhanced show-scrollbar="{{false}}" class="daily-fullscreen-body">
+        <textarea class="daily-source-editor" maxlength="-1" value="{{dailySourceText}}" bindinput="onDailySourceInput" placeholder="粘贴日期、司机、车牌以及该司机的全部订单" />
+        <view class="daily-import-actions">
+          <view class="daily-secondary-button" bindtap="parseDailyText">解析</view>
+          <view class="daily-secondary-button" bindtap="clearDailySource">清空</view>
+        </view>
+        <view wx:if="{{dailyMessage}}" class="daily-import-message">{{dailyMessage}}</view>
+        <view class="daily-import-warning safe">确认导入后只进入待运行确认，不会通知司机，也不会出现在司机端。</view>
+        <view wx:for="{{dailyGroups}}" wx:key="id" class="daily-import-group">
+          <view class="daily-import-group-head"><strong>{{item.driverName}}</strong><text>{{item.vehicleCode}} · {{item.orders.length}}单</text></view>
+          <view wx:if="{{item.areaWarningCount}}" class="daily-area-warning">⚠ {{item.areaWarningCount}}单区域待确认</view>
+          <view wx:for="{{item.orders}}" wx:key="id" wx:for-item="order" class="daily-import-line">
+            <text>{{order.displayIndex}} {{order.time}}</text>
+            <view><text>{{order.route}}</text><text wx:if="{{order.areaWarning}}" class="daily-area-warning-detail">{{order.areaRoute}} · 营业区域需确认</text></view>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="daily-fullscreen-footer">
+        <view class="daily-confirm-import {{dailyGroups.length && !dailyImportSubmitting ? '' : 'disabled'}}" bindtap="publishDailyAssignments">{{dailyImportSubmitting ? '正在导入…' : '确认'}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{dailyPdfReviewOpen}}" class="daily-fullscreen daily-pdf-review-screen">
+      <view class="daily-fullscreen-head">
+        <view class="daily-back" bindtap="closeDailyPdfReview">‹ 日配</view>
+        <view class="daily-fullscreen-title">{{dailyPdfReviewIndex + 1}} / {{dailyPdfReviewTotal}} 司机</view>
+        <view class="daily-review-edit" bindtap="editDailyPdf">修改</view>
+      </view>
+      <view class="daily-fullscreen-body daily-pdf-review-body">
+        <view class="daily-review-title">{{dailyPdfReviewGroup.driver_name || dailyPdfReviewGroup.driver}} · {{dailyPdfReviewGroup.plate_number || dailyPdfReviewGroup.vehicleFull}}</view>
+        <view class="daily-review-summary">{{dailyPdfReviewGroup.business_date}} · {{dailyPdfReviewGroup.order_count || dailyPdfReviewGroup.orders.length}}单</view>
+        <view class="daily-pdf-file">{{dailyPdfReviewDocument.file_name}}</view>
+        <view class="daily-pdf-meta">PDF 草稿 V{{dailyPdfReviewDocument.version}} · {{dailyPdfReviewDocument.page_count}} 页</view>
+        <view wx:if="{{dailyPdfValidationIssues.length}}" class="daily-pdf-issues">
+          <view class="daily-doc-head">{{dailyPdfValidationIssues.length}} 项待补</view>
+          <view wx:for="{{dailyPdfValidationIssues}}" wx:key="*this">{{item}}</view>
+        </view>
+        <view class="daily-pdf-canvas" bindtap="openGeneratedDailyPdf">
+          <view class="daily-pdf-canvas-icon">PDF</view>
+          <view class="daily-doc-head">打开完整运行文件</view>
+          <view>每个行程一份運送引受書</view>
+          <view>最后为全天運行指示書</view>
+          <view class="daily-doc-note">打开后上下滑动逐页检查；返回本页可修改或发布。</view>
+        </view>
+      </view>
+      <view class="daily-review-footer daily-pdf-review-footer">
+        <view class="daily-review-nav {{dailyPdfReviewIndex <= 0 ? 'disabled' : ''}}" bindtap="previousDailyPdfDriver">上一位</view>
+        <view wx:if="{{dailyPdfReviewCanConfirm}}" class="daily-review-confirm" bindtap="confirmDailyPdfReview">确认并发布</view>
+        <view wx:else class="daily-review-confirm disabled">{{dailyPdfReviewGroup.workflowStatus === 'published' ? '已发布' : '请先补全'}}</view>
+        <view class="daily-review-nav {{dailyPdfReviewIndex + 1 >= dailyPdfReviewTotal ? 'disabled' : ''}}" bindtap="nextDailyPdfDriver">下一位</view>
+      </view>
+    </view>
+
+    <view wx:if="{{dailyReviewOpen}}" class="daily-fullscreen daily-review-screen">
+      <view class="daily-fullscreen-head">
+        <view class="daily-back" bindtap="closeDailyReview">‹ 返回</view>
+        <view class="daily-review-progress">{{dailyReviewOrderIndex + 1}} / {{dailyReviewGroup.orders.length}}</view>
+        <view class="daily-review-edit" bindtap="toggleDailyReviewEdit">{{dailyReviewEdit ? '预览' : '修改'}}</view>
+      </view>
+      <scroll-view scroll-y class="daily-fullscreen-body daily-review-body">
+        <view class="daily-review-title">{{dailyReviewGroup.driver}} · {{dailyReviewGroup.vehicleFull}}</view>
+        <view class="daily-review-summary">{{dailyReviewGroup.business_date}} · 已确认 {{dailyReviewConfirmedCount}} / {{dailyReviewGroup.orders.length}}</view>
+        <view class="daily-review-order-list">
+          <view wx:for="{{dailyReviewGroup.orders}}" wx:key="assignmentId" wx:for-index="reviewIndex" class="daily-review-order-card {{reviewIndex === dailyReviewOrderIndex ? 'active' : ''}}" data-index="{{reviewIndex}}" bindtap="selectDailyReviewOrder">
+            <view><strong>第{{reviewIndex + 1}}单</strong><text>{{item.reviewed ? '已确认' : '待确认'}}</text></view>
+            <view class="daily-review-order-route">{{item.time}} · {{item.route}}</view>
+            <view class="daily-review-order-meta">¥{{item.price || item.recommended_price || '-'}} · {{item.businessArea}} · {{item.order_type || '-'}}</view>
+          </view>
+        </view>
+        <view class="daily-review-order-no">{{dailyReviewOrder.oid || dailyReviewOrder.orderId}}</view>
+        <view class="daily-review-fields">
+          <view class="daily-review-field"><text>日期</text><picker disabled="{{!dailyReviewEdit}}" mode="date" value="{{dailyReviewForm.order_date}}" bindchange="onDailyReviewDate"><view class="daily-picker-value">{{dailyReviewForm.order_date}}</view></picker></view>
+          <view class="daily-review-field"><text>时间</text><picker disabled="{{!dailyReviewEdit}}" mode="time" value="{{dailyReviewForm.start_time}}" bindchange="onDailyReviewTime"><view class="daily-picker-value">{{dailyReviewForm.start_time}}</view></picker></view>
+          <view class="daily-review-field"><text>营业区域</text><picker disabled="{{!dailyReviewEdit}}" mode="selector" range="{{dailyBusinessAreas}}" bindchange="onDailyReviewArea"><view class="daily-picker-value">{{dailyReviewForm.business_area}}</view></picker></view>
+          <view class="daily-review-field"><text>类型</text><picker disabled="{{!dailyReviewEdit}}" mode="selector" range="{{dailyOrderTypes}}" bindchange="onDailyReviewType"><view class="daily-picker-value">{{dailyReviewForm.order_type}}</view></picker></view>
+          <view class="daily-review-field wide"><text>接送地点</text><input disabled="{{!dailyReviewEdit}}" data-field="pickup_location" value="{{dailyReviewForm.pickup_location}}" bindinput="onDailyReviewField" placeholder="上车地点" /><input disabled="{{!dailyReviewEdit}}" data-field="dropoff_location" value="{{dailyReviewForm.dropoff_location}}" bindinput="onDailyReviewField" placeholder="下车地点" /></view>
+          <view class="daily-review-field"><text>金额</text><input disabled="{{!dailyReviewEdit}}" data-field="price" value="{{dailyReviewForm.price}}" bindinput="onDailyReviewField" /><text wx:if="{{dailyReviewOrder.recommended_price}}" class="daily-price-reference">参考 ¥{{dailyReviewOrder.recommended_price}} · {{dailyReviewOrder.recommended_price_label}}</text></view>
+        </view>
+        <view class="daily-doc-preview">
+          <view class="daily-doc-head">运行文件预览</view>
+          <view>运行引受书：按行程生成，可多页</view>
+          <view>运行指示书：本车当日 1 份</view>
+          <view class="daily-doc-note">保存后会修改服务器源订单、作废旧草稿，并自动生成新版 PDF。</view>
+        </view>
+      </scroll-view>
+      <view class="daily-review-footer">
+        <view class="daily-review-nav {{dailyReviewOrderIndex <= 0 ? 'disabled' : ''}}" bindtap="previousDailyReviewOrder">上一单</view>
+        <view class="daily-review-confirm" bindtap="confirmDailyReview">保存并重生成</view>
+        <view class="daily-review-nav {{dailyReviewOrderIndex + 1 >= dailyReviewGroup.orders.length ? 'disabled' : ''}}" bindtap="nextDailyReviewOrder">下一单</view>
+      </view>
+    </view>
+  </block>
+
+  <block wx:else>
   <view class="hero quick-hero">
     <view class="preview-copy">
       <view class="hero-eyebrow">DISPATCH WORKBENCH</view>
@@ -10,18 +173,6 @@
     <view class="hero-count">
       <text>已选</text>
       <strong>{{selectedKeys.length}}</strong>
-    </view>
-  </view>
-
-  <view class="toolbar">
-    <view class="tool-button daily {{importOpen && importMode === 'daily' ? 'active' : ''}}" data-mode="daily" bindtap="openImport">
-      日配
-    </view>
-    <view class="tool-button primary {{importOpen && importMode === 'batch' ? 'active' : ''}}" data-mode="batch" bindtap="openImport">
-      批量录入
-    </view>
-    <view class="tool-button secondary {{importOpen && importMode === 'single' ? 'active' : ''}}" data-mode="single" bindtap="openImport">
-      单条录入
     </view>
   </view>
 
@@ -123,7 +274,7 @@
 
       <view class="daily-submit-row">
         <view class="tap-control daily-submit" bindtap="saveDailyDraft">保存草稿</view>
-        <view class="tap-control daily-submit primary" bindtap="publishDailyAssignments">确认并发送</view>
+        <view class="tap-control daily-submit primary" bindtap="publishDailyAssignments">确认导入</view>
       </view>
     </block>
 
@@ -439,6 +590,7 @@
       <view class="help-popover-body">{{helpTip.content}}</view>
     </view>
   </view>
+  </block>
 </view>
 
 <custom-tab-bar />

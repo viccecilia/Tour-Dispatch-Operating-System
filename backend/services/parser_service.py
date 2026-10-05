@@ -14,6 +14,7 @@ from backend.services.location_service import (
     normalize_location_text,
     normalize_time_token,
 )
+from backend.services.hotel_pool_service import hotel_pool, normalize_city_place
 from backend.services.order_service import create_order
 from backend.services.order_number_service import (
     build_order_oid,
@@ -62,6 +63,14 @@ DRAFT_FIELDS = [
     "remark",
     "parse_result_json",
     "source_channel",
+]
+
+# Daily-assignment parsing returns a few existing order columns and review-only
+# provenance fields that are not part of the generic order_drafts table.
+DAILY_OUTPUT_FIELDS = DRAFT_FIELDS + [
+    "flight_number",
+    "driver_settlement_note",
+    "operations_business_area",
 ]
 
 EDITABLE_FIELDS = [
@@ -167,6 +176,34 @@ REAL_LOCATION_ALIASES = {
     "龟冈": "龟冈",
 }
 
+DAILY_AIRPORT_ALIASES = {
+    "kix": {
+        "kix", "関西", "关西", "關西", "関空", "关空", "關空",
+        "関西空港", "关西机场", "關西機場", "关西空港", "關西空港",
+        "関西国際空港", "关西国际机场", "關西國際機場",
+        "关西国际空港", "關西國際空港", "関西国际空港",
+        "kansai airport", "kansai international airport",
+    },
+    "itm": {
+        "itm", "大阪国際空港", "大阪国际机场", "大阪國際機場",
+        "伊丹空港", "伊丹机场", "伊丹機場",
+        "osaka itami airport", "itami airport",
+    },
+    "ukb": {
+        "ukb", "神戸空港", "神户机场", "神戶機場", "神户空港", "神戶空港",
+        "kobe airport",
+    },
+}
+
+DAILY_SETTLEMENT_PATTERN = re.compile(
+    r"(?:日元结算|日圓結算|日币结算|日幣結算|现金结算|現金決済|现金支付|現金支払|日元支付|JPY结算|JPY支付)",
+    re.IGNORECASE,
+)
+DAILY_CHANNEL_PATTERN = re.compile(
+    r"(?:WhatsApp|Whatsup|WeChat|LINE|Kakao|微信|携程)", re.IGNORECASE
+)
+DAILY_FLIGHT_PATTERN = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2,3}\s*\d{2,4})(?![A-Za-z0-9])", re.IGNORECASE)
+
 REAL_NOTE_PATTERNS = [
     ("儿童座椅", r"(?:儿童座椅|儿童椅|安全座椅|婴儿座椅|baby\s*seat|child\s*seat)\s*[*xX×]?\s*(\d+)?"),
     ("儿童坐垫", r"(?:儿童坐垫|增高垫|booster)"),
@@ -214,13 +251,462 @@ def parse_batch_text_to_drafts(raw_text: str, source_type: str = "text") -> list
     return [parse_text_to_draft(text, source_type) for text in split_batch_order_text(raw_text)]
 
 
+def parse_daily_assignment_text(raw_text: str) -> dict[str, Any]:
+    """Parse pre-assigned daily text without creating drafts or assignments.
+
+    Daily import shares the normal order parser, but adds one strict grouping layer:
+    only ``date + driver + vehicle tail`` starts a run group.  Non-order lines after
+    an order are retained as that order's operational remark.
+    """
+    lines = str(raw_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    groups: list[dict[str, Any]] = []
+    ignored_lines: list[dict[str, Any]] = []
+    current_group: dict[str, Any] | None = None
+    current_order: dict[str, Any] | None = None
+
+    for line_number, raw_line in enumerate(lines, 1):
+        line = clean_text(raw_line)
+        if not line:
+            continue
+        header = _match_daily_assignment_header(line)
+        if header:
+            current_group = {
+                "driverName": header["driver_name"],
+                "vehicleCode": header["vehicle_code"],
+                "serviceDate": header["service_date"],
+                "officeNote": header["office_note"],
+                "orders": [],
+            }
+            groups.append(current_group)
+            current_order = None
+            continue
+
+        order_line = _normalize_daily_order_line(line)
+        if _is_daily_assignment_order_line(order_line):
+            if not current_group:
+                ignored_lines.append({"line": line_number, "text": line, "reason": "missing_valid_driver_header"})
+                current_order = None
+                continue
+            shared_text = f"{current_group['serviceDate']} {order_line}"
+            parsed = parse_chinese_order(normalize_parser_input(shared_text))
+            parsed["order_date"] = current_group["serviceDate"]
+            parsed["end_date"] = parsed.get("end_date") or current_group["serviceDate"]
+            parsed["raw_text"] = order_line
+            parsed["source_type"] = "daily_assignment"
+            _apply_daily_assignment_semantics(order_line, parsed)
+            stable_key = "|".join(
+                (
+                    current_group["serviceDate"],
+                    current_group["driverName"],
+                    current_group["vehicleCode"],
+                    order_line,
+                )
+            )
+            daily_meta = _apply_daily_field_boundaries(
+                order_line,
+                parsed,
+                stable_key,
+                (current_group.get("orders") or [])[-1] if current_group.get("orders") else None,
+            )
+            pickup = parsed.get("pickup_location")
+            dropoff = parsed.get("dropoff_location")
+            if pickup == "待补" and dropoff == "待补" and parsed.get("order_type") == "接机":
+                route = "接机 · 地点待补"
+            else:
+                route = " → ".join(daily_meta.get("route_nodes") or [value for value in (pickup, dropoff) if value])
+            current_order = {
+                "date": current_group["serviceDate"],
+                "time": parsed.get("start_time") or "",
+                "type": parsed.get("order_type") or "待确认",
+                "vehicleType": parsed.get("vehicle_type") or "",
+                "route": route,
+                "price": parsed.get("price") if parsed.get("price") is not None else "",
+                "status": "作废" if re.search(r"取消|作废", order_line) else "待发布",
+                "remark": parsed.get("remark") or order_line,
+                "sourceChannel": parsed.get("source_channel") or "",
+                "routeNodes": daily_meta.get("route_nodes") or [],
+                "viaLocations": daily_meta.get("via_locations") or [],
+                "airportInferred": bool(daily_meta.get("airport_inferred")),
+                "airportInferenceText": daily_meta.get("airport_inference_text") or "",
+                "areaWarning": bool(daily_meta.get("area_warning")),
+                "areaWarningText": daily_meta.get("area_warning_text") or "",
+                "areaRoute": daily_meta.get("area_route") or "",
+                "rawText": order_line,
+                "parsed": {key: parsed.get(key) for key in DAILY_OUTPUT_FIELDS if key != "parse_result_json"},
+            }
+            current_group["orders"].append(current_order)
+            continue
+
+        if current_order:
+            current_order["remark"] = _merge_remark(current_order.get("remark"), line)
+            current_order["parsed"]["remark"] = current_order["remark"]
+            continue
+
+        ignored_lines.append({"line": line_number, "text": line, "reason": "not_order_or_continuation"})
+
+    valid_groups = [
+        group for group in groups
+        if group.get("serviceDate")
+        and group.get("driverName")
+        and group.get("vehicleCode")
+        and len(group.get("orders") or []) >= 1
+    ]
+    for group in groups:
+        if group not in valid_groups:
+            ignored_lines.append({
+                "line": None,
+                "text": f"{group.get('driverName', '')} {group.get('vehicleCode', '')}".strip(),
+                "reason": "invalid_or_empty_driver_group",
+            })
+        group["areaWarningCount"] = sum(1 for order in group.get("orders") or [] if order.get("areaWarning"))
+    return {
+        "groups": valid_groups,
+        "group_count": len(valid_groups),
+        "order_count": sum(len(group["orders"]) for group in valid_groups),
+        "ignored_lines": ignored_lines,
+    }
+
+
+def _match_daily_assignment_header(line: str) -> dict[str, str] | None:
+    value = _strip_daily_order_ordinal(line)
+    match = re.fullmatch(
+        r"(?P<date>\d{1,2}[./-]\d{1,2})\s*"
+        r"(?P<driver>[^\d:：\r\n][^:：\r\n]*?)\s*"
+        r"(?P<vehicle>[A-Za-z]?\d{3,4})"
+        r"(?:\s*[（(](?P<office>[^）)]*)[）)])?\s*",
+        value,
+    )
+    if not match:
+        return None
+    driver_name = re.sub(r"[-－—–·\s]+$", "", match.group("driver") or "").strip()
+    service_date = normalize_date_token(match.group("date")) or ""
+    if not service_date or not driver_name:
+        return None
+    return {
+        "service_date": service_date,
+        "driver_name": driver_name,
+        "vehicle_code": match.group("vehicle"),
+        "office_note": (match.group("office") or "").strip(),
+    }
+
+
+def _strip_daily_order_ordinal(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(r"^\s*(?:\d+\ufe0f?\u20e3|[①-⑳❶-❿])\s*", "", text)
+    text = re.sub(r"^\s*\d+[、.)）]\s*", "", text)
+    return text.strip()
+
+
+def _remove_daily_leading_flags(value: Any) -> str:
+    return re.sub(r"^\s*(?:[*＊]+\s*)+", "", str(value or "")).strip()
+
+
+def _normalize_daily_time_colon(value: Any) -> str:
+    return re.sub(r"(?<=\d)：(?=\d)", ":", str(value or ""))
+
+
+def _normalize_daily_order_line(value: Any) -> str:
+    """Normalize the prefixes operators commonly paste before an order time."""
+    text = _strip_daily_order_ordinal(value)
+    text = _remove_daily_leading_flags(text)
+    text = _normalize_daily_time_colon(text)
+    text = re.sub(r"^((?:[01]?\d|2[0-3]):[0-5]\d)\s*", r"\1 ", text)
+    return text.strip()
+
+
+def _is_daily_assignment_order_line(value: str) -> bool:
+    return bool(
+        re.match(
+            r"^(?:\d{1,2}[./-]\d{1,2}\s+)?(?:[01]?\d|2[0-3])[:：][0-5]\d\s*(?:am|pm)?",
+            str(value or ""),
+            re.IGNORECASE,
+        )
+    )
+
+
+def _looks_like_daily_person(value: str) -> bool:
+    text = clean_text(value)
+    if not text:
+        return False
+    if re.search(r"(?:先生|女士|小姐|様|さん)$", text):
+        return True
+    if re.search(r"[\uac00-\ud7af]", text):
+        return True
+    words = re.findall(r"[A-Za-z]{2,}", text)
+    return len(words) >= 2 and text.upper() == text
+
+
+def _extract_daily_parenthesized_person(value: str) -> str | None:
+    for match in re.finditer(r"[（(]([^）)]+)[）)]", str(value or "")):
+        candidate = clean_text(match.group(1))
+        if _looks_like_daily_person(candidate):
+            return candidate
+    return None
+
+
+def _strip_daily_parenthesized_people(value: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        return " " if _looks_like_daily_person(match.group(1)) else match.group(0)
+
+    return clean_text(re.sub(r"[（(]([^）)]+)[）)]", replace, str(value or "")))
+
+
+def _apply_daily_assignment_semantics(order_line: str, parsed: dict[str, Any]) -> None:
+    """Apply direction-preserving semantics that are specific to pre-assigned daily text."""
+    person = _extract_daily_parenthesized_person(order_line)
+    if person and not parsed.get("guest_name"):
+        parsed["guest_name"] = person
+
+    route_text = _strip_daily_parenthesized_people(order_line)
+    route_text = re.sub(
+        r"^\s*(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:am|pm)?\s*",
+        "",
+        route_text,
+        flags=re.IGNORECASE,
+    )
+    route_text = re.sub(
+        r"\s*(?:LINE|WeChat|WhatsApp|Whatsup|Kakao|微信|携程|公司单|公司單)(?:\s*[*＊])?\s*$",
+        "",
+        route_text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    station_delivery = re.fullmatch(r"送\s*(新大阪(?:站|駅)?)", route_text)
+    if station_delivery:
+        parsed["pickup_location"] = "大阪市内"
+        parsed["dropoff_location"] = "新大阪駅"
+        parsed["order_type"] = "单送"
+        return
+
+    rinkuu_delivery = re.fullmatch(
+        r"大阪(?:市内)?\s*(?P<kind>单送|單送|送)\s*(?:临空城|臨空城|临空|臨空|りんくう(?:タウン)?)",
+        route_text,
+    )
+    if rinkuu_delivery:
+        parsed["pickup_location"] = "大阪市内"
+        parsed["dropoff_location"] = "りんくうタウン"
+        parsed["order_type"] = "单送" if rinkuu_delivery.group("kind") in {"单送", "單送"} else "送迎"
+        return
+
+    if re.fullmatch(r"接机|接機", route_text):
+        parsed["pickup_location"] = "待补"
+        parsed["dropoff_location"] = "待补"
+        parsed["order_type"] = "接机"
+
+
+def _apply_daily_field_boundaries(
+    order_line: str,
+    parsed: dict[str, Any],
+    stable_key: str,
+    previous_order: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Keep daily route fields location-only and return review provenance."""
+    business_type = _daily_business_type(order_line) or parsed.get("order_type")
+    if business_type:
+        parsed["order_type"] = business_type
+
+    source_channel = _extract_source_channel(order_line)
+    if source_channel:
+        parsed["source_channel"] = source_channel
+    settlement = DAILY_SETTLEMENT_PATTERN.search(order_line)
+    if settlement:
+        parsed["driver_settlement_note"] = settlement.group(0)
+    flight = DAILY_FLIGHT_PATTERN.search(order_line)
+    if flight:
+        parsed["flight_number"] = re.sub(r"\s+", "", flight.group(1)).upper()
+
+    refund = re.search(r"(?:需要)?返金\s*([0-9,]+)\s*(?:日元|円|JPY)?", order_line, re.IGNORECASE)
+    if refund:
+        parsed["fee_remark"] = _merge_remark(parsed.get("fee_remark"), f"返金{refund.group(1).replace(',', '')}日元")
+
+    route_core = _daily_route_core(order_line)
+    raw_nodes = _daily_route_nodes(route_core, business_type)
+    if not raw_nodes:
+        raw_nodes = [parsed.get("pickup_location"), parsed.get("dropoff_location")]
+    route_nodes = [
+        _daily_normalize_place(node, f"{stable_key}|route|{index}")
+        for index, node in enumerate(raw_nodes)
+    ]
+    route_nodes = [node for node in route_nodes if node]
+    if len(route_nodes) == 1:
+        route_nodes.append("待补")
+    if not route_nodes:
+        route_nodes = ["待补", "待补"]
+
+    airport_inferred = False
+    airport_inference_text = ""
+    previous_dropoff = str(((previous_order or {}).get("parsed") or {}).get("dropoff_location") or "")
+    if business_type == "接机" and previous_dropoff in {"KIX", "ITM", "UKB"}:
+        if route_nodes[0] == "待补" and route_nodes[-1] != "待补":
+            route_nodes[0] = previous_dropoff
+            airport_inferred = True
+        elif route_nodes[-1] == "待补" and _daily_city_matches_airport(route_nodes[0], previous_dropoff):
+            route_nodes[0] = previous_dropoff
+            airport_inferred = True
+        if airport_inferred:
+            airport_inference_text = f"机场由同司机上一单终点 {previous_dropoff} 推定"
+
+    parsed["pickup_location"] = route_nodes[0]
+    parsed["dropoff_location"] = route_nodes[-1]
+    via_locations = route_nodes[1:-1]
+    parsed["fee_remark"] = _replace_complete_route_note(parsed.get("fee_remark"), route_nodes)
+
+    area_route = _daily_area_route(route_nodes[0], route_nodes[-1])
+    area_warning = _daily_area_warning(route_nodes[0], route_nodes[-1])
+    if area_warning:
+        parsed["fee_remark"] = _merge_remark(parsed.get("fee_remark"), f"区域确认：{area_route}")
+    return {
+        "route_nodes": route_nodes,
+        "via_locations": via_locations,
+        "airport_inferred": airport_inferred,
+        "airport_inference_text": airport_inference_text,
+        "area_warning": area_warning,
+        "area_warning_text": f"{area_route}\n营业区域需确认" if area_warning else "",
+        "area_route": area_route,
+    }
+
+
+def _daily_business_type(value: Any) -> str | None:
+    text = str(value or "")
+    for result, pattern in (
+        ("包车", r"包车|包車"),
+        ("接机", r"接机|接機|接站"),
+        ("送机", r"送机|送機"),
+        ("单送", r"单送|單送"),
+    ):
+        if re.search(pattern, text):
+            return result
+    return None
+
+
+def _daily_route_core(value: Any) -> str:
+    text = _normalize_daily_order_line(_strip_daily_parenthesized_people(value))
+    text = re.sub(r"^\s*(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:am|pm)?\s*", "", text, flags=re.IGNORECASE)
+    text = DAILY_CHANNEL_PATTERN.sub(" ", text)
+    text = DAILY_SETTLEMENT_PATTERN.sub(" ", text)
+    text = re.sub(r"(?:代收(?:差价)?|需要返金|返金|退款)\s*[0-9,]+\s*(?:日元|円|JPY)?", " ", text, flags=re.IGNORECASE)
+    text = DAILY_FLIGHT_PATTERN.sub(" ", text)
+    text = re.sub(
+        r"(?:公司单|公司單|儿童座椅\s*[x×*]?\s*\d*|兒童座椅\s*[x×*]?\s*\d*|增高垫|增高墊|"
+        r"举牌|舉牌|掲牌|指定时间|指定時間|协助入住|協助入住|在群里|群里|已加\s*Kakao|已加|"
+        r"有合适会追加|有合適會追加|备水\s*\d+\s*瓶|備水\s*\d+\s*瓶|Guide|ガイド)",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"(?:2代|3代|10座|十座|7座|18座|23座|海狮|GL8)(?:\s*[+＋xX×*]\s*(?:2代|3代|10座|十座|7座|18座|23座|海狮|GL8|\d+))*", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"[*＊]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip(" ,，。;；")
+
+
+def _daily_route_nodes(route_core: str, business_type: Any) -> list[str]:
+    text = str(route_core or "").strip()
+    if not text:
+        return []
+    text = re.sub(r"\s*(?:包车|包車)\s*$", "", text).strip()
+
+    station = re.fullmatch(r"送\s*(新大阪(?:站|駅)?)", text)
+    if station:
+        return ["大阪市内", "新大阪駅"]
+    rinkuu = re.fullmatch(r"大阪(?:市内)?\s*(?:单送|單送|送)\s*(?:临空城|臨空城|临空|臨空|りんくう(?:タウン)?)", text)
+    if rinkuu:
+        return ["大阪市内", "りんくうタウン"]
+
+    for keyword_pattern in (r"接机|接機", r"送机|送機", r"单送|單送"):
+        match = re.search(keyword_pattern, text)
+        if not match:
+            continue
+        left = text[:match.start()].strip(" -－—→>到,，")
+        right = text[match.end():].strip(" -－—→>到,，")
+        return [left or "待补", right or "待补"]
+
+    parts = [part.strip() for part in re.split(r"\s*(?:->|→|⇒|—>|＞|－|-|到)\s*", text) if part.strip()]
+    if len(parts) >= 2:
+        return parts
+    if business_type in {"接机", "送机", "单送"}:
+        return ["待补", "待补"]
+    return []
+
+
+def _daily_normalize_airport(value: Any) -> str | None:
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" ,，。;；()（）").lower()
+    text = re.sub(r"\s*(?:[-－]?t\s*[12]|terminal\s*[12]|ターミナル\s*[12])\s*$", "", text, flags=re.IGNORECASE).strip()
+    for code, aliases in DAILY_AIRPORT_ALIASES.items():
+        if text in aliases:
+            return code.upper()
+    return None
+
+
+def _daily_normalize_place(value: Any, stable_key: str) -> str:
+    text = clean_text(value)
+    if not text or text in {"待补", "待確認", "待确认", "地点待补", "地点待補"}:
+        return "待补"
+    airport = _daily_normalize_airport(text)
+    if airport:
+        return airport
+    replacements = {
+        "新大阪": "新大阪駅", "新大阪站": "新大阪駅", "新大阪駅": "新大阪駅",
+        "胜尾寺": "勝尾寺", "神户": "神戸", "神戶": "神戸",
+        "天桥立": "天橋立", "岚山": "嵐山",
+    }
+    text = replacements.get(text, text)
+    normalized, _ = normalize_city_place(text, stable_key)
+    return normalized or text
+
+
+def _daily_city_matches_airport(place: str, airport: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(place or ""))
+    return (airport == "UKB" and normalized in {"神户", "神戶", "神戸"}) or (
+        airport == "ITM" and normalized == "伊丹"
+    )
+
+
+def _replace_complete_route_note(value: Any, route_nodes: list[str]) -> str | None:
+    text = re.sub(r"(?:^|[；;])?完整路线[:：][^；;\n]+", "", str(value or "")).strip("；; \n")
+    if len(route_nodes) > 2:
+        text = _merge_remark(text or None, "完整路线：" + " -> ".join(route_nodes)) or ""
+    return text or None
+
+
+def _daily_area_zone(place: Any) -> str:
+    text = str(place or "").strip()
+    if text == "KIX":
+        return "kix"
+    if not text or text == "待补":
+        return "unknown"
+    if text in {item["name"] for item in hotel_pool("大阪")}:
+        return "osaka"
+    if text in {item["name"] for item in hotel_pool("京都")}:
+        return "kyoto"
+    if any(token in text for token in ("大阪市", "東大阪市", "东大阪市", "豊中市", "吹田市", "守口市", "門真市", "门真市", "八尾市", "堺市")):
+        return "osaka"
+    if any(token in text for token in ("京都市", "向日市", "長岡京市", "长冈京市", "宇治市", "八幡市", "城陽市", "城阳市", "京田辺市", "京田边市", "木津川市", "大山崎町", "久御山町", "井手町", "宇治田原町", "笠置町", "和束町", "精華町", "精华町", "南山城村")):
+        return "kyoto"
+    return "other"
+
+
+def _daily_area_route(pickup: Any, dropoff: Any) -> str:
+    labels = {"kix": "KIX", "osaka": "大阪市域交通圏", "kyoto": "京都市域交通圏", "other": "上述以外", "unknown": "待确认"}
+    return f"{labels[_daily_area_zone(pickup)]} → {labels[_daily_area_zone(dropoff)]}"
+
+
+def _daily_area_warning(pickup: Any, dropoff: Any) -> bool:
+    return {_daily_area_zone(pickup), _daily_area_zone(dropoff)} == {"kix", "kyoto"}
+
+
 def normalize_parser_input(raw_text: Any) -> str:
     text = clean_text(raw_text)
     if not text:
         return ""
-    text = text.replace("=>", "->").replace("→", "->").replace("—", "-")
+    text = (
+        text.replace("=>", "->")
+        .replace("→", "->")
+        .replace("⇒", "->")
+        .replace("⟶", "->")
+        .replace("－", "-")
+        .replace("—", "-")
+    )
     text = re.sub(r"[【】]", " ", text)
-    text = re.sub(r"\b(?:LINE|微信|Wechat|WeChat)\b[:：]?", " ", text, flags=re.IGNORECASE)
     lines = []
     for line in text.splitlines():
         line = _strip_chat_prefix(line)
@@ -374,6 +860,10 @@ def update_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any] | Non
     if not get_draft(draft_id):
         return None
     data = {field: payload.get(field) for field in EDITABLE_FIELDS if field in payload}
+    # A client may round-trip a serialized draft whose optional parse status is
+    # null.  Do not overwrite the database's required status in that case.
+    if data.get("parse_status") in (None, ""):
+        data.pop("parse_status", None)
     data = _normalize_numeric(data)
     if not data:
         return get_draft(draft_id)
@@ -518,6 +1008,7 @@ def parse_chinese_order(text: str) -> dict[str, Any]:
     parsed["vehicle_type_code"] = normalize_vehicle_type_code(parsed["vehicle_type"])
     parsed["order_note_code"] = _extract_order_note_code(raw)
     parsed["order_source"] = _extract_order_source(raw)
+    parsed["source_channel"] = _extract_source_channel(raw)
     parsed["vehicle_color"] = _extract_vehicle_color(raw)
     parsed["snow_tire"] = "雪" if "雪胎" in raw or re.search(r"\b雪\b", raw) else None
     parsed["passenger_count"] = _extract_count(raw, r"(\d+)\s*(?:人|位|名|客人)")
@@ -812,6 +1303,8 @@ def _extract_modern_readable_order_type(text: str) -> str | None:
         return "送机"
     if any(token in lowered for token in ["接机", "接机场", "空港迎え", "airport pickup", "arrival", "pickup"]):
         return "接机"
+    if any(token in lowered for token in ["单送", "單送", "片道"]):
+        return "单送"
     location_lines = _extract_modern_location_lines(text)
     if len(location_lines) >= 2:
         first_is_airport = bool(_normalize_modern_airport_code(location_lines[0]))
@@ -827,7 +1320,10 @@ def _extract_modern_readable_route(text: str) -> tuple[str | None, str | None]:
     location_lines = _extract_modern_location_lines(text)
     if len(location_lines) >= 2:
         return location_lines[0], location_lines[1]
-    inline_route = re.search(r"(.+?)\s*(?:->|→|—>|＞|到)\s*(.+)", str(text or ""))
+    semantic_route = re.search(r"(.+?)\s*(?:单送|單送|片道)\s*(.+)", str(text or ""))
+    if semantic_route:
+        return _sanitize_modern_route_line(semantic_route.group(1)), _sanitize_modern_route_line(semantic_route.group(2))
+    inline_route = re.search(r"(.+?)\s*(?:->|→|⇒|—>|＞|到)\s*(.+)", str(text or ""))
     if inline_route:
         return _sanitize_modern_route_line(inline_route.group(1)), _sanitize_modern_route_line(inline_route.group(2))
     return None, None
@@ -893,13 +1389,38 @@ def _looks_like_modern_phone_line(line: str) -> bool:
 
 def _sanitize_modern_route_line(line: str) -> str:
     value = clean_text(line)
+    value = _normalize_daily_order_line(value)
+    value = _strip_daily_parenthesized_people(value)
+    value = re.sub(r"^\s*\d{4}[./-]\d{1,2}[./-]\d{1,2}\s*", "", value)
+    value = re.sub(r"^\s*\d{1,2}[./-]\d{1,2}\s*", "", value)
+    value = re.sub(r"^\s*(?:[01]?\d|2[0-3])[:：][0-5]\d\s*(?:am|pm)?\s*", "", value, flags=re.IGNORECASE)
+    metadata_patterns = (
+        r"(?:LINE|WeChat|WhatsApp|Whatsup|Kakao|微信|携程)",
+        r"(?:公司单|公司單|儿童座椅(?:\s*[x×*]?\s*\d+)?|兒童座椅(?:\s*[x×*]?\s*\d+)?)",
+        r"(?:举牌|舉牌|返金|退款|Guide|ガイド)",
+    )
+    for pattern in metadata_patterns:
+        value = re.sub(rf"\s*{pattern}(?:\s*[*＊])?(?:\s+.*)?$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"[\s*＊]+$", "", value)
     value = re.sub(r"^[\-\s\u2022\xb7]+", "", value).strip()
     if not value:
         return ""
     airport = _normalize_modern_airport_code(value)
     if airport:
         return airport
-    return value
+    return value.replace("天桥立", "天橋立").replace("岚山", "嵐山")
+
+
+def _extract_daily_literal_route(line: str) -> tuple[str | None, str | None]:
+    """Keep explicit daily route endpoints verbatim before fuzzy place matching."""
+    value = _normalize_daily_order_line(clean_text(line))
+    value = re.sub(r"^\s*(?:[01]?\d|2[0-3])[:：][0-5]\d\s*(?:am|pm)?\s*", "", value, flags=re.IGNORECASE)
+    match = re.match(r"^(.+?)\s*(?:->|→|⇒|—>|＞|到|－|-)\s*(.+)$", value)
+    if not match:
+        return None, None
+    pickup = _sanitize_modern_route_line(match.group(1))
+    dropoff = _sanitize_modern_route_line(match.group(2))
+    return (pickup or None), (dropoff or None)
 
 
 def _normalize_modern_airport_code(value: str) -> str | None:
@@ -1297,7 +1818,8 @@ def _real_extract_vehicle_color(text: str) -> str | None:
 
 
 def _real_extract_price_and_fee(text: str) -> tuple[float | None, str | None]:
-    work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", work)
     work = re.sub(r"\b\d{1,2}月\d{1,2}日?\b", " ", work)
     work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", " ", work)
     work = re.sub(r"(?:\+?\d[\d\s\-()]{7,}\d)", " ", work)
@@ -1402,6 +1924,20 @@ def _extract_order_source(text: str) -> str | None:
     return None
 
 
+def _extract_source_channel(text: str) -> str | None:
+    value = str(text or "")
+    for label, pattern in (
+        ("LINE", r"(?<![a-z])line(?![a-z])"),
+        ("WhatsApp", r"(?<![a-z])whatsapp(?![a-z])|(?<![a-z])whatsup(?![a-z])"),
+        ("WeChat", r"(?<![a-z])wechat(?![a-z])|微信"),
+        ("Kakao", r"(?<![a-z])kakao(?![a-z])"),
+        ("携程", r"携程"),
+    ):
+        if re.search(pattern, value, re.IGNORECASE):
+            return label
+    return None
+
+
 def _extract_vehicle_color(text: str) -> str | None:
     if "白" in text:
         return "白"
@@ -1452,7 +1988,7 @@ def _extract_times(text: str) -> tuple[str | None, str | None]:
 
 def _extract_route(conn, text: str) -> tuple[str | None, str | None, list[str]]:
     work = _strip_date_time_price(text)
-    arrow_match = re.search(r"(.+?)\s*(?:->|→|到|至)\s*(.+)", work)
+    arrow_match = re.search(r"(.+?)\s*(?:->|→|⇒|到|至)\s*(.+)", work)
     if arrow_match:
         left = _clean_route_endpoint(arrow_match.group(1))
         right = _clean_route_endpoint(arrow_match.group(2))
@@ -1534,8 +2070,16 @@ def _extract_guest_name(text: str) -> str | None:
 
 
 def _extract_phone(text: str) -> str | None:
-    match = re.search(r"(?:\+?\d[\d -]{7,}\d)", text)
-    return match.group(0).strip() if match else None
+    work = str(text or "")
+    work = re.sub(r"\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b", " ", work)
+    work = re.sub(r"\b\d{1,2}[./-]\d{1,2}\b", " ", work)
+    work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", " ", work)
+    for match in re.finditer(r"(?<!\d)(?:\+?\d[\d\s-]{7,}\d)(?!\d)", work):
+        candidate = match.group(0).strip()
+        digit_count = len(re.sub(r"\D", "", candidate))
+        if 9 <= digit_count <= 15:
+            return candidate
+    return None
 
 
 def _extract_agency(text: str) -> str | None:
@@ -1544,7 +2088,8 @@ def _extract_agency(text: str) -> str | None:
 
 
 def _extract_price(text: str) -> float | None:
-    work = re.sub(r"\b\d{1,2}[./\-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b\d{4}[./\-]\d{1,2}[./\-]\d{1,2}\b", " ", text)
+    work = re.sub(r"\b\d{1,2}[./\-]\d{1,2}\b", " ", work)
     work = re.sub(r"\b(?:[01]?\d|2[0-3])[:：][0-5]\d\b", " ", work)
     candidates = []
     for match in re.finditer(r"(?:绿牌|绿|3代|10座|十座|海狮)\s*(\d{3,5})", work, re.IGNORECASE):
@@ -1593,7 +2138,7 @@ def _strip_date_time_price(text: str) -> str:
 def _clean_route_endpoint(value: str) -> str:
     value = clean_text(value)
     value = re.sub(r"^(以上是|包车订单|送迎订单|客户|客人|司机|导游|Ashwin Arora|Chris Lo)\s*", "", value, flags=re.IGNORECASE)
-    value = re.split(r"(包车|送迎|接机|送机|接送|单送|3代|10座|绿牌|绿|儿童座椅|代收|备注|价格|[A-Z][A-Za-z]+)", value, maxsplit=1)[0]
+    value = re.split(r"(包车|送迎|接机|送机|接送|单送|3代|10座|绿牌|绿|儿童座椅|代收|备注|价格|微信|携程|[A-Z][A-Za-z]+)", value, maxsplit=1)[0]
     value = re.sub(r"\s+", "", value)
     return value.strip("- ")
 

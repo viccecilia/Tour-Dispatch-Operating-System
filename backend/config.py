@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-RUNTIME_DIR = BASE_DIR / "runtime"
+DEFAULT_RUNTIME_DIR = BASE_DIR / "runtime"
 
 
 def _load_env_file() -> None:
@@ -35,6 +35,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
 
 _load_env_file()
 
+RUNTIME_DIR = Path(os.environ.get("WX_DISPATCH_RUNTIME_DIR", str(DEFAULT_RUNTIME_DIR))).resolve()
 HOST = os.environ.get("WX_DISPATCH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("WX_DISPATCH_PORT", os.environ.get("PORT", "18765")))
 API_HOST = os.environ.get("WX_DISPATCH_API_HOST", HOST)

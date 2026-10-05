@@ -406,6 +406,13 @@ function summarizeDailyVehicleSamples(vehicles) {
 
 function splitDailyRouteForOrder(routeText) {
   const route = String(routeText || '').trim();
+  const explicit = route.match(/^(.+?)\s*(?:->|→|⇒|－|-)\s*(.+)$/);
+  if (explicit) {
+    return {
+      pickup_location: explicit[1].trim(),
+      dropoff_location: explicit[2].replace(/\s*(?:LINE|WeChat|WhatsApp|Kakao|微信|携程)\s*$/i, '').trim()
+    };
+  }
   const markers = ['接机', '送机', '单送'];
   for (let i = 0; i < markers.length; i += 1) {
     const marker = markers[i];
@@ -413,7 +420,7 @@ function splitDailyRouteForOrder(routeText) {
     if (index > 0) {
       return {
         pickup_location: route.slice(0, index).trim() || route,
-        dropoff_location: route.slice(index + marker.length).trim() || marker
+        dropoff_location: route.slice(index + marker.length).replace(/\s*(?:LINE|WeChat|WhatsApp|Kakao|微信|携程)\s*$/i, '').trim() || marker
       };
     }
   }
@@ -437,49 +444,57 @@ function dailyPriceToNumber(value) {
 }
 
 function buildDailyOrderText(order) {
+  const raw = stripDailyOrdinal(order.rawText || '');
+  if (raw) return [order.date, raw].filter(Boolean).join(' ');
   const parts = [order.date, order.time, order.route, order.vehicleType, order.price ? `绿${order.price}` : '']
     .filter(Boolean);
-  return order.remark || parts.join(' ');
+  return parts.join(' ');
 }
 
 function buildDailyOrderPayload(order) {
+  const parsed = order.parsed || {};
   const end = addHoursToDateTime(order.date, order.time, order.type === '包车' ? 8 : 2);
   const route = splitDailyRouteForOrder(order.route);
+  const pickupLocation = parsed.pickup_location || route.pickup_location || '待补';
+  const dropoffLocation = parsed.dropoff_location || route.dropoff_location || '待补';
+  const feeNotes = [
+    parsed.fee_remark,
+    order.price ? `日配价格 ${order.price}` : ''
+  ].map((item) => String(item || '').trim()).filter(Boolean);
   return {
+    order_source: parsed.order_source || null,
+    order_note_code: parsed.order_note_code || null,
+    vehicle_class: parsed.vehicle_class || null,
+    vehicle_type_code: parsed.vehicle_type_code || null,
+    driver_language: parsed.driver_language || null,
+    vehicle_color: parsed.vehicle_color || null,
+    snow_tire: parsed.snow_tire || null,
+    passenger_count: parsed.passenger_count || 0,
+    luggage_count: parsed.luggage_count || 0,
+    guest_name: parsed.guest_name || null,
+    guest_contact: parsed.guest_contact || null,
+    agency_name: parsed.agency_name || null,
+    price_rmb: parsed.price_rmb || null,
+    price_jpy: parsed.price_jpy || null,
+    collection_amount_jpy: parsed.collection_amount_jpy || null,
+    parking_fee_jpy: parsed.parking_fee_jpy || null,
+    other_fee_jpy: parsed.other_fee_jpy || null,
+    flight_number: parsed.flight_number || null,
+    driver_settlement_note: parsed.driver_settlement_note || null,
+    operations_business_area: parsed.operations_business_area || null,
     order_date: order.date || '',
     end_date: end.end_date || order.date || '',
     start_time: normalizeTimeText(order.time || ''),
     end_time: end.end_time || normalizeTimeText(order.time || ''),
     order_type: order.type || '待确认',
     vehicle_type: order.vehicleType || '',
-    pickup_location: route.pickup_location,
-    dropoff_location: route.dropoff_location,
+    pickup_location: pickupLocation === '接机 · 地点待补' ? '待补' : pickupLocation,
+    dropoff_location: dropoffLocation || '待补',
     price: dailyPriceToNumber(order.price),
     remark: order.remark || buildDailyOrderText(order),
-    fee_remark: order.price ? `日配价格 ${order.price}` : '',
-    source_channel: 'daily_assignment'
+    fee_remark: feeNotes.filter((item, index, list) => list.indexOf(item) === index).join('；'),
+    source_channel: parsed.source_channel || order.sourceChannel || 'daily_assignment'
   };
-}
-
-function normalizeDailyRouteValue(value) {
-  return normalizeDailyMatchValue(value).replace(/t1|t2|terminal/g, '');
-}
-
-function findExistingDailyAssignment(order, item, assignments) {
-  const payload = buildDailyOrderPayload(order);
-  const pickup = normalizeDailyRouteValue(payload.pickup_location);
-  const dropoff = normalizeDailyRouteValue(payload.dropoff_location);
-  return (assignments || []).find((assignment) => {
-    if (Number(assignment.driver_id) !== Number(item.driver.id)) return false;
-    if (Number(assignment.vehicle_id) !== Number(item.vehicle.id)) return false;
-    if (String(assignment.order_date || '') !== String(payload.order_date || '')) return false;
-    if (normalizeTimeText(assignment.start_time || '') !== normalizeTimeText(payload.start_time || '')) return false;
-    const activePickup = normalizeDailyRouteValue(assignment.pickup_location || '');
-    const activeDropoff = normalizeDailyRouteValue(assignment.dropoff_location || '');
-    const pickupMatch = !pickup || !activePickup || activePickup.indexOf(pickup) >= 0 || pickup.indexOf(activePickup) >= 0;
-    const dropoffMatch = !dropoff || !activeDropoff || activeDropoff.indexOf(dropoff) >= 0 || dropoff.indexOf(activeDropoff) >= 0;
-    return pickupMatch && dropoffMatch;
-  }) || null;
 }
 
 function normalizeResourceStatus(value) {
@@ -548,8 +563,75 @@ function blankSingleForm() {
   };
 }
 
+function isoToday() {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+
+function shiftIsoDate(value, delta) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date();
+  date.setDate(date.getDate() + Number(delta || 0));
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function plateTail(value) {
+  const text = String(value || '').trim();
+  const digits = text.replace(/\D/g, '');
+  return digits.slice(-4) || text || '未定车辆';
+}
+
+function blankDailyReviewForm() {
+  return {
+    order_date: '',
+    start_time: '',
+    business_area: '',
+    order_type: '',
+    pickup_location: '',
+    dropoff_location: '',
+    price: ''
+  };
+}
+
+const DAILY_BUSINESS_AREAS = ['大阪市域交通圏', '京都市域交通圏', '関西国際空港', '上記以外'];
+const DAILY_ORDER_TYPES = ['接机', '送机', '包车'];
+
 Page({
   data: {
+    workbenchMode: 'daily',
+    dailyDate: isoToday(),
+    dailyStatusFilter: 'all',
+    dailyStatusOptions: [
+      { value: 'all', label: '全部' },
+      { value: 'pending', label: '待审核' },
+      { value: 'ready', label: '可发布' }
+    ],
+    dailyRunGroups: [],
+    serverRunGroups: [],
+    dailyRunSummary: { vehicles: 0, orders: 0, published: 0, pending: 0 },
+    dailySelectedGroupKeys: [],
+    dailyPdfLoadingKey: '',
+    dailyPdfReviewOpen: false,
+    dailyPdfReviewGroup: null,
+    dailyPdfReviewDocument: null,
+    dailyPdfReviewCanConfirm: false,
+    dailyPdfReviewIndex: 0,
+    dailyPdfReviewTotal: 0,
+    dailyPdfValidationIssues: [],
+    dailyImportOpen: false,
+    dailyImportSubmitting: false,
+    dailyReviewOpen: false,
+    dailyReviewGroupKey: '',
+    dailyReviewOrderIndex: 0,
+    dailyReviewEdit: false,
+    dailyReviewGroup: null,
+    dailyReviewOrder: null,
+    dailyReviewConfirmedCount: 0,
+    dailyReviewForm: blankDailyReviewForm(),
+    dailyBusinessAreas: DAILY_BUSINESS_AREAS,
+    dailyOrderTypes: DAILY_ORDER_TYPES,
     importOpen: true,
     importMode: 'daily',
     importText: SAMPLE_TEXT,
@@ -644,12 +726,416 @@ Page({
     }
   },
 
+  switchWorkbenchMode(e) {
+    const mode = (e.currentTarget.dataset || {}).mode === 'batch' ? 'batch' : 'daily';
+    this.setData({ workbenchMode: mode, importOpen: mode === 'batch' });
+  },
+
+  openDailyImport() {
+    const tabBar = typeof this.getTabBar === 'function' ? this.getTabBar() : null;
+    if (tabBar) tabBar.setData({ visible: false });
+    this.setData({
+      dailyImportOpen: true,
+      importMode: 'daily',
+      dailyMessage: '',
+      conflictText: ''
+    });
+  },
+
+  closeDailyImport() {
+    if (this.data.dailyImportSubmitting) return;
+    this.setData({ dailyImportOpen: false }, () => this.refreshTabBar());
+  },
+
+  onDailyDateChange(e) {
+    this.setData({ dailyDate: e.detail.value, dailySelectedGroupKeys: [] }, () => this.loadAll());
+  },
+
+  previousDailyDate() {
+    this.setData({ dailyDate: shiftIsoDate(this.data.dailyDate, -1), dailySelectedGroupKeys: [] }, () => this.loadAll());
+  },
+
+  nextDailyDate() {
+    this.setData({ dailyDate: shiftIsoDate(this.data.dailyDate, 1), dailySelectedGroupKeys: [] }, () => this.loadAll());
+  },
+
+  selectDailyStatus(e) {
+    this.setData({ dailyStatusFilter: (e.currentTarget.dataset || {}).status || 'all' }, () => this.refreshDailyRunGroups());
+  },
+
+  refreshDailyRunGroups() {
+    const result = this.decorateServerRunGroups(this.data.serverRunGroups || []);
+    this.setData({ dailyRunGroups: result.groups, dailyRunSummary: result.summary });
+  },
+
+  decorateServerRunGroups(groups) {
+    const selected = this.data.dailySelectedGroupKeys || [];
+    const all = (groups || []).map((group) => {
+      const orders = (group.orders || []).map((order) => ({
+        ...order,
+        orderId: order.order_id,
+        assignmentId: order.assignment_id,
+        time: order.start_time || '--:--',
+        route: `${order.pickup_location || '待确认'} → ${order.dropoff_location || '待确认'}`,
+        businessArea: order.operations_business_area || group.driver_office || '未设定',
+        areaWarning: Boolean(order.area_warning),
+        areaRoute: order.area_route || '',
+        reviewed: order.run_confirmation_status === 'confirmed'
+      }));
+      const workflowStatus = group.workflow_status || 'draft_ready';
+      const status = workflowStatus === 'ready' ? 'ready' : (workflowStatus === 'published' ? 'published' : 'pending');
+      return {
+        ...group,
+        driver: group.driver_name || '未定司机',
+        vehicle: plateTail(group.plate_number),
+        vehicleFull: group.plate_number || '未定车辆',
+        orders,
+        visibleOrders: orders.slice(0, 3),
+        hiddenCount: Math.max(0, orders.length - 3),
+        areaWarningCount: orders.filter((order) => order.areaWarning).length,
+        reviewedCount: group.confirmed_count || 0,
+        status,
+        workflowStatus,
+        statusText: group.workflow_status_text || (group.confirmation_status === 'confirmed' ? '订单已确认' : `${group.confirmed_count || 0}/${group.order_count || orders.length} 已确认`),
+        selected: selected.indexOf(group.key) >= 0,
+        pdfReady: group.confirmation_status === 'confirmed',
+        canReviewOrders: false,
+        canGeneratePdf: ['draft_ready', 'needs_data', 'stale'].indexOf(workflowStatus) >= 0,
+        canReviewPdf: ['draft_ready', 'needs_data', 'stale', 'pdf_pending', 'ready'].indexOf(workflowStatus) >= 0,
+        canPublish: false,
+        canOpenPdf: true,
+        documentStatusText: group.document_status === 'published' ? `已发布 V${group.latest_document && group.latest_document.version}` : (group.document_status === 'reviewed' ? `已确认 V${group.latest_document && group.latest_document.version}` : (group.document_status === 'generated' ? `待确认 V${group.latest_document && group.latest_document.version}` : (group.document_status === 'stale' ? 'PDF 已作废' : '')))
+      };
+    });
+    const filter = this.data.dailyStatusFilter || 'all';
+    const visible = filter === 'all' ? all : all.filter((group) => group.status === filter);
+    return {
+      groups: visible,
+      allGroups: all,
+      summary: {
+        vehicles: all.length,
+        orders: all.reduce((sum, group) => sum + group.orders.length, 0),
+        published: all.filter((group) => group.workflowStatus === 'published').length,
+        pending: all.filter((group) => group.workflowStatus !== 'published').length
+      }
+    };
+  },
+
+  toggleDailyGroupSelection(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    if (!key) return;
+    const selected = (this.data.dailySelectedGroupKeys || []).slice();
+    const index = selected.indexOf(key);
+    if (index >= 0) selected.splice(index, 1);
+    else selected.push(key);
+    this.setData({ dailySelectedGroupKeys: selected }, () => this.refreshDailyRunGroups());
+  },
+
+  openDailyReview(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    const group = (this.data.dailyRunGroups || []).find((item) => item.key === key);
+    if (!group || !group.orders.length) return;
+    this.showDailyReviewOrder(group, 0);
+  },
+
+  showDailyReviewOrder(group, orderIndex) {
+    const safeIndex = Math.max(0, Math.min(Number(orderIndex || 0), group.orders.length - 1));
+    const order = group.orders[safeIndex];
+    this.setData({
+      dailyReviewOpen: true,
+      dailyReviewGroupKey: group.key,
+      dailyReviewOrderIndex: safeIndex,
+      dailyReviewEdit: false,
+      dailyReviewGroup: group,
+      dailyReviewOrder: order,
+      dailyReviewConfirmedCount: group.orders.filter((item) => item.reviewed).length,
+      dailyReviewForm: {
+        order_date: order.order_date || this.data.dailyDate,
+        start_time: order.start_time || '',
+        business_area: order.businessArea || '未设定',
+        order_type: order.order_type || '',
+        pickup_location: order.pickup_location || '',
+        dropoff_location: order.dropoff_location || '',
+        price: Number(order.price || 0) > 0 ? String(order.price) : (order.recommended_price ? String(order.recommended_price) : '')
+      }
+    });
+  },
+
+  closeDailyReview() {
+    this.setData({
+      dailyReviewOpen: false,
+      dailyReviewEdit: false,
+      dailyReviewGroup: null,
+      dailyReviewOrder: null,
+      dailyReviewForm: blankDailyReviewForm()
+    });
+  },
+
+  toggleDailyReviewEdit() {
+    this.setData({ dailyReviewEdit: !this.data.dailyReviewEdit });
+  },
+
+  onDailyReviewField(e) {
+    const field = (e.currentTarget.dataset || {}).field;
+    if (!field) return;
+    this.setData({ [`dailyReviewForm.${field}`]: e.detail.value });
+  },
+
+  onDailyReviewDate(e) {
+    this.setData({ 'dailyReviewForm.order_date': e.detail.value });
+  },
+
+  onDailyReviewTime(e) {
+    this.setData({ 'dailyReviewForm.start_time': e.detail.value });
+  },
+
+  onDailyReviewArea(e) {
+    this.setData({ 'dailyReviewForm.business_area': DAILY_BUSINESS_AREAS[Number(e.detail.value)] || DAILY_BUSINESS_AREAS[0] });
+  },
+
+  onDailyReviewType(e) {
+    this.setData({ 'dailyReviewForm.order_type': DAILY_ORDER_TYPES[Number(e.detail.value)] || DAILY_ORDER_TYPES[0] });
+  },
+
+  selectDailyReviewOrder(e) {
+    const index = Number((e.currentTarget.dataset || {}).index || 0);
+    const group = this.data.dailyReviewGroup;
+    if (group) this.showDailyReviewOrder(group, index);
+  },
+
+  previousDailyReviewOrder() {
+    const group = this.data.dailyReviewGroup;
+    if (!group) return;
+    this.showDailyReviewOrder(group, this.data.dailyReviewOrderIndex - 1);
+  },
+
+  nextDailyReviewOrder() {
+    const group = this.data.dailyReviewGroup;
+    if (!group) return;
+    this.showDailyReviewOrder(group, this.data.dailyReviewOrderIndex + 1);
+  },
+
+  confirmDailyReview() {
+    const order = this.data.dailyReviewOrder;
+    if (!order || !order.orderId) return;
+    const form = this.data.dailyReviewForm || {};
+    const payload = {
+      order_id: order.orderId,
+      order_date: form.order_date,
+      start_time: form.start_time,
+      operations_business_area: form.business_area,
+      order_type: form.order_type,
+      pickup_location: form.pickup_location,
+      dropoff_location: form.dropoff_location,
+      price: form.price,
+      pdf_edit: true
+    };
+    let regeneratedGroupKey = this.data.dailyReviewGroupKey;
+    this.setData({ loading: true, conflictText: '' });
+    api.confirmRunOrder(payload)
+      .then((result) => {
+        const savedOrder = result && result.order;
+        const activeGroup = this.data.dailyReviewGroup || {};
+        const savedDate = (savedOrder && savedOrder.order_date) || payload.order_date;
+        regeneratedGroupKey = `${savedDate}:${activeGroup.driver_id}:${activeGroup.vehicle_id}`;
+        return api.generateRunDocument(regeneratedGroupKey);
+      })
+      .then((res) => {
+        const group = this.data.dailyReviewGroup;
+        const currentIndex = this.data.dailyReviewOrderIndex;
+        const updatedOrders = (group.orders || []).map((item, index) => index === currentIndex ? {
+          ...item,
+          order_date: payload.order_date,
+          start_time: payload.start_time,
+          time: payload.start_time,
+          operations_business_area: payload.operations_business_area,
+          businessArea: payload.operations_business_area,
+          order_type: payload.order_type,
+          pickup_location: payload.pickup_location,
+          dropoff_location: payload.dropoff_location,
+          route: `${payload.pickup_location || '待确认'} → ${payload.dropoff_location || '待确认'}`,
+          price: payload.price,
+          reviewed: false
+        } : item);
+        const updatedGroup = { ...group, key: regeneratedGroupKey, business_date: payload.order_date, orders: updatedOrders };
+        const document = res && res.document;
+        this.setData({
+          loading: false,
+          dailyReviewOpen: false,
+          dailyReviewEdit: false,
+          dailyReviewGroup: null,
+          dailyReviewOrder: null,
+          dailyPdfReviewOpen: true,
+          dailyReviewGroupKey: regeneratedGroupKey,
+          dailyPdfReviewGroup: updatedGroup,
+          dailyPdfReviewDocument: document,
+          dailyPdfReviewCanConfirm: true,
+          dailyPdfValidationIssues: []
+        });
+        wx.showToast({ title: '已保存并重生成', icon: 'success' });
+        if (document && document.file_url) api.downloadAndOpenDocument(document.file_url).catch(() => null);
+        this.loadAll();
+      })
+      .catch((err) => {
+        console.warn('[daily review update failed]', err);
+        this.setData({ loading: false, conflictText: (err && err.error) || '保存失败，请检查后端连接。' });
+      });
+  },
+
+  openDailyPdf(e) {
+    const eventKey = String(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.key || '');
+    const key = eventKey || (this.data.dailySelectedGroupKeys || [])[0];
+    this.openDailyPdfByKey(key, true);
+  },
+
+  openDailyPdfByKey(key, autoOpen) {
+    const decorated = this.decorateServerRunGroups(this.data.serverRunGroups || []);
+    const groups = decorated.allGroups || [];
+    const group = groups.find((item) => item.key === key);
+    if (!group) {
+      wx.showToast({ title: '请先选择车辆', icon: 'none' });
+      return;
+    }
+    const groupIndex = groups.findIndex((item) => item.key === key);
+    this.setData({ loading: true, dailyPdfLoadingKey: key });
+    api.generateRunDocument(key)
+      .then((res) => {
+        const document = res && res.document;
+        if (!document || !document.file_url) throw new Error('PDF 生成结果无效');
+        this.setData({
+          dailyPdfReviewOpen: true,
+          dailyPdfReviewGroup: group,
+          dailyPdfReviewDocument: document,
+          dailyPdfReviewCanConfirm: document.status !== 'published' && !(group.validation_issues || []).length,
+          dailyPdfReviewIndex: groupIndex,
+          dailyPdfReviewTotal: groups.length,
+          dailyPdfValidationIssues: group.validation_issues || []
+        });
+        return autoOpen ? api.downloadAndOpenDocument(document.file_url) : null;
+      })
+      .then(() => this.setData({ loading: false, dailyPdfLoadingKey: '' }))
+      .catch((err) => {
+        console.warn('[run document open failed]', err);
+        this.setData({ loading: false, dailyPdfLoadingKey: '' });
+        wx.showToast({ title: (err && err.error) || 'PDF 打开失败', icon: 'none' });
+      });
+  },
+
+  closeDailyPdfReview() {
+    this.setData({ dailyPdfReviewOpen: false, dailyPdfReviewGroup: null, dailyPdfReviewDocument: null, dailyPdfReviewCanConfirm: false, dailyPdfValidationIssues: [] });
+  },
+
+  editDailyPdf() {
+    const group = this.data.dailyPdfReviewGroup;
+    if (!group || !(group.orders || []).length) return;
+    this.showDailyReviewOrder(group, 0);
+    this.setData({ dailyReviewEdit: true });
+  },
+
+  previousDailyPdfDriver() {
+    const groups = this.decorateServerRunGroups(this.data.serverRunGroups || []).allGroups || [];
+    const index = Math.max(0, Number(this.data.dailyPdfReviewIndex || 0) - 1);
+    if (groups[index]) this.openDailyPdfByKey(groups[index].key, false);
+  },
+
+  nextDailyPdfDriver() {
+    const groups = this.decorateServerRunGroups(this.data.serverRunGroups || []).allGroups || [];
+    const index = Math.min(groups.length - 1, Number(this.data.dailyPdfReviewIndex || 0) + 1);
+    if (groups[index]) this.openDailyPdfByKey(groups[index].key, false);
+  },
+
+  openGeneratedDailyPdf() {
+    const document = this.data.dailyPdfReviewDocument;
+    if (!document || !document.file_url) return;
+    api.downloadAndOpenDocument(document.file_url).catch((err) => {
+      wx.showToast({ title: (err && err.error) || 'PDF 打开失败', icon: 'none' });
+    });
+  },
+
+  confirmDailyPdfReview() {
+    const group = this.data.dailyPdfReviewGroup;
+    if (!group || !group.key) return;
+    this.setData({ loading: true });
+    api.reviewAndPublishRunDocument(group.key)
+      .then((res) => {
+        this.setData({
+          loading: false,
+          dailyPdfReviewDocument: res.document || null,
+          dailyPdfReviewCanConfirm: false
+        });
+        wx.showToast({ title: '已发布', icon: 'success' });
+        this.loadAll();
+        if (res.next_group_key) {
+          this.openDailyPdfByKey(res.next_group_key, true);
+        } else {
+          this.closeDailyPdfReview();
+        }
+      })
+      .catch((err) => {
+        this.setData({ loading: false });
+        wx.showToast({ title: (err && err.error) || 'PDF 确认失败', icon: 'none' });
+      });
+  },
+
+  publishDailyGroup(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    if (!key) return;
+    this.setData({ dailySelectedGroupKeys: [key] }, () => this.publishSelectedDailyGroups());
+  },
+
+  publishSelectedDailyGroups() {
+    if (!(this.data.dailySelectedGroupKeys || []).length) {
+      wx.showToast({ title: '请先勾选车辆', icon: 'none' });
+      return;
+    }
+    const keys = (this.data.dailySelectedGroupKeys || []).slice();
+    const groups = (this.data.serverRunGroups || []).filter((item) => keys.indexOf(item.key) >= 0);
+    const pending = groups.reduce((sum, item) => sum + Number(item.pending_count || 0), 0);
+    if (pending) {
+      wx.showToast({ title: `还有 ${pending} 单未确认`, icon: 'none' });
+      return;
+    }
+    const notReviewed = groups.filter((item) => item.document_status !== 'reviewed');
+    if (notReviewed.length) {
+      wx.showToast({ title: `还有 ${notReviewed.length} 车 PDF 未确认`, icon: 'none' });
+      return;
+    }
+    wx.showModal({
+      title: keys.length > 1 ? '批量发布' : '确认发布',
+      content: `将发布 ${keys.length} 辆车的最新运行文件给对应司机。`,
+      confirmText: '发布',
+      success: (res) => {
+        if (!res.confirm) return;
+        this.setData({ loading: true });
+        api.publishRunDocuments(keys)
+          .then((result) => {
+            this.setData({ loading: false, dailySelectedGroupKeys: [] });
+            wx.showToast({ title: `已发布 ${result.count || keys.length} 份`, icon: 'success' });
+            this.loadAll();
+          })
+          .catch((err) => {
+            console.warn('[run document publish failed]', err);
+            this.setData({ loading: false });
+            wx.showToast({ title: (err && err.error) || '发布失败', icon: 'none' });
+          });
+      }
+    });
+  },
+
   openImport(e) {
     const mode = (e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.mode) || 'batch';
     this.setData({
       importOpen: true,
       importMode: mode
     });
+  },
+
+  openFlowDemo() {
+    this.setData({ workbenchMode: 'daily' });
+  },
+
+  openDailyFlowDemo() {
+    this.setData({ workbenchMode: 'daily' });
   },
 
   toggleCharter() {
@@ -785,8 +1271,19 @@ Page({
       wx.showToast({ title: '请先粘贴日配文本', icon: 'none' });
       return;
     }
-    const groups = parseDailyGroups(text);
-    this.updateDailyGroups(groups, `已解析 ${groups.length} 名司机、${calcDailyStats(groups).orders} 单。`);
+    this.setData({ loading: true, dailyMessage: '正在解析日配文本...' });
+    api.parseDailyText(text)
+      .then((res) => {
+        const groups = normalizeDailyGroups((res && res.groups) || []);
+        const ignored = (res && res.ignored_lines) || [];
+        if (ignored.length) console.info('[daily parser ignored lines]', ignored);
+        this.updateDailyGroups(groups, `已解析 ${groups.length} 名司机、${calcDailyStats(groups).orders} 单。`);
+        this.setData({ loading: false });
+      })
+      .catch((err) => {
+        this.setData({ loading: false, dailyMessage: this.formatDailyPublishError(err) });
+        wx.showToast({ title: '解析失败', icon: 'none' });
+      });
   },
 
   onDailyGroupInput(e) {
@@ -940,99 +1437,63 @@ Page({
     return { plan, errors };
   },
 
-  createDailyBackendOrders(item) {
-    const text = item.orders.map((order) => buildDailyOrderText(order)).join('\n');
-    return api.parseText(text, true)
-      .then((res) => {
-        const drafts = (res && res.drafts) || [];
-        if (drafts.length < item.orders.length) {
-          throw new Error(`${item.group.driverName} 解析只生成 ${drafts.length}/${item.orders.length} 单`);
-        }
-        return item.orders.reduce((chain, order, index) => {
-          return chain.then((orderIds) => {
-            const draft = drafts[index];
-            const draftId = draft && draft.id;
-            if (!draftId) throw new Error(`${item.group.driverName} 第 ${index + 1} 单草稿缺失`);
-            return api.updateDraft(draftId, buildDailyOrderPayload(order))
-              .then(() => api.confirmDraft(draftId))
-              .then((confirmed) => {
-                const orderId = confirmed && (confirmed.order_id || (confirmed.order && confirmed.order.id) || confirmed.id);
-                if (!orderId) throw new Error(`${item.group.driverName} 第 ${index + 1} 单确认失败`);
-                return orderIds.concat(Number(orderId));
-              });
-          });
-        }, Promise.resolve([]));
-      });
-  },
-
-  publishDailyGroupToBackend(item) {
-    const orderedOrderIds = [];
-    const missingOrders = [];
-    const missingIndexes = [];
-    item.orders.forEach((order) => {
-      const existing = findExistingDailyAssignment(order, item, item.assignments);
-      const orderId = existing && (existing.order_id || existing.id);
-      if (orderId) {
-        orderedOrderIds.push(Number(orderId));
-      } else {
-        orderedOrderIds.push(null);
-        missingIndexes.push(orderedOrderIds.length - 1);
-        missingOrders.push(order);
-      }
-    });
-    if (!missingOrders.length) {
-      return Promise.resolve({
-        groupIndex: item.groupIndex,
-        orderIds: orderedOrderIds,
-        driverId: Number(item.driver.id),
-        vehicleId: Number(item.vehicle.id),
-        reused: true
-      });
-    }
-    return this.createDailyBackendOrders({ ...item, orders: missingOrders })
-      .then((orderIds) => api.assignOrders({
-        order_ids: orderIds,
+  publishDailyBatchToBackend(plan) {
+    const payload = {
+      groups: plan.map((item) => ({
+        client_group_index: item.groupIndex,
+        service_date: item.group.serviceDate,
         driver_id: Number(item.driver.id),
-        vehicle_id: Number(item.vehicle.id)
-      }).then((res) => {
-        if (res && res.success === false) {
-          const message = this.formatConflicts(res.conflicts || []) || `${item.group.driverName} 存在时间冲突`;
-          throw new Error(message);
-        }
-        orderIds.forEach((orderId, index) => {
-          orderedOrderIds[missingIndexes[index]] = Number(orderId);
-        });
-        return {
-          groupIndex: item.groupIndex,
-          orderIds: orderedOrderIds.filter(Boolean),
-          driverId: Number(item.driver.id),
-          vehicleId: Number(item.vehicle.id)
-        };
+        vehicle_id: Number(item.vehicle.id),
+        driver_name: item.group.driverName,
+        vehicle_code: item.group.vehicleCode,
+        orders: item.orders.map((order) => buildDailyOrderPayload(order))
+      }))
+    };
+    return api.importDailyAssignments(payload).then((res) => {
+      if (res && res.success === false) {
+        const failed = (res.groups || [])[0] || {};
+        const conflict = (res.conflicts || [])[0] || {};
+        const target = conflict.oid || conflict.order_id || '-';
+        const at = conflict.start_time || '';
+        const driverName = failed.driver_name || '日配订单';
+        const vehicleCode = failed.vehicle_code || '';
+        throw new Error(`${driverName} · ${vehicleCode}\n${at} 与现有订单 ${target} 时间冲突`);
+      }
+      return (res.groups || []).map((record, planIndex) => ({
+        groupIndex: Number(record.client_group_index != null ? record.client_group_index : plan[planIndex].groupIndex),
+        orderIds: (record.order_ids || record.updated_order_ids || []).map(Number),
+        driverId: Number(plan[planIndex].driver.id),
+        vehicleId: Number(plan[planIndex].vehicle.id),
+        reused: Boolean(record.reused),
+        updatedExisting: Boolean(record.updated_existing)
       }));
+    });
   },
 
   formatDailyPublishError(err) {
-    if (!err) return '发送失败，请检查后端连接。';
+    if (!err) return '导入失败，请检查后端连接。';
     if (err.message) return err.message;
     if (err.error === 'network_timeout') return '后端请求超时，请稍后重试。';
     if (err.error === 'network_failed') return '连接后端失败，请确认 API 已启动。';
     if (typeof err === 'string') return err;
-    return '发送失败，请检查后端连接。';
+    return '导入失败，请检查后端连接。';
   },
 
   publishDailyAssignments() {
+    if (this.data.dailyImportSubmitting) return;
     if (!this.ensureYuzuDevTenant()) return;
     const groups = normalizeDailyGroups(this.data.dailyGroups);
     const orderCount = groups.reduce((sum, group) => {
       return sum + (group.orders || []).filter((order) => shouldPublishDailyOrder(order)).length;
     }, 0);
     if (!orderCount) {
-      wx.showToast({ title: '没有待发布订单', icon: 'none' });
+      wx.showToast({ title: '没有待导入订单', icon: 'none' });
       return;
     }
     this.setData({
       loading: true,
-      dailyMessage: '正在创建订单并发送司机确认...',
+      dailyImportSubmitting: true,
+      dailyMessage: '正在导入订单，导入后进入待运行确认...',
       conflictText: ''
     });
     this.loadDailyPublishResources()
@@ -1043,9 +1504,7 @@ Page({
           const diagnostic = result.errors[result.errors.length - 1];
           throw new Error(mainErrors.concat(diagnostic).join('；'));
         }
-        return result.plan.reduce((chain, item) => {
-          return chain.then((published) => this.publishDailyGroupToBackend(item).then((record) => published.concat(record)));
-        }, Promise.resolve([]));
+        return this.publishDailyBatchToBackend(result.plan);
       })
       .then((publishedRecords) => {
         const publishedByGroup = {};
@@ -1057,7 +1516,7 @@ Page({
           orders: group.orders.map((order) => {
             if (order.status === '作废' || order.backendOrderId) return order;
             const backendOrderId = (publishedByGroup[index] || []).shift();
-            return backendOrderId ? { ...order, status: '已发布', backendOrderId } : order;
+            return backendOrderId ? { ...order, status: '待确认', backendOrderId } : order;
           })
         }));
         const payload = {
@@ -1070,19 +1529,21 @@ Page({
         wx.setStorageSync(DAILY_PUBLISHED_KEY, payload);
         wx.setStorageSync(DAILY_STORAGE_KEY, payload);
         wx.setStorageSync(DAILY_CONFIRM_QUEUE_KEY, payload);
-        this.updateDailyGroups(payload.groups, `已发送 ${publishedRecords.length} 名司机、${orderCount} 单，司机端刷新后可见。`);
-        this.setData({ loading: false });
-        wx.showToast({ title: '已发送确认', icon: 'success' });
+        this.updateDailyGroups(payload.groups, `已导入 ${publishedRecords.length} 名司机、${orderCount} 单，等待运行管理确认。`);
+        const reused = publishedRecords.some((item) => item.reused || item.updatedExisting);
+        this.setData({ loading: false, dailyImportSubmitting: false, dailyImportOpen: false }, () => this.refreshTabBar());
+        wx.showToast({ title: reused ? '已更新日配草稿' : '导入成功', icon: 'success' });
         this.loadAll();
       })
       .catch((err) => {
         const message = this.formatDailyPublishError(err);
         this.setData({
           loading: false,
+          dailyImportSubmitting: false,
           dailyMessage: message,
           conflictText: message
         });
-        wx.showToast({ title: '发送失败', icon: 'none' });
+        wx.showModal({ title: '导入未完成', content: message, showCancel: false });
       });
   },
 
@@ -1303,28 +1764,28 @@ Page({
   loadAll() {
     this.setData({ loading: true });
     const tenantId = this.currentTenantId();
-    Promise.all([
-      api.drafts().catch(() => ({ drafts: [] })),
-      api.unassignedOrders().catch(() => ({ orders: [] })),
-      api.drivers().catch((err) => {
-        console.warn('[dispatch load drivers failed]', err);
-        return { drivers: this.data.drivers || [] };
-      }),
-      api.vehicles().catch((err) => {
-        console.warn('[dispatch load vehicles failed]', err);
-        return { vehicles: this.data.vehicles || [] };
-      }),
-      api.assignments().catch((err) => {
-        console.warn('[dispatch load assignments failed]', err);
-        return { assignments: this.data.assignments || [] };
-      })
+    let loadError = '';
+    const fallback = (label, value) => (err) => {
+      console.warn(`[dispatch load ${label} failed]`, err);
+      loadError = loadError || api.errorMessage(err);
+      return value;
+    };
+    return Promise.all([
+      api.drafts().catch(fallback('drafts', { drafts: [] })),
+      api.unassignedOrders().catch(fallback('unassigned orders', { orders: [] })),
+      api.drivers().catch(fallback('drivers', { drivers: this.data.drivers || [] })),
+      api.vehicles().catch(fallback('vehicles', { vehicles: this.data.vehicles || [] })),
+      api.assignments().catch(fallback('assignments', { assignments: this.data.assignments || [] })),
+      api.runGroups(this.data.dailyDate).catch(fallback('run groups', { groups: this.data.serverRunGroups || [] }))
     ])
-      .then((results) => {
-        const draftsRes = results && results[0] || { drafts: [] };
-        const ordersRes = results && results[1] || { orders: [] };
-        const driversRes = results && results[2] || { drivers: [] };
-        const vehiclesRes = results && results[3] || { vehicles: [] };
-        const assignmentsRes = results && results[4] || { assignments: [] };
+      .then((rawResults) => {
+        const results = Array.isArray(rawResults) ? rawResults : [];
+        const draftsRes = results[0] || { drafts: [] };
+        const ordersRes = results[1] || { orders: [] };
+        const driversRes = results[2] || { drivers: [] };
+        const vehiclesRes = results[3] || { vehicles: [] };
+        const assignmentsRes = results[4] || { assignments: [] };
+        const runGroupsRes = results[5] || { groups: [] };
         const drafts = (draftsRes.drafts || [])
           .filter((item) => !tenantId || !item.tenant_id || Number(item.tenant_id) === tenantId)
           .filter((item) => item.parse_status !== 'confirmed' && item.parse_status !== 'discarded')
@@ -1335,6 +1796,11 @@ Page({
         const pendingRows = this.sortPendingRows(drafts.concat(orders)).slice(0, 160);
         const assignments = assignmentsRes.assignments || [];
         const publishedRows = this.decoratePublishedAssignments(assignments);
+        const serverRunGroups = runGroupsRes.groups || [];
+        const dailyRun = this.decorateServerRunGroups(serverRunGroups);
+        const activePdfKey = this.data.dailyPdfReviewGroup && this.data.dailyPdfReviewGroup.key;
+        const activePdfGroup = activePdfKey && (dailyRun.allGroups || []).find((item) => item.key === activePdfKey);
+        const activePdfIndex = activePdfGroup ? (dailyRun.allGroups || []).findIndex((item) => item.key === activePdfKey) : this.data.dailyPdfReviewIndex;
         const decoratedDrivers = this.decorateDrivers(driversRes.drivers || [], assignments);
         const decoratedVehicles = this.decorateVehicles(vehiclesRes.vehicles || [], assignments);
         console.log('[dispatch resources loaded]', {
@@ -1349,12 +1815,23 @@ Page({
           drivers: decoratedDrivers,
           vehicles: decoratedVehicles,
           assignments,
+          serverRunGroups,
           publishedRows,
+          dailyRunGroups: dailyRun.groups,
+          dailyRunSummary: dailyRun.summary,
+          ...(activePdfGroup ? {
+            dailyPdfReviewGroup: activePdfGroup,
+            dailyPdfReviewIndex: activePdfIndex,
+            dailyPdfReviewTotal: (dailyRun.allGroups || []).length,
+            dailyPdfValidationIssues: activePdfGroup.validation_issues || [],
+            dailyPdfReviewCanConfirm: !!this.data.dailyPdfReviewDocument && this.data.dailyPdfReviewDocument.status !== 'published' && !(activePdfGroup.validation_issues || []).length
+          } : {}),
           dailyOverview: this.buildDailyOverview(this.data.dailyGroups, {
             drivers: decoratedDrivers,
             vehicles: decoratedVehicles,
             assignments
           }),
+          conflictText: loadError,
           loading: false
         });
         this.updatePreview();

@@ -1,0 +1,1851 @@
+{
+  "source": "ホテルリスト.xlsx",
+  "sheets": [
+    "大阪",
+    "京都"
+  ],
+  "hotels": [
+    {
+      "city": "大阪",
+      "name": "ザ・リッツ・カールトン大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN新大阪中央口本館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "コンラッド大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN新大阪中央口新館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "インターコンチネンタルホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN新大阪東口",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "フォーシーズンズホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN新大阪東三国駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "リーガロイヤルホテル大阪 ヴィニェット コレクション",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪阪急十三駅西口１",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル阪急レスパイア大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪阪急十三駅西口２",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "カンデオホテルズ大阪ザタワー",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN梅田中津１",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ヒルトン大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN梅田中津２",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ザ・オオサカステーションホテル オートグラフ コレクション",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪梅田東",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ウェスティンホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN淀屋橋駅南",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルヴィスキオ大阪 by GRANVIA",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪JR野田駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "フォーポイント フレックス ｂｙ シェラトン 大阪梅田",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN京橋桜ノ宮",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "キャノピーbyヒルトン大阪梅田",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪天神橋筋六丁目",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ウェリナホテル Premier 中之島 West",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN天満橋大手前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル グランヴィア 大阪 JR ホテル グループ",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪谷四交差点",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルモントレ大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪船場東",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "VOCO大阪セントラル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪本町１",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル阪急インターナショナル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪本町２",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルインターゲート大阪梅田",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪心斎橋西",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "Zentis 大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪なんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アロフト 大阪堂島",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪なんば西",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "モクシー大阪梅田",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪なんば日本橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ウォルドーフ・アストリア大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪通天閣前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "三井ガーデン大阪プレミアム",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INNあべの天王寺",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル阪急グランレスパイア大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪日本橋文楽劇場前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ザ ロイヤル パーク ホテル アイコニック 大阪 御堂筋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪鶴橋駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "都シティ 大阪本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪ドーム前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "クロスホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東横INN大阪弁天町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "日和ホテル大阪なんば駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルフォルツァ大阪なんば道頓堀",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリソルトリニティ大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "カンデオホテルズ大阪なんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテル大阪四ツ橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルモントレグラスミア大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテル大阪天王寺",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ベッセルイン心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテルなんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "なんばオリエンタルホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテル新大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル京阪なんばグランデ",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテル大阪中之島",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルロイヤルクラシック大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテルプレミアム大阪東心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "グリッズプレミアムホテル大阪なんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スマイルホテルプレミアム大阪本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東急ステイ メルキュール 大阪なんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "コートヤード・バイ・マリオット大阪本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "W大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "センタラグランドホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈大阪梅田〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル日航大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈新大阪駅南〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スイスホテル南海大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈東梅田 南森町駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "大阪エクセルホテル東急",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈大阪肥後橋駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "Holiday Inn Osaka Namba by IHG",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈大阪天満〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "カンデオホテルズ大阪心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈新大阪駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "セントレジスホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈新大阪 江坂駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "モクシー大阪本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈新大阪 南方駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "大阪グランベルホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈新大阪駅前タワー〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル京阪天満駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル＆リゾート〈大阪梅田駅タワー〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ザ ロイヤルパーク キャンバス 大阪北浜",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈大阪谷町四丁目駅前北〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "大阪ビューホテル本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈大阪谷町四丁目駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "東急ステイ大阪本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈淀屋橋 北浜駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "シェラトン都ホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈淀屋橋駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルニューオータニ大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈御堂筋本町駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ダブルツリーbyヒルトン大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈大阪天満橋駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "パティーナ大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈御堂筋本町駅東〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "OMO7大阪 by 星野リゾート",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル＆リゾート〈御堂筋本町駅前タワー〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "大阪マリオット都ホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば駅東〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "THE B 大阪新世界",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば心斎橋〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "逸の彩ホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈天王寺駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ザ パーク フロント ホテル アット ユニバーサル・スタジオ・ジャパン",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば南 恵美須町駅〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "オリエンタルホテル ユニバーサル・シティ",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば心斎橋西〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルユニバーサルポート",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば北 心斎橋駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルユニバーサルポート ヴィータ",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば南 大国町駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテル京阪 ユニバーサル・タワー",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル〈なんば心斎橋東〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ザ シンギュラリ ホテル＆スカイスパ アット ユニバーサルスタジオ",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "アパホテル＆リゾート〈大阪なんば駅前タワー〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "リーベルホテル大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ドーミーインプレミアムなんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "相鉄フレッサイン 北浜",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ドーミーインプレミアムなんばANNEX",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "相鉄フレッサイン 大阪心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "天然温泉 花風の湯 御宿 野乃なんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "相鉄フレッサイン 淀屋橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ドーミーイン大阪谷町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "相鉄フレッサイン 大阪なんば駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ドーミーインプレミアム大阪北浜",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "天然温泉 花波の湯 御宿 野乃大阪淀屋橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ダイワロイネットホテル 大阪北浜",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルマイステイズ大手前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "DEL style 大阪心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルマイステイズ堺筋本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ダイワロイネットホテル 四ツ橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルマイステイズ新大阪コンファレンスセンター",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ダイワロイネットホテル 大阪上本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルマイステイズ心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "DEL style 大阪新梅田",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルマイステイズ御堂筋本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "DEL style 大阪東天満",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ダイワロイネットホテル 大阪堺筋本町 PREMIER",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スーパーホテルJR新大阪東口",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス梅田セントラル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "湯元花乃井 スーパーホテル天然温泉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "リブマックスさきしまコスモタワーホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スーパーホテル梅田肥後橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス大阪ドーム前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スーパーホテル地下鉄谷町四丁目６号口",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックスBUDGETなんば",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スーパーホテルPremier大阪本町駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックスBUDGET新大阪",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スーパーホテルなんば 日本橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス梅田堂山",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "スパーホテルPremierなんば心斎橋天然温泉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックスBUDGET梅田",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス梅田中津",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス梅田WEST",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "天然温泉ホテルリブマックスPREMIUM梅田EAST",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "KOKO HOTEL 大阪なんば 恵美須町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス大阪淀屋橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "KOKO HOTEL 大阪新世界",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス大阪本町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "KOKO HOTEL 大阪心斎橋",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "ホテルリブマックス心斎橋EAST",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "大阪",
+      "name": "KOKO HOTEL 大阪なんば千日前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルグランヴィア京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "三井ガーデンホテル京都三条プレミアム",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ザ サウザンド京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "三井ガーデンホテル京都新町別邸",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ダブルツリーbyヒルトン京都駅",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "三井ガーデンホテル京都四条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "メルキュール京都ステーション",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "三井ガーデンホテル京都駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "都ホテル 京都八条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "三井ガーデンホテル京都河原町浄教寺",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都センチュリーホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都タワーホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "リッチモンドホテルプレミア京都駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "都シティ近鉄京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アルアホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU SUITES 京都CENTRAL",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "御宿 野乃京都七条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU京都 河原町五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都第一ホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU京都 STATION",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都新阪急ホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU京都 新町三条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "リーガロイヤルホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU京都 西洞院高辻",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都 梅小路花伝抄",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU京都 二条城",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Rakuten STAY KYOMACHIYA 京都 七条大宮",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MIMARU SUITES 京都四条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルバニスター京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルアンテルーム京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "KYOSTAYいろは 東寺別館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アーバンホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "エースホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都五条大宮〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "フォションホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都駅北〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルオークラ京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都祇園〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルフォルツァ京都四条河原町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都駅前〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリソル京都河原町三条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都駅堀川通〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都グランベルホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都駅前中央口〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "EN HOTEL Kyoto",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アパホテル〈京都駅東〉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ENSO ANGO（円素庵 五条坂）",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ザ ロイヤルパークホテル アイコニック 京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "チャプター京都 トリビュートポートフォリオホテル",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ノク京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "THE SCREEN",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリブマックス京都二条城北",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "GOOD NATURE HOTEL KYOTO",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリブマックス京都二条城西",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテル日航プリンセス京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリブマックスBUDGET京都駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "THE GATE HOTEL 京都高瀬川",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリブマックスBUDGET京都五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Park Hotel Kyoto（パークホテル京都御池）",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリブマックス京都寺町通",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京王プレリアホテル京都烏丸五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルリブマックス京都鴨川前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ヒルトン・ガーデン・イン京都四条烏丸",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "モクシー京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ソラリア西鉄ホテル京都プレミア 三条鴨川",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "クロスホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "京都ガーデンパレス",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "東横INN京都四条大宮",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ザ・ロイヤルパークホテル 京都三条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "東横INN京都五条大宮",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ザ・ワンファイブ京都四条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "東横INN京都五条烏丸",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテル アマネク 京都河原町五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "東横INN京都四条烏丸",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホリデイ・イン京都五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "東横INN京都二条城南",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルギンモンド京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "HOTEL ARU KYOTO 三条木屋町通り",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "エムズホテル三条大宮",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "シャトレーイン京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ダイワロイネットホテル 京都四条烏丸",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ヒルトン京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ダイワロイネットホテル 京都駅前 PREMIER",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "パークハイアット京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ダイワロイネットホテル 京都テラス八条 PREMIER",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "フォーシーズンズホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ダイワロイネットホテル 京都八条口",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ハイアット リージェンシー 京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "NOHGA HOTEL 清水 京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "シックスセンシズ 京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "OMO5京都祇園 by 星野リゾート",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "HOTEL CANATA KYOTO",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "相鉄フレッサイン 京都四条烏丸",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ザ・ホテル青龍 京都清水",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "相鉄フレッサイン 京都清水五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテル ザ セレスティン京都祇園",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "相鉄フレッサイン 京都駅八条口",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "祇園エリートテラス",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "柚子屋旅館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ザ・ジュネイホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Luxury hotel SOWAKA",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "東山 四季花木",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "スマイルホテル京都四条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Nazuna 京都 椿通",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "スマイルホテル京都烏丸五条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "炭屋旅館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "スーパーホテル京都四条河原町",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ギオン福住",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ドーミーインプレミアム京都駅前",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルSUI京都清水",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルマイステイズ京都四条",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Stay SAKURA Kyoto 龍",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "RYOKAN GINKAKU KYOTO",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "柊家旅館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "俵屋旅館",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ふふ京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ウェスティン都ホテル京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "HOTEL THE MITSUI KYOTO",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "トモヤレジデンスホテル京都 二条高倉",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Kamo Residences by Reflections",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "Hotel KADO Gosho-Minami Kyoto",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ANA Crowne Plaza Kyoto by IHG",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "翠嵐 ラグジュアリーコレクションホテル 京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "星のや京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "MUNI KYOTO",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテル嵐山",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "アマン京都",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ROKU KYOTO LXR Hotels & Resorts",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "ホテルハーヴェスト京都鷹峯",
+      "enabled": true,
+      "pool": true
+    },
+    {
+      "city": "京都",
+      "name": "星野リゾート 界 京都",
+      "enabled": true,
+      "pool": true
+    }
+  ]
+}

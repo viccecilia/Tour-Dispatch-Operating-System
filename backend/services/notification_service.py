@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from contextlib import closing
 from typing import Any
 
 from backend.db.database import get_connection
@@ -21,7 +22,7 @@ def create_notification(payload: dict[str, Any]) -> dict[str, Any]:
         priority = "normal"
     tenant_override = _to_int(payload.get("tenant_id"))
     tenant_id = tenant_override if tenant_override > 0 else get_current_tenant_id()
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         source_type = _text(payload.get("source_type"))
         source_id = _text(payload.get("source_id"))
         if source_type and source_id:
@@ -111,7 +112,7 @@ def _get_notification_for_tenant(conn: Any, tenant_id: int, notification_id: int
 
 
 def _get_notification_for_tenant_id(tenant_id: int, notification_id: int | str) -> dict[str, Any] | None:
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         return _get_notification_for_tenant(conn, tenant_id, notification_id)
 
 
@@ -242,6 +243,7 @@ def sync_driver_task_notifications(driver_id: int) -> None:
             WHERE a.tenant_id = ?
               AND o.tenant_id = ?
               AND a.status = 'active'
+              AND a.published_at IS NOT NULL
               AND a.driver_id = ?
               AND COALESCE(o.is_deleted, 0) = 0
               AND o.order_date = ?

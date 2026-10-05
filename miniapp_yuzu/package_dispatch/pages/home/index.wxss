@@ -1935,3 +1935,105 @@
   min-height: 100rpx;
   font-size: 24rpx;
 }
+
+/* Operations manager: one calm overview instead of repeated resource cards. */
+.ops-today-panel {
+  margin-top: 16rpx;
+  padding: 24rpx;
+  border-color: #dce7f5;
+  background: #ffffff;
+}
+
+.ops-today-head,
+.ops-today-primary,
+.ops-capacity-line,
+.ops-resource-links {
+  display: flex;
+  align-items: center;
+}
+
+.ops-today-head {
+  justify-content: space-between;
+}
+
+.ops-today-kicker {
+  color: #2563eb;
+  font-size: 18rpx;
+  font-weight: 900;
+  letter-spacing: 1.6rpx;
+}
+
+.ops-today-state {
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
+  color: #15803d;
+  background: #ecfdf3;
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.ops-today-primary {
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.ops-today-metric {
+  flex: 1;
+  min-width: 0;
+  padding: 18rpx 20rpx;
+  border-radius: 20rpx;
+  background: #f4f8ff;
+  border: 1rpx solid #dbeafe;
+}
+
+.ops-today-metric text {
+  display: block;
+  color: #64748b;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.ops-today-metric strong {
+  display: block;
+  margin-top: 8rpx;
+  color: #0f172a;
+  font-size: 40rpx;
+  line-height: 1;
+}
+
+.ops-capacity-line {
+  justify-content: space-between;
+  margin-top: 18rpx;
+  padding: 16rpx 6rpx 14rpx;
+  border-bottom: 1rpx solid #edf2f7;
+}
+
+.ops-capacity-line view {
+  display: flex;
+  align-items: baseline;
+  gap: 7rpx;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.ops-capacity-line strong {
+  color: #0f172a;
+  font-size: 29rpx;
+}
+
+.ops-resource-links {
+  justify-content: flex-end;
+  gap: 28rpx;
+  padding-top: 15rpx;
+}
+
+.ops-resource-links view {
+  color: #2563eb;
+  font-size: 21rpx;
+  font-weight: 850;
+}
+
+.ops-resource-links text {
+  margin-left: 5rpx;
+}

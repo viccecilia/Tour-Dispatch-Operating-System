@@ -485,6 +485,11 @@
   flex: 1;
 }
 
+.run-doc-list { margin-top: 16rpx; }
+.run-doc-row { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; padding: 18rpx 0; border-top: 1rpx solid #e2e8f0; }
+.run-doc-title { color: var(--c-text); font-size: 25rpx; font-weight: 900; }
+.run-doc-open { flex: 0 0 auto; padding: 10rpx 18rpx; border-radius: 999rpx; background: #e0f2fe; color: #0369a1; font-size: 22rpx; font-weight: 900; }
+
 .task-detail {
   margin-top: 14rpx;
   padding-top: 12rpx;

@@ -50,7 +50,7 @@ const DISPATCH_TABS = {
   ],
   ops: [
     { key: 'home', label: '首页', url: '/package_dispatch/pages/home/index' },
-    { key: 'vehicles', label: '车辆', url: '/package_dispatch/pages/info/index' },
+    { key: 'dispatch', label: '日配', url: '/package_dispatch/pages/dispatch/index' },
     { key: 'calendar', label: '日历', url: '/package_dispatch/pages/calendar/index' },
     { key: 'map', label: '地图', url: '/package_dispatch/pages/map/index' },
     { key: 'profile', label: '我的', url: '/package_dispatch/pages/profile/index' }
