@@ -56,7 +56,7 @@ function clearSession() {
 
 function request(path, options = {}) {
   const session = getSession();
-  const token = options.agencyToken || (session && session.token);
+  const token = options.agencyToken || (session && (session.access_token || session.token));
   return new Promise((resolve, reject) => {
     const requestPayload = options.data || {};
     wx.request({
@@ -66,7 +66,8 @@ function request(path, options = {}) {
       timeout: options.timeout || REQUEST_TIMEOUT_MS,
       header: {
         'Content-Type': 'application/json',
-        ...(path.indexOf('/api/agency-portal') === 0 && token ? { 'X-Agency-Token': token } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(path.indexOf('/api/agency-portal') === 0 && token && !(session && session.refresh_token) ? { 'X-Agency-Token': token } : {}),
         ...(options.header || {})
       },
       success: (res) => {
@@ -79,6 +80,15 @@ function request(path, options = {}) {
             requestPayload,
             responseBody: payload
           });
+          if (res.statusCode === 401 && !options._retried && session && session.refresh_token) {
+            refreshSession(session.refresh_token).then(() => {
+              request(path, { ...options, _retried: true }).then(resolve).catch(reject);
+            }).catch(() => {
+              clearSession();
+              reject(payload);
+            });
+            return;
+          }
           if (res.statusCode === 401 || payload.error === 'agency_unauthorized' || payload.error === 'invalid_agency_credentials') {
             clearSession();
           }
@@ -103,6 +113,27 @@ function request(path, options = {}) {
           base_url: API_CONFIG.baseUrl
         });
       }
+    });
+  });
+}
+
+function refreshSession(refreshToken) {
+  return new Promise((resolve, reject) => {
+    wx.request({
+      url: `${API_CONFIG.baseUrl}/api/auth/refresh`,
+      method: 'POST',
+      data: { refresh_token: refreshToken },
+      timeout: REQUEST_TIMEOUT_MS,
+      header: { 'Content-Type': 'application/json' },
+      success: (res) => {
+        if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.token) {
+          setSession(Object.assign({}, res.data, { port: 'agency' }));
+          resolve(res.data);
+          return;
+        }
+        reject(res.data || { error: 'invalid_refresh_token' });
+      },
+      fail: reject
     });
   });
 }
@@ -204,6 +235,13 @@ module.exports = {
   uploadPaymentReceipt: (orderId, payload) => request(`/api/agency-portal/orders/${orderId}/payment-receipt`, {
     method: 'POST',
     data: payload
-  })
+  }),
+  accounts: () => request('/api/travel-agency/accounts').then((res) => listFrom(res, ['accounts', 'items', 'data'])),
+  createAccount: (payload) => request('/api/travel-agency/accounts', { method: 'POST', data: payload }),
+  updateAccount: (accountId, payload) => request(`/api/travel-agency/accounts/${accountId}`, { method: 'PUT', data: payload }),
+  disableAccount: (accountId) => request(`/api/travel-agency/accounts/${accountId}/disable`, { method: 'POST', data: {} }),
+  enableAccount: (accountId) => request(`/api/travel-agency/accounts/${accountId}/enable`, { method: 'POST', data: {} }),
+  resetAccountPassword: (accountId) => request(`/api/travel-agency/accounts/${accountId}/reset-password`, { method: 'POST', data: {} }),
+  unbindAccountWechat: (accountId) => request(`/api/travel-agency/accounts/${accountId}/unbind-wechat`, { method: 'POST', data: {} })
 };
 

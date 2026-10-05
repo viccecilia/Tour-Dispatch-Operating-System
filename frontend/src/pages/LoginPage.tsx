@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import type { ReactNode } from "react";
 import { CarFront, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, setAuthToken } from "@/services/apiClient";
+import { api, setAuthSession } from "@/services/apiClient";
 import type { AuthUser } from "@/types/api";
 
 export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
@@ -21,7 +21,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setError("");
     try {
       const result = await api.loginPhone(normalizeLoginAccount(account), password);
-      setAuthToken(result.token);
+      setAuthSession(result);
       if (result.user.must_change_password) {
         setPendingUser(result.user);
         setOldPassword(password);

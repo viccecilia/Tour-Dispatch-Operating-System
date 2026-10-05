@@ -12,6 +12,8 @@ from backend.services.auth_service import (
     authenticate_phone,
     change_user_password,
     get_user_by_token,
+    logout_auth_session,
+    refresh_auth_session,
     register_bound_account,
     resolve_wechat_login_code,
     reset_user_password_to_phone_tail,
@@ -200,6 +202,7 @@ from backend.services.resource_service import (
 )
 from backend.services.resource_library_service import list_resource_library, resolve_resource_pdf, update_driver_health_check_date, update_driver_resource_status, update_vehicle_inspection_date, update_vehicle_resource_status, upload_vehicle_resource_document
 from backend.services.run_document_service import (
+    DriverAccountPreflightError,
     confirm_order as confirm_run_order,
     generate_run_document,
     list_driver_run_documents,
@@ -243,6 +246,10 @@ from backend.services.travel_agency_service import (
     list_guides as ta_list_guides,
     list_marketplace as ta_list_marketplace,
     list_orders as ta_list_orders,
+    reset_account_password as ta_reset_account_password,
+    set_account_enabled as ta_set_account_enabled,
+    unbind_account_wechat as ta_unbind_account_wechat,
+    update_account as ta_update_account,
     parse_order_text as ta_parse_order_text,
     record_guide_event as ta_record_guide_event,
     stage_summary as ta_stage_summary,
@@ -661,9 +668,17 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"companies": ta_list_companies(params)})
             return
         if path == "/api/travel-agency/accounts":
-            if not self.require_role({"admin", "dispatcher"}):
+            user = self.require_api_user()
+            if not user:
                 return
-            self.send_json({"accounts": ta_list_accounts(params.get("company_id"))})
+            if account_scope(user) == "agency" and user.get("role") == "agency_owner":
+                company_id = user.get("organization_id")
+            elif account_scope(user) == "platform" and user.get("role") == "admin":
+                company_id = params.get("company_id")
+            else:
+                self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+                return
+            self.send_json({"accounts": ta_list_accounts(company_id)})
             return
         if path == "/api/travel-agency/guides":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -1087,7 +1102,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             )
             self.send_json(result if result else {"error": "wechat_not_bound"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
-        public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/register"}
+        public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/register", "/api/auth/refresh"}
         public_dispatch_mobile_paths = {"/api/dispatch-mobile/login", "/api/dispatch-mobile/wechat-login"}
         if (path.startswith("/api/dispatch-mobile/") and path not in public_dispatch_mobile_paths) or path.startswith("/api/driver/"):
             if not self.require_api_user():
@@ -1146,6 +1161,23 @@ class ApiHandler(BaseHTTPRequestHandler):
             log_operation("REGISTER_BIND_OK", path, {"phone": payload.get("phone", ""), "role": payload.get("role")}, payload.get("phone", ""))
             self.send_json(result, HTTPStatus.CREATED)
             return
+        if path == "/api/auth/refresh":
+            try:
+                result = refresh_auth_session(str(payload.get("refresh_token") or ""))
+            except ValueError:
+                self.send_json({"error": "invalid_refresh_token"}, HTTPStatus.UNAUTHORIZED)
+                return
+            self.send_json(result)
+            return
+        if path == "/api/auth/logout":
+            if not self.require_api_user():
+                return
+            try:
+                logout_auth_session(self.bearer_token())
+            except ValueError:
+                pass
+            self.send_json({"ok": True})
+            return
         if path == "/api/auth/admin/unbind-wechat":
             if not self.require_role({"admin"}):
                 return
@@ -1167,7 +1199,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not user:
                 return
             try:
-                changed = change_user_password(user.get("id"), payload.get("old_password", ""), payload.get("new_password", ""), self.actor_label())
+                changed = change_user_password(
+                    user.get("local_user_id") or user.get("id"),
+                    payload.get("old_password", ""),
+                    payload.get("new_password", ""),
+                    self.actor_label(),
+                    self.bearer_token(),
+                )
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
@@ -1250,7 +1288,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
-            self.safe_create(lambda: {"account": create_account(payload, self.actor_label())}, HTTPStatus.CREATED)
+            self.safe_create(lambda: {"account": create_account(payload, user)}, HTTPStatus.CREATED)
             return
         if path == "/api/system/backup":
             if not self.require_permission("platform.system.manage"):
@@ -1273,28 +1311,28 @@ class ApiHandler(BaseHTTPRequestHandler):
             user = self.require_role({"admin"})
             if not user:
                 return
-            self.safe_update(lambda: disable_account(account_disable_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
+            self.safe_update(lambda: disable_account(account_disable_id, user, resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         account_enable_id = self._match_action_path(path, "/api/accounts/", "/enable")
         if account_enable_id:
             user = self.require_role({"admin"})
             if not user:
                 return
-            self.safe_update(lambda: enable_account(account_enable_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
+            self.safe_update(lambda: enable_account(account_enable_id, user, resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         account_reset_id = self._match_action_path(path, "/api/accounts/", "/reset-password")
         if account_reset_id:
             user = self.require_role({"admin"})
             if not user:
                 return
-            self.safe_update(lambda: reset_account_password(account_reset_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
+            self.safe_update(lambda: reset_account_password(account_reset_id, user, resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         account_unbind_id = self._match_action_path(path, "/api/accounts/", "/unbind-wechat")
         if account_unbind_id:
             user = self.require_role({"admin"})
             if not user:
                 return
-            self.safe_update(lambda: unbind_account_wechat(account_unbind_id, self.actor_label(), resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
+            self.safe_update(lambda: unbind_account_wechat(account_unbind_id, user, resolve_write_tenant(user, params.get("tenant_id"))), "account", "account_not_found")
             return
         if path == "/api/orders":
             if not self.require_role({"admin", "dispatcher"}):
@@ -1337,14 +1375,46 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.safe_create(lambda: {"registration": create_company_registration(payload)}, HTTPStatus.CREATED)
             return
         if path == "/api/travel-agency/companies":
-            if not self.require_role({"admin", "dispatcher"}):
+            user = self.require_role({"admin"})
+            if not user:
                 return
-            self.safe_create(lambda: {"company": ta_create_company(payload, self.actor_label())}, HTTPStatus.CREATED)
+            self.safe_create(lambda: {"company": ta_create_company(payload, user)}, HTTPStatus.CREATED)
             return
         if path == "/api/travel-agency/accounts":
-            if not self.require_role({"admin", "dispatcher"}):
+            user = self.require_api_user()
+            if not user:
                 return
-            self.safe_create(lambda: {"account": ta_create_account(payload, self.actor_label())}, HTTPStatus.CREATED)
+            if account_scope(user) == "agency":
+                payload["company_id"] = user.get("organization_id")
+            self.safe_create(lambda: {"account": ta_create_account(payload, user)}, HTTPStatus.CREATED)
+            return
+        ta_account_disable_id = self._match_action_path(path, "/api/travel-agency/accounts/", "/disable")
+        if ta_account_disable_id:
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: ta_set_account_enabled(ta_account_disable_id, False, user), "account", "account_not_found")
+            return
+        ta_account_enable_id = self._match_action_path(path, "/api/travel-agency/accounts/", "/enable")
+        if ta_account_enable_id:
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: ta_set_account_enabled(ta_account_enable_id, True, user), "account", "account_not_found")
+            return
+        ta_account_reset_id = self._match_action_path(path, "/api/travel-agency/accounts/", "/reset-password")
+        if ta_account_reset_id:
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: ta_reset_account_password(ta_account_reset_id, user), "account", "account_not_found")
+            return
+        ta_account_unbind_id = self._match_action_path(path, "/api/travel-agency/accounts/", "/unbind-wechat")
+        if ta_account_unbind_id:
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: ta_unbind_account_wechat(ta_account_unbind_id, user), "account", "account_not_found")
             return
         if path == "/api/travel-agency/guides":
             if not self.require_role({"admin", "dispatcher"}):
@@ -1647,6 +1717,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             try:
                 result = review_and_publish_run_document(payload.get("group_key"), user)
+            except DriverAccountPreflightError as exc:
+                self.send_json({"error": str(exc), "blocked_drivers": exc.blocked}, HTTPStatus.CONFLICT)
+                return
             except (ValueError, TypeError) as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
@@ -1660,6 +1733,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             try:
                 documents = publish_run_documents(payload.get("group_keys") or [], user)
+            except DriverAccountPreflightError as exc:
+                self.send_json({"error": str(exc), "blocked_drivers": exc.blocked}, HTTPStatus.CONFLICT)
+                return
             except (ValueError, TypeError) as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
@@ -1830,14 +1906,22 @@ class ApiHandler(BaseHTTPRequestHandler):
             user = self.require_role({"admin"})
             if not user:
                 return
-            self.safe_update(lambda: update_account(account_id, payload, self.actor_label(), resolve_write_tenant(user, payload.get("tenant_id") or params.get("tenant_id"))), "account", "account_not_found")
+            self.safe_update(lambda: update_account(account_id, payload, user, resolve_write_tenant(user, payload.get("tenant_id") or params.get("tenant_id"))), "account", "account_not_found")
             return
         driver_id = self.match_resource_path(path, "drivers")
         if driver_id:
-            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            allowed = {"admin"} if "phone" in payload else {"admin", "dispatcher", "operations_manager"}
+            user = self.require_role(allowed)
             if not user:
                 return
-            self.safe_update(lambda: update_driver(driver_id, payload, resolve_write_tenant(user, payload.get("tenant_id"))), "driver", "driver_not_found")
+            self.safe_update(lambda: update_driver(driver_id, payload, resolve_write_tenant(user, payload.get("tenant_id")), user), "driver", "driver_not_found")
+            return
+        ta_account_id = self._match_prefixed_id(path, "/api/travel-agency/accounts/")
+        if ta_account_id:
+            user = self.require_api_user()
+            if not user:
+                return
+            self.safe_update(lambda: ta_update_account(ta_account_id, payload, user), "account", "account_not_found")
             return
         vehicle_id = self.match_resource_path(path, "vehicles")
         if vehicle_id:
@@ -2331,12 +2415,17 @@ class ApiHandler(BaseHTTPRequestHandler):
     def safe_create(self, func, status: HTTPStatus = HTTPStatus.OK) -> None:
         try:
             self.send_json(func(), status)
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.FORBIDDEN)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
     def safe_update(self, func, key: str, error: str) -> None:
         try:
             result = func()
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.FORBIDDEN)
+            return
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -2363,8 +2452,11 @@ class ApiHandler(BaseHTTPRequestHandler):
         return auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
 
     def agency_token(self) -> str:
+        bearer = self.bearer_token()
+        if bearer:
+            return bearer
         token = self.headers.get("X-Agency-Token", "")
-        return token.strip() if token else self.bearer_token()
+        return token.strip() if token else ""
 
     def query_params(self, query: str) -> dict:
         parsed = parse_qs(query, keep_blank_values=False)

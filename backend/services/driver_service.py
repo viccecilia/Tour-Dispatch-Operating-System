@@ -758,7 +758,6 @@ def update_driver_profile(driver_id: Any, payload: dict[str, Any]) -> dict[str, 
     if not driver_id_int:
         return {"success": False, "error": "missing_driver_id"}
     allowed = (
-        "phone",
         "wechat",
         "line",
         "whatsapp",

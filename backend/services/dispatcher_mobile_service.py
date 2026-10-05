@@ -43,6 +43,10 @@ def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
     dispatcher = _dispatcher_from_user(user)
     return {
         "token": result["token"],
+        "access_token": result.get("access_token") or result["token"],
+        "refresh_token": result.get("refresh_token") or "",
+        "expires_in": result.get("expires_in"),
+        "expires_at": result.get("expires_at"),
         "user": user,
         "dispatcher": dispatcher,
         "dispatcher_session": {
@@ -71,6 +75,10 @@ def login_dispatcher_by_wechat(payload: dict[str, Any]) -> dict[str, Any] | None
     dispatcher = _dispatcher_from_user(user)
     return {
         "token": result["token"],
+        "access_token": result.get("access_token") or result["token"],
+        "refresh_token": result.get("refresh_token") or "",
+        "expires_in": result.get("expires_in"),
+        "expires_at": result.get("expires_at"),
         "user": user,
         "dispatcher": dispatcher,
         "dispatcher_session": {

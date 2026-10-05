@@ -50,6 +50,16 @@ LOG_DIR = Path(os.environ.get("WX_DISPATCH_LOG_DIR", str(RUNTIME_DIR / "logs")))
 BACKUP_DIR = Path(os.environ.get("WX_DISPATCH_BACKUP_DIR", str(RUNTIME_DIR / "backups"))).resolve()
 JWT_SECRET = os.environ.get("WX_DISPATCH_JWT_SECRET", "wx-dispatch-demo-secret-change-me")
 JWT_EXPIRES_SECONDS = int(os.environ.get("WX_DISPATCH_JWT_EXPIRES_SECONDS", "86400"))
+AUTH_MODE = os.environ.get("AUTH_MODE", os.environ.get("WX_DISPATCH_AUTH_MODE", "legacy")).strip().lower()
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_PROJECT_ID = os.environ.get("SUPABASE_PROJECT_ID", "").strip()
+SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+SUPABASE_PLATFORM_ADMIN_EMAIL = os.environ.get("SUPABASE_PLATFORM_ADMIN_EMAIL", "").strip().lower()
+SUPABASE_JWKS_URL = os.environ.get(
+    "SUPABASE_JWKS_URL",
+    f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else "",
+).strip()
 WECHAT_MINIAPP_APPID = os.environ.get("WX_DISPATCH_WECHAT_MINIAPP_APPID", "wxfb6b69e5353308de")
 WECHAT_MINIAPP_SECRET = os.environ.get("WX_DISPATCH_WECHAT_MINIAPP_SECRET", "")
 SUPER_WECHAT_IDS = {
@@ -77,6 +87,10 @@ def validate_security_config() -> None:
         unsafe.append("WX_DISPATCH_ADMIN_PASSWORD")
     if unsafe:
         raise RuntimeError(f"unsafe_default_security_config:{','.join(unsafe)}")
+    if AUTH_MODE not in {"legacy", "supabase_dual", "supabase"}:
+        raise RuntimeError("invalid_auth_mode")
+    if AUTH_MODE != "legacy" and not (SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY):
+        raise RuntimeError("supabase_public_config_required")
 
 
 validate_security_config()

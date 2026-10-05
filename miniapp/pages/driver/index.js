@@ -120,8 +120,7 @@ Page({
   onLoad(options) {
     const savedSession = wx.getStorageSync('driver_session');
     const sessionUser = savedSession && savedSession.user ? savedSession.user : null;
-    const driverId = Number((options && options.driver_id) || (sessionUser && sessionUser.profile_id) || wx.getStorageSync('driver_id') || 1);
-    wx.setStorageSync('driver_id', driverId);
+    const driverId = Number((sessionUser && sessionUser.profile_id) || 0);
     this.setData({
       authSession: savedSession || null,
       driverId,
@@ -1136,7 +1135,6 @@ Page({
         throw new Error('driver_profile_not_bound');
       }
       wx.setStorageSync('driver_session', res);
-      wx.setStorageSync('driver_id', driverId);
       this.setData({
         authSession: res,
         driverId,
@@ -1190,7 +1188,6 @@ Page({
     this.setData({ contactSaving: true });
     api.updateDriverProfile({
       driver_id: this.data.driverId,
-      phone: this.data.contactPhone,
       wechat: this.data.contactWechat,
       whatsapp: this.data.contactWhatsapp,
       line: this.data.contactLine,
@@ -1245,8 +1242,7 @@ Page({
   },
 
   onSwitchDriver() {
-    wx.setStorageSync('driver_id', this.data.driverId);
-    this.loadAll();
+    wx.showToast({ title: '司机身份由登录账号确定', icon: 'none' });
   },
 
   firstChar(value) {

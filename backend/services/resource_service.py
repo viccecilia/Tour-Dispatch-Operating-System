@@ -4,6 +4,7 @@ from typing import Any, Optional
 from backend.db.database import get_connection
 from backend.services.settings_service import get_reminder_settings
 from backend.services.tenant_context import get_current_tenant_id
+from backend.services.account_service import update_driver_account_phone
 
 _DEFAULT_TENANT = object()
 
@@ -210,13 +211,17 @@ def get_driver(driver_id: str, tenant_id: int | None = None) -> Optional[dict[st
     return _with_resource_alert(dict(row), "driver") if row else None
 
 
-def update_driver(driver_id: str, payload: dict[str, Any], tenant_id: int | None = None) -> Optional[dict[str, Any]]:
+def update_driver(driver_id: str, payload: dict[str, Any], tenant_id: int | None = None, actor: dict[str, Any] | str = "system") -> Optional[dict[str, Any]]:
     tenant_id = tenant_id or get_current_tenant_id()
     if not get_driver(driver_id, tenant_id):
         return None
     data = _normalize_driver(payload, partial=True)
     if not data:
         return get_driver(driver_id, tenant_id)
+    if "phone" in data:
+        update_driver_account_phone(driver_id, str(data.pop("phone") or ""), tenant_id=tenant_id, actor=actor)
+        if not data:
+            return get_driver(driver_id, tenant_id)
     assignments = ", ".join(f"{field} = ?" for field in data)
     params = [data[field] for field in data]
     params.append(_to_int(driver_id))

@@ -61,6 +61,29 @@
   </view>
 
   <button class="button-primary bottom-action" loading="{{saving}}" bindtap="saveProfile">保存设置</button>
+
+  <view wx:if="{{canManageAccounts}}" class="panel">
+    <view class="panel-title">账号管理</view>
+    <view class="muted">仅旅行社管理号可创建客服、导游和财务账号。</view>
+    <picker mode="selector" range="{{accountRoleLabels}}" bindchange="onAccountRoleChange">
+      <view class="input">{{accountRole === 'agency_customer_service' ? '客服' : accountRole === 'agency_guide' ? '导游' : '财务'}}</view>
+    </picker>
+    <input class="input" value="{{accountName}}" data-field="accountName" bindinput="onAccountFieldInput" placeholder="姓名" />
+    <input class="input" value="{{accountPhone}}" data-field="accountPhone" bindinput="onAccountFieldInput" placeholder="登录手机号" />
+    <button class="button-primary" loading="{{accountSaving}}" bindtap="createAccount">新增账号</button>
+    <view wx:for="{{accounts}}" wx:key="id" class="file-row">
+      <view>
+        <view class="file-name">{{item.display_name}} · {{item.phone}}</view>
+        <view class="muted">{{item.role}} · {{item.status}} · 微信 {{item.wx_bind_status}} · Auth {{item.supabase_linked ? '已关联' : '未关联'}}</view>
+      </view>
+      <view>
+        <button wx:if="{{item.status === 'active'}}" class="mini-button" data-id="{{item.id}}" data-action="disable" bindtap="onAccountAction">停用</button>
+        <button wx:else class="mini-button" data-id="{{item.id}}" data-action="enable" bindtap="onAccountAction">启用</button>
+        <button class="mini-button" data-id="{{item.id}}" data-action="reset" bindtap="onAccountAction">重置</button>
+        <button class="mini-button" data-id="{{item.id}}" data-action="unbind" bindtap="onAccountAction">解绑</button>
+      </view>
+    </view>
+  </view>
   <view wx:if="{{message}}" class="message">{{message}}</view>
 </view>
 

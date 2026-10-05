@@ -11,8 +11,16 @@ import time
 from typing import Any
 import uuid
 
-from backend.config import JWT_EXPIRES_SECONDS, JWT_SECRET
+from backend.config import AUTH_MODE, JWT_EXPIRES_SECONDS, JWT_SECRET
 from backend.db.database import get_connection
+from backend.services.auth_account_service import (
+    SupabaseAuthError,
+    resolve_authenticated_principal,
+    sign_in_with_password,
+    supabase_enabled,
+    update_self_password,
+    verify_supabase_access_token,
+)
 from backend.services.auction_service import create_auction_listings, ensure_auction_listing_schema, list_auction_listings, refresh_expired_auction_listings
 from backend.services.flight_info_service import (
     FLIGHT_INFO_FIELDS,
@@ -159,6 +167,31 @@ def agency_portal_login(payload: dict[str, Any]) -> dict[str, Any] | None:
     password = str(payload.get("password") or "").strip()
     if not portal_code or not password:
         return None
+    if supabase_enabled():
+        try:
+            session = sign_in_with_password(portal_code, password)
+            principal = session.get("user") or {}
+            if principal.get("account_scope") != "agency":
+                return None
+            agency = _agency_for_principal(principal)
+            if not agency:
+                return None
+            return {
+                **session,
+                "agency": _public_agency(agency),
+                "account": {
+                    "id": principal.get("agency_account_id"),
+                    "role": principal.get("role"),
+                    "display_name": principal.get("display_name"),
+                    "phone": principal.get("phone"),
+                    "company_id": principal.get("organization_id"),
+                    "company_code": principal.get("company_code"),
+                    "company_name": principal.get("company_name"),
+                },
+            }
+        except SupabaseAuthError:
+            if AUTH_MODE == "supabase":
+                return None
     if re.search(r"\d", portal_code) and not re.fullmatch(r"[A-Za-z]{2,5}\d{4,}", portal_code):
         internal_result = _agency_internal_account_login(portal_code, password)
         if internal_result:
@@ -322,6 +355,22 @@ def change_agency_portal_password(token: str, payload: dict[str, Any]) -> dict[s
     new_password = str(payload.get("new_password") or "").strip()
     if len(new_password) < 6:
         raise ValueError("password_too_short")
+    if supabase_enabled() and agency.get("account_id"):
+        try:
+            update_self_password(token, new_password)
+        except SupabaseAuthError as exc:
+            raise ValueError(str(exc)) from exc
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE travel_agency_accounts
+                SET password_seed = NULL, must_change_password = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """,
+                (agency["tenant_id"], agency["account_id"]),
+            )
+            conn.commit()
+        return {"success": True}
     with get_connection() as conn:
         ensure_agency_portal_auth_schema(conn)
         row = conn.execute(
@@ -365,6 +414,23 @@ def list_public_agencies() -> list[dict[str, Any]]:
 
 
 def get_agency_by_token(token: str) -> dict[str, Any] | None:
+    if supabase_enabled():
+        try:
+            claims = verify_supabase_access_token(token)
+            principal = resolve_authenticated_principal(str(claims.get("sub") or ""))
+            if principal and principal.get("is_active") and principal.get("account_scope") == "agency":
+                agency = _agency_for_principal(principal)
+                if agency:
+                    agency["account_id"] = principal.get("agency_account_id")
+                    agency["account_role"] = principal.get("role")
+                    agency["account_phone"] = principal.get("phone")
+                    agency["account_display_name"] = principal.get("display_name")
+                    agency["account_code"] = normalize_account_code(None, principal.get("role"), "A1")
+                    set_current_tenant_id(agency["tenant_id"])
+                    return agency
+        except SupabaseAuthError:
+            if AUTH_MODE == "supabase":
+                return None
     payload = verify_agency_token(token)
     if not payload:
         return None
@@ -387,6 +453,25 @@ def get_agency_by_token(token: str) -> dict[str, Any] | None:
     agency["account_code"] = payload.get("account_code") or normalize_account_code(None, payload.get("account_role"), "A1")
     set_current_tenant_id(agency["tenant_id"])
     return agency
+
+
+def _agency_for_principal(principal: dict[str, Any]) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT ag.id, ag.tenant_id, ag.agency_code, ag.name, ag.contact_name,
+                   ag.contact_phone, ag.is_portal_enabled
+            FROM travel_agency_companies c
+            JOIN agencies ag
+              ON UPPER(ag.agency_code) = UPPER(c.company_code)
+             AND ag.tenant_id = c.tenant_id
+            WHERE c.id = ? AND c.tenant_id = ?
+              AND COALESCE(ag.is_portal_enabled, 1) = 1
+            LIMIT 1
+            """,
+            (principal.get("organization_id"), principal.get("tenant_id")),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def get_agency_profile(token: str) -> dict[str, Any]:

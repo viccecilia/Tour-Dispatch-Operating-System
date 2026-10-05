@@ -14,6 +14,13 @@ from backend.services.notification_service import create_notification
 from backend.services.order_number_service import driver_short_code, normalize_source_code, plate_short_code
 from backend.services.tariff_service import recommend_route_fare
 from backend.services.tenant_context import get_current_tenant_id
+from backend.services.auth_account_service import supabase_enabled
+
+
+class DriverAccountPreflightError(ValueError):
+    def __init__(self, blocked: list[dict[str, Any]]):
+        super().__init__("driver_account_preflight_failed")
+        self.blocked = blocked
 
 
 EDITABLE_FIELDS = {
@@ -460,6 +467,13 @@ def publish_run_documents(group_values: list[Any], actor: dict[str, Any]) -> lis
         if not row or not Path(row["file_path"]).is_file():
             raise ValueError("PDF が未確認です。PDF を開き、運行管理者が確認してから公開してください")
         documents.append(_public_document(dict(row)))
+    # Validate every selected document first, then validate all driver accounts.
+    # Both checks happen before the first write so a batch can never be partly
+    # published when one reviewed PDF or account mapping is invalid.
+    group_driver_ids = sorted({int(doc["driver_id"]) for doc in documents})
+    blocked = _driver_account_preflight(tenant, group_driver_ids)
+    if blocked:
+        raise DriverAccountPreflightError(blocked)
     with closing(get_connection()) as conn:
         for doc in documents:
             conn.execute(
@@ -514,12 +528,52 @@ def publish_run_documents(group_values: list[Any], actor: dict[str, Any]) -> lis
                 "body": f"運送引受書・運行指示書 V{doc['version']} を確認してください。",
                 "priority": "high",
                 "target_role": "driver",
-                "link": "/package_dispatch/pages/task/index",
+                "link": "/pages/driver/index",
                 "source_type": "driver_run_document",
                 "source_id": f"{doc['driver_id']}:run-document:{doc['id']}",
             }
         )
     return published
+
+
+def _driver_account_preflight(tenant: int, driver_ids: list[int]) -> list[dict[str, Any]]:
+    blocked: list[dict[str, Any]] = []
+    with closing(get_connection()) as conn:
+        for driver_id in driver_ids:
+            row = conn.execute(
+                """
+                SELECT d.id AS driver_id, d.name AS driver_name, d.user_id,
+                       u.id AS account_id, u.role, u.profile_type, u.profile_id,
+                       u.is_active, u.supabase_user_id
+                FROM drivers d
+                LEFT JOIN users u ON u.id = d.user_id AND u.tenant_id = d.tenant_id
+                WHERE d.tenant_id = ? AND d.id = ?
+                """,
+                (tenant, driver_id),
+            ).fetchone()
+            reason = ""
+            if not row:
+                reason = "driver_not_found"
+            elif not row["account_id"]:
+                reason = "driver_account_missing"
+            elif not row["is_active"]:
+                reason = "driver_account_inactive"
+            elif row["role"] != "driver" or row["profile_type"] != "driver":
+                reason = "driver_account_role_mismatch"
+            elif int(row["profile_id"] or 0) != int(driver_id):
+                reason = "driver_account_profile_mismatch"
+            elif supabase_enabled() and not str(row["supabase_user_id"] or ""):
+                reason = "driver_supabase_identity_missing"
+            if reason:
+                blocked.append(
+                    {
+                        "driver_id": driver_id,
+                        "driver_name": row["driver_name"] if row else "",
+                        "account_id": row["account_id"] if row else None,
+                        "reason": reason,
+                    }
+                )
+    return blocked
 
 
 def review_and_publish_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, Any]:

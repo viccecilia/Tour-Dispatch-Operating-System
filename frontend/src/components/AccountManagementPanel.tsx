@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { api } from "@/services/apiClient";
-import type { AccountRole, AuthUser, ManagedAccount } from "@/types/api";
+import type { AccountRole, AgencyAccountRole, AuthUser, ManagedAccount, TravelAgencyAccount } from "@/types/api";
 
 const roleLabels: Record<AccountRole, string> = {
   admin: "管理员",
@@ -16,13 +16,12 @@ const roleLabels: Record<AccountRole, string> = {
   driver: "司机",
 };
 
-const roleOptions: AccountRole[] = ["admin", "dispatcher", "operations_manager", "driver"];
-
 type AccountForm = {
   role: AccountRole;
   display_name: string;
   phone: string;
   operator_code: string;
+  driver_id: string;
 };
 
 const emptyForm: AccountForm = {
@@ -30,11 +29,13 @@ const emptyForm: AccountForm = {
   display_name: "",
   phone: "",
   operator_code: "",
+  driver_id: "",
 };
 
 export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser }) {
   const queryClient = useQueryClient();
   const platform = isPlatformUser(currentUser);
+  const [organizationType, setOrganizationType] = useState<"carrier" | "agency">("carrier");
   const [selectedTenantId, setSelectedTenantId] = useState<string>(platform ? "all" : "");
   const tenantParam = platform ? selectedTenantId : undefined;
   const selectedTenantNumber = selectedTenantId && selectedTenantId !== "all" ? Number(selectedTenantId) : undefined;
@@ -53,6 +54,14 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
     queryFn: () => api.accountOverview({ tenant_id: tenantParam }),
     enabled: currentUser.role === "admin",
   });
+  const availableDrivers = useQuery({
+    queryKey: ["account-driver-options", selectedTenantNumber || currentUser.tenant_id],
+    queryFn: () => api.resourceDrivers({ tenant_id: selectedTenantNumber || currentUser.tenant_id, status: "active" }),
+    enabled: Boolean(!platform || selectedTenantNumber),
+  });
+  const allowedRoleOptions: AccountRole[] = platform
+    ? ["admin", "operations_manager", "dispatcher", "driver"]
+    : ["operations_manager", "dispatcher", "driver"];
 
   const currentTenant = tenants.data?.find((tenant) => String(tenant.id) === selectedTenantId);
   const companyCode = platform ? currentTenant?.slug || "请选择公司" : currentUser.company_code || currentUser.tenant?.slug || "公司代码";
@@ -65,6 +74,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
 
   const scopedCreatePayload = () => ({
     ...form,
+    driver_id: form.driver_id ? Number(form.driver_id) : undefined,
     ...(platform ? { tenant_id: selectedTenantNumber } : {}),
   });
 
@@ -137,8 +147,15 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
     );
   }
 
+  if (platform && organizationType === "agency") {
+    return <PlatformAgencyAccountPanel onOrganizationTypeChange={setOrganizationType} />;
+  }
+
   const isDriver = form.role === "driver";
-  const canCreate = Boolean(form.display_name.trim() && form.phone.trim() && (isDriver || form.operator_code.trim()) && (!platform || selectedTenantNumber));
+  const canCreate = Boolean(
+    (isDriver ? form.driver_id : (form.display_name.trim() && form.phone.trim() && form.operator_code.trim()))
+    && (!platform || selectedTenantNumber)
+  );
 
   return (
     <Card>
@@ -159,6 +176,15 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {platform ? (
+          <div className="rounded-xl border border-border bg-white p-3">
+            <label className="text-xs font-black text-slate-600">组织类型</label>
+            <select className="ml-3 h-9 rounded-lg border border-border bg-white px-3 text-sm font-semibold" value={organizationType} onChange={(event) => setOrganizationType(event.target.value as "carrier" | "agency")}>
+              <option value="carrier">车公司</option>
+              <option value="agency">旅行社</option>
+            </select>
+          </div>
+        ) : null}
         {platform ? (
           <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3">
             <div className="grid gap-3 md:grid-cols-[180px_minmax(260px,360px)_1fr] md:items-center">
@@ -195,20 +221,43 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
           </div>
           <div className="grid gap-2 xl:grid-cols-[140px_1fr_170px_210px_auto]">
             <select className="h-9 rounded-lg border border-border bg-white px-3 text-sm font-semibold text-slate-800" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as AccountRole })}>
-              {roleOptions.map((role) => (
+              {allowedRoleOptions.map((role) => (
                 <option key={role} value={role}>{roleLabels[role]}</option>
               ))}
             </select>
-            <input className="h-9 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500" placeholder="姓名" value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} />
+            {isDriver ? (
+              <select
+                className="h-9 rounded-lg border border-border bg-white px-3 text-sm font-semibold text-slate-800"
+                value={form.driver_id}
+                onChange={(event) => {
+                  const driver = (availableDrivers.data || []).find((item) => String(item.id) === event.target.value);
+                  setForm({
+                    ...form,
+                    driver_id: event.target.value,
+                    display_name: driver?.name || "",
+                    phone: driver?.phone || "",
+                  });
+                }}
+              >
+                <option value="">选择司机资料</option>
+                {(availableDrivers.data || []).map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name} · {driver.driver_code || driver.id} · {driver.phone || "未登记手机号"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input className="h-9 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500" placeholder="姓名" value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} />
+            )}
             <input className="h-9 rounded-lg border border-border bg-white px-3 text-sm uppercase outline-none focus:border-blue-500 disabled:bg-slate-100" placeholder={isDriver ? "司机使用台账资料" : "账号代码"} value={form.operator_code} disabled={isDriver} onChange={(event) => setForm({ ...form, operator_code: event.target.value.toUpperCase() })} />
-            <input className="h-9 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500" placeholder="手机号" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+            <input className="h-9 rounded-lg border border-border bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100" disabled={isDriver} placeholder="手机号" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             <Button disabled={createMutation.isPending || !canCreate || allCompanyView} onClick={() => createMutation.mutate()} className="h-9">
               <UserPlus size={16} />
               新增
             </Button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            {allCompanyView ? "请先在公司筛选中选择具体公司，再新增账号。" : `登录名会按 ${companyCode}-手机号 生成；司机账号必须匹配该公司已录入司机手机号。`}
+            {allCompanyView ? "请先在公司筛选中选择具体公司，再新增账号。" : `登录名会按 ${companyCode}-手机号 生成；司机账号必须明确选择司机资料，手机号由管理员在司机资料中维护。`}
           </p>
         </div>
 
@@ -264,6 +313,102 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
               </div>
             </section>
           ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PlatformAgencyAccountPanel({ onOrganizationTypeChange }: { onOrganizationTypeChange: (value: "carrier" | "agency") => void }) {
+  const queryClient = useQueryClient();
+  const [companyId, setCompanyId] = useState("");
+  const [role, setRole] = useState<AgencyAccountRole>("agency_owner");
+  const [displayName, setDisplayName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const companies = useQuery({ queryKey: ["travel-agency-companies"], queryFn: api.travelAgencyCompanies });
+  const accounts = useQuery({
+    queryKey: ["travel-agency-accounts", companyId],
+    queryFn: () => api.travelAgencyAccounts(Number(companyId)),
+    enabled: Boolean(companyId),
+  });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["travel-agency-accounts", companyId] });
+    queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+  };
+  const create = useMutation({
+    mutationFn: () => api.createTravelAgencyAccount({ company_id: Number(companyId), role, display_name: displayName.trim(), phone: phone.trim() }),
+    onSuccess: () => {
+      setDisplayName("");
+      setPhone("");
+      setMessage("旅行社账号已创建，初始密码为手机号后 6 位。");
+      invalidate();
+    },
+  });
+  const action = useMutation({
+    mutationFn: ({ account, kind }: { account: TravelAgencyAccount; kind: "disable" | "enable" | "reset" | "unbind" }) => {
+      if (kind === "disable") return api.disableTravelAgencyAccount(account.id);
+      if (kind === "enable") return api.enableTravelAgencyAccount(account.id);
+      if (kind === "reset") return api.resetTravelAgencyAccountPassword(account.id);
+      return api.unbindTravelAgencyAccountWechat(account.id);
+    },
+    onSuccess: () => {
+      setMessage("账号状态已更新。");
+      invalidate();
+    },
+  });
+  const roleLabels: Record<AgencyAccountRole, string> = {
+    agency_owner: "旅行社管理号",
+    agency_customer_service: "客服",
+    agency_guide: "导游",
+    agency_finance: "财务",
+  };
+  const error = create.error || action.error;
+
+  return (
+    <Card>
+      <CardHeader>
+        <p className="text-xs font-bold uppercase text-blue-600">ACCOUNT CONTROL</p>
+        <h2 className="mt-1 text-lg font-black text-slate-950">平台账号管理</h2>
+        <p className="mt-1 text-sm text-slate-500">平台管理员可管理任意旅行社的管理号、客服、导游和财务账号。</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-xl border border-border bg-white p-3">
+          <label className="text-xs font-black text-slate-600">组织类型</label>
+          <select className="ml-3 h-9 rounded-lg border border-border bg-white px-3 text-sm font-semibold" value="agency" onChange={(event) => onOrganizationTypeChange(event.target.value as "carrier" | "agency")}>
+            <option value="carrier">车公司</option>
+            <option value="agency">旅行社</option>
+          </select>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[1fr_180px_1fr_1fr_auto]">
+          <select className="h-9 rounded-lg border border-border bg-white px-3 text-sm" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
+            <option value="">选择旅行社</option>
+            {(companies.data || []).map((company) => <option key={company.id} value={company.id}>{company.company_name} ({company.company_code})</option>)}
+          </select>
+          <select className="h-9 rounded-lg border border-border bg-white px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value as AgencyAccountRole)}>
+            {(Object.keys(roleLabels) as AgencyAccountRole[]).map((value) => <option key={value} value={value}>{roleLabels[value]}</option>)}
+          </select>
+          <input className="h-9 rounded-lg border border-border px-3 text-sm" placeholder="姓名" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+          <input className="h-9 rounded-lg border border-border px-3 text-sm" placeholder="手机号" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          <Button className="h-9" disabled={!companyId || !displayName.trim() || !phone.trim() || create.isPending} onClick={() => create.mutate()}><UserPlus size={16} />新增</Button>
+        </div>
+        {message ? <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</div> : null}
+        {error ? <div className="rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error instanceof Error ? error.message : "操作失败"}</div> : null}
+        <div className="divide-y rounded-xl border border-border">
+          {(accounts.data || []).map((account) => (
+            <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div>
+                <div className="font-black text-slate-950">{account.display_name} · {roleLabels[account.role]}</div>
+                <div className="text-xs text-slate-500">{account.phone} · {account.status} · 微信 {account.wx_bind_status || "unbound"} · Auth {account.supabase_linked ? "已关联" : "未关联"}</div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => action.mutate({ account, kind: account.status === "active" ? "disable" : "enable" })}>{account.status === "active" ? "停用" : "启用"}</Button>
+                <Button variant="secondary" onClick={() => action.mutate({ account, kind: "reset" })}>重置</Button>
+                <Button variant="secondary" onClick={() => action.mutate({ account, kind: "unbind" })}>解绑</Button>
+              </div>
+            </div>
+          ))}
+          {companyId && !accounts.isLoading && !(accounts.data || []).length ? <div className="p-8 text-center text-sm text-slate-500">暂无账号</div> : null}
         </div>
       </CardContent>
     </Card>

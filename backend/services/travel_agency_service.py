@@ -3,9 +3,21 @@ from __future__ import annotations
 import csv
 import io
 import json
+import sqlite3
 from typing import Any
 
 from backend.db.database import get_connection
+from backend.services.account_policy import assert_can_grant_role, assert_can_manage_target
+from backend.services.auth_account_service import (
+    SupabaseAuthError,
+    create_supabase_account,
+    delete_supabase_account,
+    disable_supabase_account,
+    enable_supabase_account,
+    reset_supabase_password,
+    supabase_enabled,
+    update_supabase_phone,
+)
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -66,6 +78,23 @@ def ensure_travel_agency_schema() -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (company_id) REFERENCES travel_agency_companies(id)
             )
+            """
+        )
+        existing_account_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(travel_agency_accounts)").fetchall()
+        }
+        for name, definition in {
+            "supabase_user_id": "TEXT",
+            "auth_linked_at": "TEXT",
+            "last_login_at": "TEXT",
+        }.items():
+            if name not in existing_account_columns:
+                conn.execute(f"ALTER TABLE travel_agency_accounts ADD COLUMN {name} {definition}")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_travel_agency_accounts_supabase_user_id
+            ON travel_agency_accounts (supabase_user_id)
+            WHERE supabase_user_id IS NOT NULL AND supabase_user_id <> ''
             """
         )
         conn.execute(
@@ -231,7 +260,7 @@ def stage_summary() -> dict[str, Any]:
         }
 
 
-def create_company(payload: dict[str, Any], actor: str = "system") -> dict[str, Any]:
+def create_company(payload: dict[str, Any], actor: dict[str, Any] | str = "system") -> dict[str, Any]:
     ensure_travel_agency_schema()
     tenant_id = get_current_tenant_id()
     company_code = _text(payload.get("company_code") or payload.get("code")).upper()
@@ -239,45 +268,73 @@ def create_company(payload: dict[str, Any], actor: str = "system") -> dict[str, 
     master_phone = _text(payload.get("master_phone") or payload.get("phone"))
     if not company_code or not company_name or not master_phone:
         raise ValueError("company_code_name_phone_required")
+    if isinstance(actor, dict) and not (
+        actor.get("account_scope") == "platform" and actor.get("role") == "admin"
+    ):
+        raise PermissionError("account_grant_forbidden")
+    auth_user_id = ""
     with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO travel_agency_companies (
-                tenant_id, company_code, company_name, master_phone, master_display_name,
-                must_change_password, wx_bind_required, settings_json, updated_at
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO travel_agency_companies (
+                    tenant_id, company_code, company_name, master_phone, master_display_name,
+                    must_change_password, wx_bind_required, settings_json, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    tenant_id,
+                    company_code,
+                    company_name,
+                    master_phone,
+                    _text(payload.get("master_display_name") or payload.get("display_name") or company_name),
+                    _bool_int(payload.get("wx_bind_required")),
+                    _json(payload.get("settings") or {}),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                tenant_id,
-                company_code,
-                company_name,
-                master_phone,
-                _text(payload.get("master_display_name") or payload.get("display_name") or company_name),
-                _bool_int(payload.get("wx_bind_required")),
-                _json(payload.get("settings") or {}),
-            ),
-        )
-        company_id = cursor.lastrowid
-        conn.execute(
-            """
-            INSERT INTO travel_agency_accounts (
-                tenant_id, company_id, role, display_name, phone, password_seed,
-                must_change_password, permissions_json, updated_at
+            company_id = cursor.lastrowid
+            if supabase_enabled():
+                remote = create_supabase_account(
+                    master_phone,
+                    _phone_tail(master_phone),
+                    app_metadata={
+                        "account_scope": "agency",
+                        "role": "agency_owner",
+                        "tenant_id": tenant_id,
+                        "organization_id": company_id,
+                    },
+                )
+                auth_user_id = str(remote.get("id") or "")
+            conn.execute(
+                """
+                INSERT INTO travel_agency_accounts (
+                    tenant_id, company_id, role, display_name, phone, password_seed,
+                    must_change_password, permissions_json, updated_at,
+                    supabase_user_id, auth_linked_at
+                )
+                VALUES (?, ?, 'agency_owner', ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, ?, CASE WHEN ? <> '' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                """,
+                (
+                    tenant_id,
+                    company_id,
+                    _text(payload.get("master_display_name") or company_name),
+                    master_phone,
+                    None if supabase_enabled() else _phone_tail(master_phone),
+                    _json(ROLE_MATRIX["agency_owner"]),
+                    auth_user_id or None,
+                    auth_user_id,
+                ),
             )
-            VALUES (?, ?, 'agency_owner', ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                tenant_id,
-                company_id,
-                _text(payload.get("master_display_name") or company_name),
-                master_phone,
-                _phone_tail(master_phone),
-                _json(ROLE_MATRIX["agency_owner"]),
-            ),
-        )
-        _audit(conn, tenant_id, company_id, actor, "company_create", "travel_agency_company", company_id, None, payload)
-        conn.commit()
+            _audit(conn, tenant_id, company_id, _actor_label(actor), "company_create", "travel_agency_company", company_id, None, payload)
+            conn.commit()
+        except Exception:
+            if auth_user_id:
+                try:
+                    delete_supabase_account(auth_user_id)
+                except SupabaseAuthError:
+                    pass
+            raise
     return get_company(company_id) or {}
 
 
@@ -308,7 +365,7 @@ def get_company(company_id: int | str) -> dict[str, Any] | None:
     return _row(row) if row else None
 
 
-def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, Any]:
+def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "system") -> dict[str, Any]:
     ensure_travel_agency_schema()
     company_id = _to_int(payload.get("company_id"))
     role = _text(payload.get("role") or "agency_customer_service")
@@ -319,22 +376,63 @@ def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, 
     if not company_id or not display_name or not phone:
         raise ValueError("company_display_name_phone_required")
     tenant_id = get_current_tenant_id()
+    if isinstance(actor, dict):
+        assert_can_grant_role(actor, "agency", company_id, role)
+    auth_user_id = ""
     with get_connection() as conn:
         _require_company(conn, tenant_id, company_id)
-        cursor = conn.execute(
-            """
-            INSERT INTO travel_agency_accounts (
-                tenant_id, company_id, role, display_name, phone, password_seed,
-                must_change_password, permissions_json, updated_at
+        if _phone_exists(conn, phone):
+            raise ValueError("account_phone_exists")
+    if supabase_enabled():
+        try:
+            remote = create_supabase_account(
+                phone,
+                _phone_tail(phone),
+                app_metadata={
+                    "account_scope": "agency",
+                    "role": role,
+                    "tenant_id": tenant_id,
+                    "organization_id": company_id,
+                },
             )
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
-            """,
-            (tenant_id, company_id, role, display_name, phone, _phone_tail(phone), _json(ROLE_MATRIX[role])),
-        )
-        account_id = cursor.lastrowid
-        _audit(conn, tenant_id, company_id, actor, "account_create", "travel_agency_account", account_id, None, payload)
-        conn.commit()
-    return get_record("travel_agency_accounts", account_id) or {}
+            auth_user_id = str(remote.get("id") or "")
+        except SupabaseAuthError as exc:
+            raise ValueError(str(exc)) from exc
+    try:
+        with get_connection() as conn:
+            _require_company(conn, tenant_id, company_id)
+            cursor = conn.execute(
+                """
+                INSERT INTO travel_agency_accounts (
+                    tenant_id, company_id, role, display_name, phone, password_seed,
+                    must_change_password, permissions_json, updated_at,
+                    supabase_user_id, auth_linked_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, ?, CASE WHEN ? <> '' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                """,
+                (
+                    tenant_id,
+                    company_id,
+                    role,
+                    display_name,
+                    phone,
+                    None if supabase_enabled() else _phone_tail(phone),
+                    _json(ROLE_MATRIX[role]),
+                    auth_user_id or None,
+                    auth_user_id,
+                ),
+            )
+            account_id = cursor.lastrowid
+            _audit(conn, tenant_id, company_id, _actor_label(actor), "account_create", "travel_agency_account", account_id, None, payload)
+            conn.commit()
+    except Exception:
+        if auth_user_id:
+            try:
+                delete_supabase_account(auth_user_id)
+            except SupabaseAuthError:
+                pass
+        raise
+    return get_agency_account(account_id) or {}
 
 
 def list_accounts(company_id: int | str | None = None) -> list[dict[str, Any]]:
@@ -345,7 +443,162 @@ def list_accounts(company_id: int | str | None = None) -> list[dict[str, Any]]:
         sql.append("AND company_id = ?")
         values.append(_to_int(company_id))
     sql.append("ORDER BY company_id, role, id")
-    return _query(sql, values)
+    return [_public_agency_account(item) for item in _query(sql, values)]
+
+
+def get_agency_account(account_id: int | str) -> dict[str, Any] | None:
+    ensure_travel_agency_schema()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM travel_agency_accounts WHERE tenant_id = ? AND id = ?",
+            (get_current_tenant_id(), _to_int(account_id)),
+        ).fetchone()
+    return _public_agency_account(_row(row)) if row else None
+
+
+def update_account(
+    account_id: int | str,
+    payload: dict[str, Any],
+    actor: dict[str, Any],
+) -> dict[str, Any] | None:
+    ensure_travel_agency_schema()
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM travel_agency_accounts WHERE tenant_id = ? AND id = ?",
+            (tenant_id, _to_int(account_id)),
+        ).fetchone()
+        if not row:
+            return None
+        before = _public_agency_account(_row(row))
+        assert_can_manage_target(actor, before)
+        new_role = _text(payload.get("role") or before["role"])
+        assert_can_grant_role(actor, "agency", int(before["company_id"]), new_role)
+        updates: list[str] = []
+        values: list[Any] = []
+        if "display_name" in payload:
+            updates.append("display_name = ?")
+            values.append(_text(payload.get("display_name")))
+        if "role" in payload:
+            updates.extend(["role = ?", "permissions_json = ?"])
+            values.extend([new_role, _json(ROLE_MATRIX[new_role])])
+        if "phone" in payload:
+            phone = _text(payload.get("phone"))
+            if not phone:
+                raise ValueError("phone_required")
+            if _phone_exists(conn, phone, exclude_agency_account_id=int(before["id"])):
+                raise ValueError("account_phone_exists")
+            if before.get("supabase_user_id"):
+                try:
+                    update_supabase_phone(str(before["supabase_user_id"]), phone)
+                except SupabaseAuthError as exc:
+                    raise ValueError(str(exc)) from exc
+            updates.append("phone = ?")
+            values.append(phone)
+        if updates:
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            conn.execute(
+                f"UPDATE travel_agency_accounts SET {', '.join(updates)} WHERE tenant_id = ? AND id = ?",
+                (*values, tenant_id, int(before["id"])),
+            )
+        _audit(
+            conn,
+            tenant_id,
+            int(before["company_id"]),
+            _actor_label(actor),
+            "role_change" if new_role != before["role"] else ("phone_change" if "phone" in payload else "account_update"),
+            "travel_agency_account",
+            before["id"],
+            before,
+            payload,
+        )
+        conn.commit()
+    return get_agency_account(account_id)
+
+
+def set_account_enabled(account_id: int | str, enabled: bool, actor: dict[str, Any]) -> dict[str, Any] | None:
+    ensure_travel_agency_schema()
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM travel_agency_accounts WHERE tenant_id = ? AND id = ?",
+            (tenant_id, _to_int(account_id)),
+        ).fetchone()
+        if not row:
+            return None
+        before = _public_agency_account(_row(row))
+        assert_can_manage_target(actor, before)
+        if before.get("supabase_user_id"):
+            try:
+                (enable_supabase_account if enabled else disable_supabase_account)(str(before["supabase_user_id"]))
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
+        status = "active" if enabled else "inactive"
+        conn.execute(
+            "UPDATE travel_agency_accounts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+            (status, tenant_id, int(before["id"])),
+        )
+        _audit(conn, tenant_id, int(before["company_id"]), _actor_label(actor), f"account_{'enable' if enabled else 'disable'}", "travel_agency_account", before["id"], before, {"status": status})
+        conn.commit()
+    return get_agency_account(account_id)
+
+
+def reset_account_password(account_id: int | str, actor: dict[str, Any]) -> dict[str, Any] | None:
+    ensure_travel_agency_schema()
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM travel_agency_accounts WHERE tenant_id = ? AND id = ?",
+            (tenant_id, _to_int(account_id)),
+        ).fetchone()
+        if not row:
+            return None
+        before = _public_agency_account(_row(row))
+        assert_can_manage_target(actor, before)
+        password = _phone_tail(str(row["phone"] or ""))
+        if len(password) < 6:
+            raise ValueError("phone_tail_unavailable")
+        if row["supabase_user_id"]:
+            try:
+                reset_supabase_password(str(row["supabase_user_id"]), password)
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
+        conn.execute(
+            """
+            UPDATE travel_agency_accounts
+            SET password_seed = ?, must_change_password = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (None if supabase_enabled() else password, tenant_id, int(row["id"])),
+        )
+        _audit(conn, tenant_id, int(row["company_id"]), _actor_label(actor), "password_reset", "travel_agency_account", row["id"], before, {"reset_to": "phone_last_6"})
+        conn.commit()
+    return get_agency_account(account_id)
+
+
+def unbind_account_wechat(account_id: int | str, actor: dict[str, Any]) -> dict[str, Any] | None:
+    ensure_travel_agency_schema()
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM travel_agency_accounts WHERE tenant_id = ? AND id = ?",
+            (tenant_id, _to_int(account_id)),
+        ).fetchone()
+        if not row:
+            return None
+        before = _public_agency_account(_row(row))
+        assert_can_manage_target(actor, before)
+        conn.execute(
+            """
+            UPDATE travel_agency_accounts
+            SET wx_openid = NULL, wx_bind_status = 'unbound', updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (tenant_id, int(row["id"])),
+        )
+        _audit(conn, tenant_id, int(row["company_id"]), _actor_label(actor), "wechat_unbind", "travel_agency_account", row["id"], before, {"wx_bind_status": "unbound"})
+        conn.commit()
+    return get_agency_account(account_id)
 
 
 def create_guide(payload: dict[str, Any], actor: str = "system") -> dict[str, Any]:
@@ -816,6 +1069,49 @@ def _row(row: Any) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
     return data
+
+
+def _public_agency_account(row: dict[str, Any]) -> dict[str, Any]:
+    data = dict(row)
+    data.pop("password_seed", None)
+    data["account_scope"] = "agency"
+    data["organization_type"] = "agency"
+    data["organization_id"] = data.get("company_id")
+    data["is_active"] = str(data.get("status") or "active") == "active"
+    data["supabase_linked"] = bool(data.get("supabase_user_id"))
+    data["must_change_password"] = bool(data.get("must_change_password"))
+    return data
+
+
+def _phone_exists(conn: Any, phone: str, exclude_agency_account_id: int | None = None) -> bool:
+    normalized = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if not normalized:
+        return False
+    user = conn.execute(
+        """
+        SELECT id FROM users
+        WHERE REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+        LIMIT 1
+        """,
+        (normalized,),
+    ).fetchone()
+    if user:
+        return True
+    params: list[Any] = [normalized]
+    sql = """
+        SELECT id FROM travel_agency_accounts
+        WHERE REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+    """
+    if exclude_agency_account_id:
+        sql += " AND id != ?"
+        params.append(exclude_agency_account_id)
+    return bool(conn.execute(sql + " LIMIT 1", params).fetchone())
+
+
+def _actor_label(actor: dict[str, Any] | str) -> str:
+    if isinstance(actor, dict):
+        return f"{actor.get('role') or 'user'}:{actor.get('username') or actor.get('display_name') or actor.get('id') or 'unknown'}"
+    return str(actor or "system")
 
 
 def _count(conn: Any, table: str, tenant_id: int) -> int:

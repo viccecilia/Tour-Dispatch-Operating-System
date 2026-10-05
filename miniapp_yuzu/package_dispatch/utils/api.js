@@ -182,6 +182,16 @@ function request(path, options = {}) {
             requestPayload,
             responseBody: res.data
           });
+          if (res.statusCode === 401 && !options._retried && path.indexOf('/login') < 0 && session && session.refresh_token) {
+            refreshSession(session.refresh_token).then(() => {
+              request(path, { ...options, _retried: true }).then(resolve).catch(reject);
+            }).catch(() => {
+              clearSession();
+              wx.reLaunch({ url: '/package_dispatch/pages/home/index' });
+              reject(normalizeApiError(res.data, res.statusCode));
+            });
+            return;
+          }
           if (res.statusCode === 401 && path.indexOf('/login') < 0) {
             clearSession();
             wx.reLaunch({ url: '/package_dispatch/pages/home/index' });
@@ -229,6 +239,27 @@ function downloadAndOpenDocument(path) {
           success: () => resolve(res),
           fail: reject
         });
+      },
+      fail: reject
+    });
+  });
+}
+
+function refreshSession(refreshToken) {
+  return new Promise((resolve, reject) => {
+    wx.request({
+      url: `${API_CONFIG.baseUrl}/api/auth/refresh`,
+      method: 'POST',
+      data: { refresh_token: refreshToken },
+      timeout: REQUEST_TIMEOUT_MS,
+      header: { 'Content-Type': 'application/json' },
+      success: (res) => {
+        if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.token) {
+          setSession(Object.assign({}, res.data, { port: 'dispatch' }));
+          resolve(res.data);
+          return;
+        }
+        reject(normalizeApiError(res.data, res.statusCode));
       },
       fail: reject
     });
@@ -334,15 +365,15 @@ module.exports = {
     const query = dispatcher.dispatcher_id ? `?dispatcher_id=${dispatcher.dispatcher_id}` : '';
     return request(`/api/dispatch-mobile/notifications${query}`);
   },
-  driverNotifications: (driverId) => request(`/api/driver/notifications?driver_id=${driverId}&limit=30`),
-  markDriverNotificationRead: (driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: { driver_id: driverId } }),
-  driverAssignments: (driverId) => request(`/api/driver/assignments?driver_id=${driverId}`),
-  driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
-  driverProfile: (driverId) => request(`/api/driver/profile?driver_id=${driverId}`),
+  driverNotifications: () => request('/api/driver/notifications?limit=30'),
+  markDriverNotificationRead: (_driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: {} }),
+  driverAssignments: () => request('/api/driver/assignments'),
+  driverWorkbench: () => request('/api/driver/workbench'),
+  driverProfile: () => request('/api/driver/profile'),
   updateDriverProfile: (data) => request('/api/driver/profile', { method: 'POST', data }),
   uploadDriverProfileDocument: (data) => request('/api/driver/profile-document', { method: 'POST', data }),
-  driverExpenses: (driverId) => request(`/api/driver/expenses?driver_id=${driverId}`),
-  driverIncome: (driverId) => request(`/api/driver/income?driver_id=${driverId}`),
+  driverExpenses: () => request('/api/driver/expenses'),
+  driverIncome: () => request('/api/driver/income'),
   submitDriverReport: (data) => request('/api/driver/report', { method: 'POST', data }),
   uploadDriverEvidence: (data) => request('/api/driver/evidence', { method: 'POST', data }),
   submitDriverLocation: (data) => request('/api/driver/location', { method: 'POST', data }),
@@ -377,7 +408,7 @@ module.exports = {
   reviewRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   reviewAndPublishRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review-publish', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   publishRunDocuments: (groupKeys) => request('/api/dispatch-mobile/run-documents/publish', { method: 'POST', data: withDispatcher({ group_keys: groupKeys }) }),
-  driverRunDocuments: (driverId) => request(`/api/driver/run-documents${toQuery({ driver_id: driverId })}`),
+  driverRunDocuments: () => request('/api/driver/run-documents'),
   auctionListings: () => request('/api/auction/listings?status=all'),
   createAuctionListing: (payload) => request('/api/auction/listings', { method: 'POST', data: withDispatcher(payload) }),
   bidAuctionListing: (listingId, payload) => request(`/api/auction/listings/${listingId}/bid`, { method: 'POST', data: withDispatcher(payload) }),

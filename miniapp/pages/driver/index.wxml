@@ -257,7 +257,7 @@
       <view class="contact-grid">
         <view class="field-group">
           <text>电话</text>
-          <input class="field" value="{{contactPhone}}" data-key="contactPhone" bindinput="onInput" placeholder="手机号" />
+          <input class="field" value="{{contactPhone}}" disabled placeholder="手机号由管理员维护" />
         </view>
         <view class="field-group">
           <text>WeChat</text>

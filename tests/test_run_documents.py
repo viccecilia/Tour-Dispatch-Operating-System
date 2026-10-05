@@ -33,6 +33,10 @@ class RunDocumentWorkflowTest(unittest.TestCase):
             conn.execute("INSERT INTO tenants (id, name, slug) VALUES (1, '柚子旅行', 'yuzu-test')")
             conn.execute("INSERT INTO drivers (id, tenant_id, name, driver_code, office, status, driver_status) VALUES (1, 1, '胡东锴', 'HDK', '大阪营业所', 'available', 'available')")
             conn.execute("INSERT INTO drivers (id, tenant_id, name, driver_code, office, status, driver_status) VALUES (2, 1, '李成志', 'LCZ', '京都营业所', 'available', 'available')")
+            conn.execute("INSERT INTO users (id, tenant_id, username, password_hash, role, display_name, phone, profile_type, profile_id, account_scope, is_active) VALUES (101, 1, 'driver-1', 'test', 'driver', '胡东锴', '08000000001', 'driver', 1, 'driver', 1)")
+            conn.execute("INSERT INTO users (id, tenant_id, username, password_hash, role, display_name, phone, profile_type, profile_id, account_scope, is_active) VALUES (102, 1, 'driver-2', 'test', 'driver', '李成志', '08000000002', 'driver', 2, 'driver', 1)")
+            conn.execute("UPDATE drivers SET user_id = 101 WHERE id = 1")
+            conn.execute("UPDATE drivers SET user_id = 102 WHERE id = 2")
             conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status) VALUES (1, 1, '大阪6832', '大阪 500 あ 6832', 'HiAce', 10, 10, 'available')")
             conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status) VALUES (2, 1, '京都7011', '京都 300 い 7011', 'Alphard', 7, 7, 'available')")
             conn.execute(
@@ -277,6 +281,25 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertTrue(reviewed["reviewed_at"])
         published = service.publish_run_documents([key], self.actor)
         self.assertEqual(published[0]["status"], "published")
+
+    def test_publish_preflight_blocks_missing_driver_account_without_partial_publish(self):
+        first = self.add_order(driver_id=1, vehicle_id=1, suffix="P1")
+        second = self.add_order(driver_id=2, vehicle_id=2, suffix="P2")
+        self.confirm(first)
+        self.confirm(second)
+        groups = service.list_run_groups("2026-07-24")
+        for item in groups:
+            service.generate_run_document(item["key"], self.actor)
+            service.review_run_document(item["key"], self.actor)
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE drivers SET user_id = NULL WHERE id = 2")
+            conn.commit()
+        with self.assertRaises(service.DriverAccountPreflightError) as caught:
+            service.publish_run_documents([item["key"] for item in groups], self.actor)
+        self.assertEqual(caught.exception.blocked[0]["reason"], "driver_account_missing")
+        with closing(database.get_connection()) as conn:
+            statuses = [row["status"] for row in conn.execute("SELECT status FROM driver_run_documents ORDER BY id").fetchall()]
+        self.assertEqual(statuses, ["reviewed", "reviewed"])
 
     def test_daily_import_stays_hidden_and_silent_until_pdf_publish(self):
         order_id = self.add_unassigned_order()

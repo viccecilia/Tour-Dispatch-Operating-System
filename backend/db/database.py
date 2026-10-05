@@ -367,6 +367,9 @@ BILLING_TABLE_COLUMNS: dict[str, dict[str, str]] = {
 }
 
 USER_COLUMNS: dict[str, str] = {
+    "supabase_user_id": "TEXT",
+    "account_scope": "TEXT",
+    "auth_linked_at": "TEXT",
     "phone": "TEXT",
     "profile_type": "TEXT",
     "profile_id": "INTEGER",
@@ -547,6 +550,9 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                supabase_user_id TEXT,
+                account_scope TEXT,
+                auth_linked_at TEXT,
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id)
             )
             """
@@ -564,6 +570,9 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
             "password_changed_at",
             "must_change_password",
             "created_by_user_id",
+            "supabase_user_id",
+            "account_scope",
+            "auth_linked_at",
         ]
         select_optional = [
             name if name in existing else ("'unbound'" if name == "wx_bind_status" else ("0" if name == "must_change_password" else "NULL"))
@@ -576,6 +585,7 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
                 phone, profile_type, profile_id, wx_openid, wx_unionid, wx_bound_at,
                 wx_bind_status, last_login_at, password_changed_at,
                 must_change_password, created_by_user_id,
+                supabase_user_id, account_scope, auth_linked_at,
                 is_active, created_at, updated_at
             )
             SELECT
@@ -590,6 +600,16 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA foreign_keys=ON")
     _ensure_columns(conn, "users", USER_COLUMNS)
     conn.execute("UPDATE users SET wx_bind_status = COALESCE(NULLIF(wx_bind_status, ''), 'unbound')")
+    conn.execute(
+        """
+        UPDATE users
+        SET account_scope = CASE WHEN role = 'driver' THEN 'driver' ELSE 'carrier' END
+        WHERE account_scope IS NULL OR account_scope = ''
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_supabase_user_id ON users (supabase_user_id) WHERE supabase_user_id IS NOT NULL AND supabase_user_id <> ''"
+    )
 
 
 def ensure_order_schema(conn: sqlite3.Connection) -> None:
@@ -1311,8 +1331,8 @@ def seed_admin(conn: sqlite3.Connection) -> None:
     seed_tenants(conn)
     conn.execute(
         """
-        INSERT OR IGNORE INTO users (tenant_id, username, password_hash, role, display_name)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO users (tenant_id, username, password_hash, role, display_name, account_scope)
+        VALUES (?, ?, ?, ?, ?, 'platform')
         """,
         (
             1,
@@ -1321,6 +1341,10 @@ def seed_admin(conn: sqlite3.Connection) -> None:
             DEFAULT_ADMIN["role"],
             DEFAULT_ADMIN["display_name"],
         ),
+    )
+    conn.execute(
+        "UPDATE users SET account_scope = 'platform' WHERE tenant_id = 1 AND username = ? AND role = 'admin'",
+        (DEFAULT_ADMIN["username"],),
     )
     for username, password, role, display_name in [
         ("dispatcher", "dispatcher123", "dispatcher", "调度员"),
@@ -1331,10 +1355,10 @@ def seed_admin(conn: sqlite3.Connection) -> None:
         tenant_id = 2 if username == "tenant2_admin" else 1
         conn.execute(
             """
-            INSERT OR IGNORE INTO users (tenant_id, username, password_hash, role, display_name)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO users (tenant_id, username, password_hash, role, display_name, account_scope)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (tenant_id, username, hash_password(password), role, display_name),
+            (tenant_id, username, hash_password(password), role, display_name, "driver" if role == "driver" else "carrier"),
         )
 
 

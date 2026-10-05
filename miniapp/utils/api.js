@@ -27,6 +27,12 @@ function resetBaseUrl() {
 }
 
 function request(path, options = {}) {
+  return requestWithRefresh(path, options, false);
+}
+
+function requestWithRefresh(path, options = {}, retried = false) {
+  const session = wx.getStorageSync('driver_session') || null;
+  const token = options.token || (session && (session.access_token || session.token));
   return new Promise((resolve, reject) => {
     wx.request({
       url: `${API_CONFIG.baseUrl}${path}`,
@@ -34,9 +40,34 @@ function request(path, options = {}) {
       data: options.data || {},
       header: {
         'Content-Type': 'application/json',
-        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
       },
-      success: (res) => resolve(res.data),
+      success: (res) => {
+        if (res.statusCode === 401 && !retried && session && session.refresh_token && path !== '/api/auth/refresh') {
+          wx.request({
+            url: `${API_CONFIG.baseUrl}/api/auth/refresh`,
+            method: 'POST',
+            data: { refresh_token: session.refresh_token },
+            header: { 'Content-Type': 'application/json' },
+            success: (refreshRes) => {
+              if (refreshRes.statusCode >= 200 && refreshRes.statusCode < 300 && refreshRes.data && refreshRes.data.token) {
+                wx.setStorageSync('driver_session', refreshRes.data);
+                requestWithRefresh(path, options, true).then(resolve).catch(reject);
+              } else {
+                wx.removeStorageSync('driver_session');
+                reject(refreshRes.data || { error: 'unauthorized' });
+              }
+            },
+            fail: reject
+          });
+          return;
+        }
+        if (res.statusCode >= 400) {
+          reject(res.data || { error: `request_failed_${res.statusCode}` });
+          return;
+        }
+        resolve(res.data);
+      },
       fail: reject
     });
   });
@@ -109,31 +140,31 @@ module.exports = {
   updateDraft: (id, data) => request(`/api/parser/drafts/${id}`, { method: 'PUT', data }),
   confirmDraft: (id) => request(`/api/parser/drafts/${id}/confirm`, { method: 'POST' }),
   discardDraft: (id) => request(`/api/parser/drafts/${id}`, { method: 'DELETE' }),
-  driverAssignments: (driverId) => request(`/api/driver/assignments?driver_id=${driverId}`),
-  driverAssignmentDetail: (driverId, assignmentId) => request(`/api/driver/assignments/${assignmentId}?driver_id=${driverId}`),
-  driverReports: (driverId) => request(`/api/driver/reports?driver_id=${driverId}`),
-  driverDashboard: (driverId) => request(`/api/driver/dashboard?driver_id=${driverId}`),
-  driverProfile: (driverId) => request(`/api/driver/profile?driver_id=${driverId}`),
+  driverAssignments: () => request('/api/driver/assignments'),
+  driverAssignmentDetail: (_driverId, assignmentId) => request(`/api/driver/assignments/${assignmentId}`),
+  driverReports: () => request('/api/driver/reports'),
+  driverDashboard: () => request('/api/driver/dashboard'),
+  driverProfile: () => request('/api/driver/profile'),
   updateDriverProfile: (data) => request('/api/driver/profile', { method: 'POST', data }),
-  driverWorkbench: (driverId) => request(`/api/driver/workbench?driver_id=${driverId}`),
-  driverWorkflowEvents: (driverId) => request(`/api/driver/workflow-events?driver_id=${driverId}`),
+  driverWorkbench: () => request('/api/driver/workbench'),
+  driverWorkflowEvents: () => request('/api/driver/workflow-events'),
   submitDriverWorkflowEvent: (data) => request('/api/driver/workflow-event', { method: 'POST', data }),
-  driverExpenses: (driverId) => request(`/api/driver/expenses?driver_id=${driverId}`),
+  driverExpenses: () => request('/api/driver/expenses'),
   submitDriverExpense: (data) => request('/api/driver/expense', { method: 'POST', data }),
-  driverHistory: (driverId, filters = {}) => {
+  driverHistory: (_driverId, filters = {}) => {
     const query = Object.keys(filters)
       .filter((key) => filters[key] !== undefined && filters[key] !== '')
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(filters[key])}`)
       .join('&');
-    return request(`/api/driver/history?driver_id=${driverId}${query ? `&${query}` : ''}`);
+    return request(`/api/driver/history${query ? `?${query}` : ''}`);
   },
-  driverIncome: (driverId) => request(`/api/driver/income?driver_id=${driverId}`),
-  driverNotifications: (driverId) => request(`/api/driver/notifications?driver_id=${driverId}`),
-  markDriverNotificationRead: (driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: { driver_id: driverId } }),
+  driverIncome: () => request('/api/driver/income'),
+  driverNotifications: () => request('/api/driver/notifications'),
+  markDriverNotificationRead: (_driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: {} }),
   submitDriverReport: (data) => request('/api/driver/report', { method: 'POST', data }),
   submitDriverIncident: (data) => request('/api/driver/incident', { method: 'POST', data }),
   uploadDriverEvidence: (data) => request('/api/driver/evidence', { method: 'POST', data }),
-  driverEvidence: (driverId, assignmentId = '') => request(`/api/driver/evidence?driver_id=${driverId}${assignmentId ? `&assignment_id=${assignmentId}` : ''}`),
+  driverEvidence: (_driverId, assignmentId = '') => request(`/api/driver/evidence${assignmentId ? `?assignment_id=${assignmentId}` : ''}`),
   submitDriverLocation: (data) => request('/api/driver/location', { method: 'POST', data }),
-  driverLocations: (driverId) => request(`/api/driver/locations?driver_id=${driverId}`)
+  driverLocations: () => request('/api/driver/locations')
 };

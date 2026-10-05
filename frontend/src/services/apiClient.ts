@@ -45,6 +45,8 @@ import type {
   ResourceLibraryResponse,
   Team,
   TenantOption,
+  TravelAgencyAccount,
+  TravelAgencyCompany,
   Vehicle,
   VehicleInspectionRecord,
   WorkflowRule,
@@ -58,6 +60,7 @@ const DEFAULT_API_BASE_URL = import.meta.env.DEV
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL;
 const TOKEN_KEY = "wx_dispatch_token";
+const REFRESH_TOKEN_KEY = "wx_dispatch_refresh_token";
 const AGENCY_TOKEN_KEY = "wx_dispatch_agency_token";
 let agencyTokenCache = "";
 
@@ -69,8 +72,14 @@ export function setAuthToken(token: string) {
   window.localStorage.setItem(TOKEN_KEY, token);
 }
 
+export function setAuthSession(session: { token: string; refresh_token?: string }) {
+  setAuthToken(session.token);
+  if (session.refresh_token) window.localStorage.setItem(REFRESH_TOKEN_KEY, session.refresh_token);
+}
+
 export function clearAuthToken() {
   window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export function getAgencyToken() {
@@ -115,7 +124,7 @@ export async function downloadApiFile(path: string, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   const token = getAuthToken();
   const agencyToken = path.startsWith("/api/agency-portal") ? getAgencyToken() : "";
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -127,6 +136,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(agencyToken ? { "X-Agency-Token": agencyToken } : {}),
     },
   });
+
+  if (response.status === 401 && !retried && path !== "/api/auth/refresh") {
+    const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY) || "";
+    if (refreshToken) {
+      const refreshResponse = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (refreshResponse.ok) {
+        const refreshed = (await refreshResponse.json()) as { token: string; refresh_token?: string };
+        setAuthSession(refreshed);
+        return request<T>(path, init, true);
+      }
+      clearAuthToken();
+    }
+  }
 
   if (!response.ok) {
     let detail = response.statusText;
@@ -338,12 +364,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   login: (username: string, password: string) =>
-    request<{ token: string; user: AuthUser }>("/api/auth/login", {
+    request<{ token: string; access_token?: string; refresh_token?: string; user: AuthUser }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
   loginPhone: (phone: string, password: string) =>
-    request<{ token: string; user: AuthUser }>("/api/auth/login-phone", {
+    request<{ token: string; access_token?: string; refresh_token?: string; user: AuthUser }>("/api/auth/login-phone", {
       method: "POST",
       body: JSON.stringify({ phone, password, client_type: "web" }),
     }),
@@ -440,7 +466,7 @@ export const api = {
     request<{ ok: boolean; scheduled: boolean; service: string; message: string }>("/api/system/restart-api", {
       method: "POST",
     }),
-  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; operator_code?: string; password?: string; tenant_id?: number }) =>
+  createAccount: (payload: { role: ManagedAccount["role"]; display_name: string; phone: string; operator_code?: string; driver_id?: number; tenant_id?: number }) =>
     request<{ account: ManagedAccount }>("/api/accounts", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -654,6 +680,20 @@ export const api = {
     listFrom<Vehicle>(await request<unknown>("/api/dispatch/vehicles"), ["vehicles", "items", "data"]),
   platformTenants: async () =>
     listFrom<TenantOption>(await request<unknown>("/api/platform/tenants"), ["tenants", "items", "data"]),
+  travelAgencyCompanies: async () =>
+    listFrom<TravelAgencyCompany>(await request<unknown>("/api/travel-agency/companies"), ["companies", "items", "data"]),
+  travelAgencyAccounts: async (companyId: number) =>
+    listFrom<TravelAgencyAccount>(await request<unknown>(`/api/travel-agency/accounts?company_id=${companyId}`), ["accounts", "items", "data"]),
+  createTravelAgencyAccount: (payload: { company_id: number; role: TravelAgencyAccount["role"]; display_name: string; phone: string }) =>
+    request<{ account: TravelAgencyAccount }>("/api/travel-agency/accounts", { method: "POST", body: JSON.stringify(payload) }),
+  disableTravelAgencyAccount: (id: number) =>
+    request<{ account: TravelAgencyAccount }>(`/api/travel-agency/accounts/${id}/disable`, { method: "POST" }),
+  enableTravelAgencyAccount: (id: number) =>
+    request<{ account: TravelAgencyAccount }>(`/api/travel-agency/accounts/${id}/enable`, { method: "POST" }),
+  resetTravelAgencyAccountPassword: (id: number) =>
+    request<{ account: TravelAgencyAccount }>(`/api/travel-agency/accounts/${id}/reset-password`, { method: "POST" }),
+  unbindTravelAgencyAccountWechat: (id: number) =>
+    request<{ account: TravelAgencyAccount }>(`/api/travel-agency/accounts/${id}/unbind-wechat`, { method: "POST" }),
   resourceDrivers: async (params?: unknown) => {
     const search = searchFrom(params, ["tenant_id", "status"]);
     return listFrom<Driver>(await request<unknown>(`/api/resources/drivers${search.toString() ? `?${search}` : ""}`), ["drivers", "items", "data"]);

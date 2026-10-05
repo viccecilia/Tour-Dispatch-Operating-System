@@ -22,7 +22,14 @@ Page({
     loading: false,
     saving: false,
     uploading: false,
-    message: ''
+    message: '',
+    canManageAccounts: false,
+    accounts: [],
+    accountRoleLabels: ['客服', '导游', '财务'],
+    accountRole: 'agency_customer_service',
+    accountName: '',
+    accountPhone: '',
+    accountSaving: false
   },
 
   onShow() {
@@ -31,11 +38,62 @@ Page({
       wx.redirectTo({ url: '/package_agency/pages/home/index' });
       return;
     }
-    this.setData({ session });
+    const role = (session.user && session.user.role) || (session.account && session.account.role) || '';
+    this.setData({ session, canManageAccounts: role === 'agency_owner' });
     wx.setNavigationBarTitle({
       title: session.agency && session.agency.name ? session.agency.name : '旅行社设置'
     });
     this.loadProfile();
+    if (role === 'agency_owner') this.loadAccounts();
+  },
+
+  loadAccounts() {
+    api.accounts().then((accounts) => this.setData({ accounts })).catch((err) => {
+      this.setData({ message: err.error || err.message || '账号读取失败' });
+    });
+  },
+
+  onAccountFieldInput(e) {
+    const field = e.currentTarget.dataset.field;
+    if (field) this.setData({ [field]: e.detail.value });
+  },
+
+  onAccountRoleChange(e) {
+    const roles = ['agency_customer_service', 'agency_guide', 'agency_finance'];
+    this.setData({ accountRole: roles[Number(e.detail.value) || 0] });
+  },
+
+  createAccount() {
+    if (!this.data.accountName.trim() || !this.data.accountPhone.trim()) {
+      wx.showToast({ title: '请填写姓名和手机号', icon: 'none' });
+      return;
+    }
+    this.setData({ accountSaving: true });
+    api.createAccount({
+      role: this.data.accountRole,
+      display_name: this.data.accountName.trim(),
+      phone: this.data.accountPhone.trim()
+    }).then(() => {
+      this.setData({ accountSaving: false, accountName: '', accountPhone: '', message: '账号已创建，初始密码为手机号后 6 位' });
+      this.loadAccounts();
+    }).catch((err) => this.setData({ accountSaving: false, message: err.error || err.message || '账号创建失败' }));
+  },
+
+  onAccountAction(e) {
+    const id = e.currentTarget.dataset.id;
+    const action = e.currentTarget.dataset.action;
+    const calls = {
+      disable: api.disableAccount,
+      enable: api.enableAccount,
+      reset: api.resetAccountPassword,
+      unbind: api.unbindAccountWechat
+    };
+    const call = calls[action];
+    if (!call) return;
+    call(id).then(() => {
+      this.setData({ message: action === 'reset' ? '密码已重置为手机号后 6 位' : '账号状态已更新' });
+      this.loadAccounts();
+    }).catch((err) => this.setData({ message: err.error || err.message || '操作失败' }));
   },
 
   loadProfile() {

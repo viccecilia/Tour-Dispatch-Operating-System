@@ -12,6 +12,9 @@ export type AuthUser = {
   must_change_password?: boolean;
   profile_type?: string;
   profile_id?: number;
+  supabase_user_id?: string;
+  supabase_linked?: boolean;
+  auth_linked_at?: string;
   wx_bind_status?: string;
   tenant_id: number;
   tenant?: {
@@ -73,6 +76,31 @@ export type AccountOverview = {
   tenant_id?: number | null;
   roles: AccountRoleGroup[];
   accounts: ManagedAccount[];
+};
+
+export type AgencyAccountRole = "agency_owner" | "agency_customer_service" | "agency_guide" | "agency_finance";
+
+export type TravelAgencyCompany = {
+  id: number;
+  tenant_id: number;
+  company_code: string;
+  company_name: string;
+  status?: string;
+};
+
+export type TravelAgencyAccount = {
+  id: number;
+  tenant_id: number;
+  company_id: number;
+  role: AgencyAccountRole;
+  display_name: string;
+  phone: string;
+  status: string;
+  is_active?: boolean;
+  wx_bind_status?: string;
+  last_login_at?: string;
+  must_change_password?: boolean;
+  supabase_linked?: boolean;
 };
 
 export type AttendanceRow = {

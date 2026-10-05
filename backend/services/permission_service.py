@@ -17,8 +17,6 @@ def account_scope(user: dict[str, Any] | None) -> str:
     scope = str(user.get("account_scope") or "").strip()
     if scope:
         return scope
-    if str(user.get("username") or "").strip() == "admin":
-        return "platform"
     if user.get("role") == "driver":
         return "driver"
     return "carrier"

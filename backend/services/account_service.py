@@ -3,8 +3,19 @@ import re
 from typing import Any
 
 from backend.db.database import get_connection, hash_password
+from backend.services.account_policy import assert_can_grant_role, assert_can_manage_target
 from backend.services.audit_service import record_audit
 from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail
+from backend.services.auth_account_service import (
+    SupabaseAuthError,
+    create_supabase_account,
+    delete_supabase_account,
+    disable_supabase_account,
+    enable_supabase_account,
+    reset_supabase_password,
+    supabase_enabled,
+    update_supabase_phone,
+)
 from backend.services.tenant_context import get_current_tenant_id
 
 
@@ -20,7 +31,6 @@ ROLE_LABELS = {
 
 
 def get_account_overview(tenant_id: int | None = None) -> dict[str, Any]:
-    ensure_driver_accounts(tenant_id=tenant_id)
     accounts = [
         account
         for account in list_accounts(tenant_id=tenant_id)
@@ -70,6 +80,9 @@ def list_accounts(tenant_id: int | None = None) -> list[dict[str, Any]]:
                 u.phone,
                 u.profile_type,
                 u.profile_id,
+                u.supabase_user_id,
+                u.account_scope,
+                u.auth_linked_at,
                 u.wx_bind_status,
                 u.wx_bound_at,
                 u.last_login_at,
@@ -180,77 +193,132 @@ def ensure_driver_accounts(actor: str = "system", tenant_id: int | None = None) 
     return created
 
 
-def create_account(payload: dict[str, Any], actor: str = "system") -> dict[str, Any]:
+def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "system") -> dict[str, Any]:
     role = str(payload.get("role") or "").strip()
     display_name = str(payload.get("display_name") or payload.get("name") or "").strip()
     phone = str(payload.get("phone") or "").strip()
     operator_code = str(payload.get("operator_code") or payload.get("code") or "").strip().upper()
     if role not in ROLES:
         raise ValueError("invalid_role")
-    if not phone:
-        raise ValueError("phone_required")
-    normalized = normalize_phone(phone)
-    if len(normalized) < 6:
-        raise ValueError("phone_tail_unavailable")
-    password = phone_password_tail(phone)
-    if not display_name:
-        display_name = phone
     tenant_id = _normalize_tenant_id(payload.get("tenant_id")) or get_current_tenant_id()
+    if isinstance(actor, dict):
+        assert_can_grant_role(actor, "carrier", tenant_id, role)
+    driver_id = _normalize_tenant_id(payload.get("driver_id"))
     with get_connection() as conn:
         tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
-        existing = _find_user_by_phone(conn, tenant_id, normalized)
-        if existing:
-            raise ValueError("account_phone_exists")
         if role == "driver":
-            profile = _find_driver_profile(conn, tenant_id, normalized)
+            if not driver_id:
+                raise ValueError("driver_id_required")
+            profile = conn.execute(
+                """
+                SELECT id, tenant_id, name, phone, driver_code, user_id, status, driver_status
+                FROM drivers
+                WHERE tenant_id = ? AND id = ?
+                  AND COALESCE(status, '') != 'deleted'
+                  AND COALESCE(driver_status, '') != 'deleted'
+                """,
+                (tenant_id, driver_id),
+            ).fetchone()
             if not profile:
-                raise ValueError("driver_phone_not_preloaded")
+                raise ValueError("driver_not_found")
+            driver_phone = str(profile["phone"] or "").strip()
+            if not driver_phone:
+                raise ValueError("driver_phone_required")
+            if phone and normalize_phone(phone) != normalize_phone(driver_phone):
+                raise ValueError("driver_phone_mismatch")
+            phone = driver_phone
             if profile["user_id"]:
                 linked = conn.execute("SELECT id, is_active FROM users WHERE id = ? AND tenant_id = ?", (profile["user_id"], tenant_id)).fetchone()
                 if linked:
                     raise ValueError("driver_profile_already_bound")
             profile_type = "driver"
             profile_id = profile["id"]
-            display_name = display_name or profile["name"]
+            display_name = display_name or str(profile["name"] or "")
         else:
             profile_type = "operator"
             profile_id = None
+        if not phone:
+            raise ValueError("phone_required")
+        normalized = normalize_phone(phone)
+        if len(normalized) < 6:
+            raise ValueError("phone_tail_unavailable")
+        existing = _find_user_by_phone_any(conn, normalized)
+        if existing:
+            raise ValueError("account_phone_exists")
+        password = phone_password_tail(phone)
+        display_name = display_name or phone
         username = _unique_username(conn, tenant_id, company_login_name(normalized or phone, tenant_slug, tenant_name))
-        conn.execute(
-            """
-            INSERT INTO users (
-                tenant_id, username, password_hash, role, display_name, phone,
-                profile_type, profile_id, wx_bind_status, is_active,
-                password_changed_at, must_change_password, created_by_user_id, updated_at
+    auth_user_id = ""
+    if supabase_enabled():
+        try:
+            remote = create_supabase_account(
+                phone,
+                password,
+                app_metadata={
+                    "account_scope": "driver" if role == "driver" else "carrier",
+                    "role": role,
+                    "tenant_id": tenant_id,
+                },
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, ?, CURRENT_TIMESTAMP)
-            """,
-            (tenant_id, username, hash_password(password), role, display_name, phone, profile_type, profile_id, _actor_user_id(conn, tenant_id, actor)),
-        )
-        user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-        if role == "driver":
-            conn.execute("UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, tenant_id, profile_id))
-        else:
-            profile_id = _create_operator_profile_shell(conn, tenant_id, user_id, phone, role, operator_code)
-            conn.execute("UPDATE users SET profile_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (profile_id, tenant_id, user_id))
-        conn.commit()
+            auth_user_id = str(remote.get("id") or "")
+            if not auth_user_id:
+                raise ValueError("supabase_identity_create_failed")
+        except SupabaseAuthError as exc:
+            raise ValueError(str(exc)) from exc
+    try:
+        with get_connection() as conn:
+            tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
+            username = _unique_username(conn, tenant_id, company_login_name(normalized or phone, tenant_slug, tenant_name))
+            created_by = _actor_user_id(conn, tenant_id, _actor_label(actor))
+            account_scope = "driver" if role == "driver" else "carrier"
+            conn.execute(
+                """
+                INSERT INTO users (
+                    tenant_id, username, password_hash, role, display_name, phone,
+                    profile_type, profile_id, wx_bind_status, is_active,
+                    password_changed_at, must_change_password, created_by_user_id, updated_at,
+                    supabase_user_id, account_scope, auth_linked_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, ?, CURRENT_TIMESTAMP, ?, ?, CASE WHEN ? <> '' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                """,
+                (tenant_id, username, hash_password(password), role, display_name, phone, profile_type, profile_id, created_by, auth_user_id or None, account_scope, auth_user_id),
+            )
+            user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+            if role == "driver":
+                conn.execute("UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, tenant_id, profile_id))
+            else:
+                profile_id = _create_operator_profile_shell(conn, tenant_id, user_id, phone, role, operator_code)
+                conn.execute("UPDATE users SET profile_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (profile_id, tenant_id, user_id))
+            conn.commit()
+    except Exception:
+        if auth_user_id:
+            try:
+                delete_supabase_account(auth_user_id)
+            except SupabaseAuthError:
+                pass
+        raise
     account = get_account(user_id, tenant_id=tenant_id)
-    record_audit("account_create", "user", user_id, after=account, actor=actor, source_path="/api/accounts", summary=f"Created {role} account {display_name}")
+    record_audit("account_create", "user", user_id, after=account, actor=_actor_label(actor), source_path="/api/accounts", summary=f"Created {role} account {display_name}")
     return account or {}
 
 
-def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+def update_account(user_id: int | str, payload: dict[str, Any], actor: dict[str, Any] | str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
     tenant_id = _normalize_tenant_id(tenant_id or payload.get("tenant_id")) or get_current_tenant_id()
     with get_connection() as conn:
         tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
             return None
+        before_public = _public_account(dict(before))
+        if isinstance(actor, dict):
+            assert_can_manage_target(actor, before_public)
         new_role = payload.get("role")
         if new_role is not None:
             new_role = str(new_role).strip()
             if new_role not in ROLES:
                 raise ValueError("invalid_role")
+            if isinstance(actor, dict):
+                assert_can_grant_role(actor, "carrier", tenant_id, new_role)
             if before["role"] == "driver" and new_role in MANAGEMENT_ROLES and not payload.get("confirm_driver_role_change"):
                 raise ValueError("driver_role_change_requires_confirmation")
         display_name = payload.get("display_name", payload.get("name"))
@@ -278,12 +346,17 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
             updates.append("username = ?")
             values.append(username)
         if new_role is not None and new_role != before["role"]:
-            profile_type, profile_id = _resolve_profile_for_role_change(conn, tenant_id, before, new_role, phone)
+            profile_type, profile_id = _resolve_profile_for_role_change(conn, tenant_id, before, new_role, phone, payload.get("driver_id"))
             updates.extend(["role = ?", "profile_type = ?", "profile_id = ?"])
             values.extend([new_role, profile_type, profile_id])
         if "is_active" in payload:
             updates.append("is_active = ?")
             values.append(1 if payload.get("is_active") else 0)
+        if phone is not None and before["supabase_user_id"]:
+            try:
+                update_supabase_phone(str(before["supabase_user_id"]), str(phone or ""))
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
         if updates:
             updates.append("updated_at = CURRENT_TIMESTAMP")
             conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE tenant_id = ? AND id = ?", (*values, tenant_id, user_id))
@@ -299,16 +372,25 @@ def update_account(user_id: int | str, payload: dict[str, Any], actor: str = "sy
             )
         conn.commit()
     after = get_account(user_id, tenant_id=tenant_id)
-    record_audit("account_update", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}", summary=f"Updated account {user_id}")
+    action = "role_change" if payload.get("role") and payload.get("role") != before["role"] else ("phone_change" if "phone" in payload else "account_update")
+    record_audit(action, "user", user_id, before=before_public, after=after, actor=_actor_label(actor), source_path=f"/api/accounts/{user_id}", summary=f"Updated account {user_id}")
     return after
 
 
-def disable_account(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+def disable_account(user_id: int | str, actor: dict[str, Any] | str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
     tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
             return None
+        before_public = _public_account(dict(before))
+        if isinstance(actor, dict):
+            assert_can_manage_target(actor, before_public)
+        if before["supabase_user_id"]:
+            try:
+                disable_supabase_account(str(before["supabase_user_id"]))
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
         conn.execute("UPDATE users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (tenant_id, user_id))
         conn.execute(
             """
@@ -320,16 +402,24 @@ def disable_account(user_id: int | str, actor: str = "system", tenant_id: int | 
         )
         conn.commit()
     after = get_account(user_id, tenant_id=tenant_id)
-    record_audit("account_disable", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/disable", summary=f"Disabled account {user_id}")
+    record_audit("account_disable", "user", user_id, before=before_public, after=after, actor=_actor_label(actor), source_path=f"/api/accounts/{user_id}/disable", summary=f"Disabled account {user_id}")
     return after
 
 
-def enable_account(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+def enable_account(user_id: int | str, actor: dict[str, Any] | str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
     tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
             return None
+        before_public = _public_account(dict(before))
+        if isinstance(actor, dict):
+            assert_can_manage_target(actor, before_public)
+        if before["supabase_user_id"]:
+            try:
+                enable_supabase_account(str(before["supabase_user_id"]))
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
         conn.execute("UPDATE users SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (tenant_id, user_id))
         conn.execute(
             """
@@ -341,19 +431,27 @@ def enable_account(user_id: int | str, actor: str = "system", tenant_id: int | N
         )
         conn.commit()
     after = get_account(user_id, tenant_id=tenant_id)
-    record_audit("account_enable", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/enable", summary=f"Enabled account {user_id}")
+    record_audit("account_enable", "user", user_id, before=before_public, after=after, actor=_actor_label(actor), source_path=f"/api/accounts/{user_id}/enable", summary=f"Enabled account {user_id}")
     return after
 
 
-def reset_account_password(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+def reset_account_password(user_id: int | str, actor: dict[str, Any] | str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
     tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
             return None
+        before_public = _public_account(dict(before))
+        if isinstance(actor, dict):
+            assert_can_manage_target(actor, before_public)
         tail = phone_password_tail(before["phone"] or before["username"])
         if not tail:
             raise ValueError("phone_tail_unavailable")
+        if before["supabase_user_id"]:
+            try:
+                reset_supabase_password(str(before["supabase_user_id"]), tail)
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
         conn.execute(
             """
             UPDATE users
@@ -367,16 +465,19 @@ def reset_account_password(user_id: int | str, actor: str = "system", tenant_id:
         )
         conn.commit()
     after = get_account(user_id, tenant_id=tenant_id)
-    record_audit("password_reset", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/reset-password", summary=f"Reset password for account {user_id}")
+    record_audit("password_reset", "user", user_id, before=before_public, after=after, actor=_actor_label(actor), source_path=f"/api/accounts/{user_id}/reset-password", summary=f"Reset password for account {user_id}")
     return after
 
 
-def unbind_account_wechat(user_id: int | str, actor: str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
+def unbind_account_wechat(user_id: int | str, actor: dict[str, Any] | str = "system", tenant_id: int | None = None) -> dict[str, Any] | None:
     tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
     with get_connection() as conn:
         before = _get_account_row(conn, tenant_id, user_id)
         if not before:
             return None
+        before_public = _public_account(dict(before))
+        if isinstance(actor, dict):
+            assert_can_manage_target(actor, before_public)
         conn.execute(
             """
             UPDATE users
@@ -391,7 +492,7 @@ def unbind_account_wechat(user_id: int | str, actor: str = "system", tenant_id: 
         )
         conn.commit()
     after = get_account(user_id, tenant_id=tenant_id)
-    record_audit("wechat_unbind", "user", user_id, before=_public_account(dict(before)), after=after, actor=actor, source_path=f"/api/accounts/{user_id}/unbind-wechat", summary=f"Unbound WeChat for account {user_id}")
+    record_audit("wechat_unbind", "user", user_id, before=before_public, after=after, actor=_actor_label(actor), source_path=f"/api/accounts/{user_id}/unbind-wechat", summary=f"Unbound WeChat for account {user_id}")
     return after
 
 
@@ -402,13 +503,93 @@ def get_account(user_id: int | str, tenant_id: int | None = None) -> dict[str, A
     return _public_account(dict(row)) if row else None
 
 
-def _resolve_profile_for_role_change(conn: sqlite3.Connection, tenant_id: int, before: sqlite3.Row, new_role: str, new_phone: Any = None) -> tuple[str, int]:
+def update_driver_account_phone(
+    driver_id: int | str,
+    phone: str,
+    *,
+    tenant_id: int | None = None,
+    actor: dict[str, Any] | str = "system",
+) -> dict[str, Any]:
+    target_tenant = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
+    if isinstance(actor, dict):
+        scope = str(actor.get("account_scope") or "")
+        if actor.get("role") != "admin" or (
+            scope != "platform" and (scope != "carrier" or int(actor.get("tenant_id") or 0) != target_tenant)
+        ):
+            raise PermissionError("driver_phone_update_forbidden")
+    value = str(phone or "").strip()
+    normalized = normalize_phone(value)
+    if len(normalized) < 6:
+        raise ValueError("phone_tail_unavailable")
+    with get_connection() as conn:
+        driver = conn.execute(
+            "SELECT id, user_id, phone, name FROM drivers WHERE tenant_id = ? AND id = ?",
+            (target_tenant, int(driver_id)),
+        ).fetchone()
+        if not driver:
+            raise ValueError("driver_not_found")
+        user = conn.execute(
+            "SELECT * FROM users WHERE tenant_id = ? AND id = ?",
+            (target_tenant, driver["user_id"]),
+        ).fetchone() if driver["user_id"] else None
+        duplicate = _find_user_by_phone_any(conn, normalized)
+        if duplicate and (not user or str(duplicate["id"]) != str(user["id"]) or duplicate["source"] != "carrier"):
+            raise ValueError("account_phone_exists")
+        if user and user["supabase_user_id"]:
+            try:
+                update_supabase_phone(str(user["supabase_user_id"]), value)
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
+        before = {"driver_id": int(driver["id"]), "phone": driver["phone"], "user_id": driver["user_id"]}
+        conn.execute(
+            "UPDATE drivers SET phone = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+            (value, target_tenant, driver["id"]),
+        )
+        if user:
+            tenant_slug, tenant_name = _tenant_identity(conn, target_tenant)
+            username = _unique_username(conn, target_tenant, company_login_name(normalized, tenant_slug, tenant_name), user["id"])
+            conn.execute(
+                "UPDATE users SET phone = ?, username = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+                (value, username, target_tenant, user["id"]),
+            )
+        conn.commit()
+    after = {"driver_id": int(driver_id), "phone": value, "user_id": driver["user_id"]}
+    record_audit(
+        "phone_change",
+        "driver",
+        driver_id,
+        before=before,
+        after=after,
+        actor=_actor_label(actor),
+        source_path=f"/api/drivers/{driver_id}",
+    )
+    return after
+
+
+def _resolve_profile_for_role_change(
+    conn: sqlite3.Connection,
+    tenant_id: int,
+    before: sqlite3.Row,
+    new_role: str,
+    new_phone: Any = None,
+    driver_id: Any = None,
+) -> tuple[str, int]:
     phone = str(new_phone if new_phone is not None else before["phone"] or before["username"])
     normalized = normalize_phone(phone)
     if new_role == "driver":
-        driver = _find_driver_profile(conn, tenant_id, normalized)
+        target_driver_id = _normalize_tenant_id(driver_id)
+        if not target_driver_id:
+            raise ValueError("driver_id_required")
+        driver = conn.execute(
+            "SELECT * FROM drivers WHERE tenant_id = ? AND id = ? AND COALESCE(status, '') != 'deleted'",
+            (tenant_id, target_driver_id),
+        ).fetchone()
         if not driver:
-            raise ValueError("driver_phone_not_preloaded")
+            raise ValueError("driver_not_found")
+        if not str(driver["phone"] or "").strip():
+            raise ValueError("driver_phone_required")
+        if normalized and normalize_phone(driver["phone"]) != normalized:
+            raise ValueError("driver_phone_mismatch")
         if driver["user_id"] and str(driver["user_id"]) != str(before["id"]):
             raise ValueError("driver_profile_already_bound")
         conn.execute("UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (before["id"], tenant_id, driver["id"]))
@@ -480,6 +661,32 @@ def _find_user_by_phone(conn: sqlite3.Connection, tenant_id: int, normalized: st
     ).fetchone()
 
 
+def _find_user_by_phone_any(conn: sqlite3.Connection, normalized: str):
+    user = conn.execute(
+        """
+        SELECT id, tenant_id, 'carrier' AS source
+        FROM users
+        WHERE REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+        LIMIT 1
+        """,
+        (normalized,),
+    ).fetchone()
+    if user:
+        return user
+    try:
+        return conn.execute(
+            """
+            SELECT id, tenant_id, 'agency' AS source
+            FROM travel_agency_accounts
+            WHERE REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '-', ''), ' ', ''), '+', '') = ?
+            LIMIT 1
+            """,
+            (normalized,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+
+
 def _find_driver_profile(conn: sqlite3.Connection, tenant_id: int, normalized: str):
     return conn.execute(
         """
@@ -543,6 +750,12 @@ def _actor_user_id(conn: sqlite3.Connection, tenant_id: int, actor: str) -> int 
     return int(row["id"]) if row else None
 
 
+def _actor_label(actor: dict[str, Any] | str) -> str:
+    if isinstance(actor, dict):
+        return f"{actor.get('role') or 'user'}:{actor.get('username') or actor.get('display_name') or actor.get('id') or 'unknown'}"
+    return str(actor or "system")
+
+
 def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | str):
     return conn.execute(
         """
@@ -555,6 +768,9 @@ def _get_account_row(conn: sqlite3.Connection, tenant_id: int, user_id: int | st
             u.phone,
             u.profile_type,
             u.profile_id,
+            u.supabase_user_id,
+            u.account_scope,
+            u.auth_linked_at,
             u.wx_bind_status,
             u.wx_bound_at,
             u.last_login_at,
@@ -601,6 +817,12 @@ def _public_account(row: dict[str, Any]) -> dict[str, Any]:
         "role_label": ROLE_LABELS.get(row.get("role"), row.get("role")),
         "profile_type": row.get("profile_type"),
         "profile_id": row.get("profile_id"),
+        "supabase_user_id": row.get("supabase_user_id"),
+        "supabase_linked": bool(row.get("supabase_user_id")),
+        "auth_linked_at": row.get("auth_linked_at"),
+        "account_scope": row.get("account_scope") or ("driver" if row.get("role") == "driver" else "carrier"),
+        "organization_type": "carrier",
+        "organization_id": row.get("tenant_id"),
         "profile_label": row.get("driver_name") or row.get("operator_title") or "-",
         "driver_code": row.get("driver_code"),
         "driver_record_status": row.get("driver_record_status") or "",

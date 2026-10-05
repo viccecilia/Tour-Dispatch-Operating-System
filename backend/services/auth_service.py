@@ -8,8 +8,18 @@ from typing import Optional
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from backend.config import DEMO_MODE, JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, TRIAL_MODE, WECHAT_MINIAPP_APPID, WECHAT_MINIAPP_SECRET
+from backend.config import AUTH_MODE, DEMO_MODE, JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, TRIAL_MODE, WECHAT_MINIAPP_APPID, WECHAT_MINIAPP_SECRET
 from backend.db.database import get_connection, hash_password
+from backend.services.auth_account_service import (
+    SupabaseAuthError,
+    refresh_session as refresh_supabase_session,
+    resolve_authenticated_principal,
+    sign_in_with_password,
+    sign_out as sign_out_supabase,
+    supabase_enabled,
+    update_self_password,
+    verify_supabase_access_token,
+)
 from backend.services.audit_service import record_audit
 from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
 
@@ -43,6 +53,14 @@ def company_login_name(phone: str | None, tenant_slug: str | None = None, tenant
 
 
 def authenticate(username: str, password: str) -> Optional[dict]:
+    if supabase_enabled():
+        try:
+            result = sign_in_with_password(username, password)
+            _mark_principal_login(result["user"])
+            return result
+        except SupabaseAuthError:
+            if AUTH_MODE == "supabase":
+                return None
     company_code, phone_part = split_company_account(username)
     if company_code and normalize_phone(phone_part):
         return authenticate_phone(username, password)
@@ -55,6 +73,8 @@ def authenticate(username: str, password: str) -> Optional[dict]:
                 u.username,
                 u.password_hash,
                 u.role,
+                u.account_scope,
+                u.supabase_user_id,
                 u.display_name,
                 u.phone,
                 u.profile_type,
@@ -84,6 +104,23 @@ def authenticate(username: str, password: str) -> Optional[dict]:
 
 
 def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, wx_unionid: str | None = None, client_type: str = "web") -> Optional[dict]:
+    if supabase_enabled():
+        try:
+            result = sign_in_with_password(phone, password)
+            principal = result["user"]
+            if principal.get("local_user_id") and _requires_wechat(client_type, str(principal.get("role") or "")):
+                if not wx_openid:
+                    return {"error": "wechat_openid_required"}  # type: ignore[return-value]
+                bind_result = _ensure_wechat_binding(principal, wx_openid, wx_unionid)
+                if bind_result == "mismatch":
+                    return {"error": "wechat_binding_mismatch"}  # type: ignore[return-value]
+                principal = _load_user_public(int(principal["local_user_id"])) or principal
+                result["user"] = public_user(principal)
+            _mark_principal_login(result["user"])
+            return result
+        except SupabaseAuthError:
+            if AUTH_MODE == "supabase":
+                return None
     requested_company_code, phone_part = split_company_account(phone)
     normalized = normalize_phone(phone_part)
     with get_connection() as conn:
@@ -95,6 +132,8 @@ def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, 
                 u.username,
                 u.password_hash,
                 u.role,
+                u.account_scope,
+                u.supabase_user_id,
                 u.display_name,
                 u.phone,
                 u.profile_type,
@@ -157,6 +196,8 @@ def authenticate_wechat(wx_openid: str | None = None, wx_unionid: str | None = N
                 u.tenant_id,
                 u.username,
                 u.role,
+                u.account_scope,
+                u.supabase_user_id,
                 u.display_name,
                 u.phone,
                 u.profile_type,
@@ -182,6 +223,9 @@ def authenticate_wechat(wx_openid: str | None = None, wx_unionid: str | None = N
         _audit_auth("wechat_auto_login_fail", {"reason": "wechat_not_bound", "client_type": client_type})
         return None
     user_data = dict(user)
+    if supabase_enabled() and not user_data.get("supabase_user_id"):
+        _audit_auth("wechat_auto_login_fail", {"user_id": user_data["id"], "reason": "supabase_identity_required", "client_type": client_type})
+        return None
     if user_data["role"] not in ROLES:
         _audit_auth("wechat_auto_login_fail", {"user_id": user_data["id"], "reason": "invalid_role", "client_type": client_type})
         return None
@@ -217,6 +261,8 @@ def resolve_wechat_login_code(wx_code: str | None) -> dict:
 
 
 def register_bound_account(payload: dict) -> dict:
+    if AUTH_MODE != "legacy":
+        raise ValueError("self_registration_disabled")
     phone = str(payload.get("phone") or "").strip()
     password = str(payload.get("password") or "").strip()
     role = str(payload.get("role") or "").strip()
@@ -328,11 +374,18 @@ def reset_user_password_to_phone_tail(user_id: int | str, actor: str = "system")
     return public_user(user) if user else None
 
 
-def change_user_password(user_id: int | str, old_password: str, new_password: str, actor: str = "system") -> dict | None:
+def change_user_password(user_id: int | str, old_password: str, new_password: str, actor: str = "system", access_token: str = "") -> dict | None:
     if not old_password or not new_password:
         raise ValueError("password_required")
     if len(str(new_password)) < 6:
         raise ValueError("password_too_short")
+    if supabase_enabled():
+        if not access_token:
+            raise ValueError("access_token_required")
+        try:
+            update_self_password(access_token, new_password)
+        except SupabaseAuthError as exc:
+            raise ValueError(str(exc)) from exc
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
         if not row:
@@ -386,6 +439,16 @@ def unbind_user_wechat(user_id: int | str, actor: str = "system") -> dict | None
 
 
 def get_user_by_token(token: str) -> Optional[dict]:
+    if supabase_enabled():
+        try:
+            claims = verify_supabase_access_token(token)
+            principal = resolve_authenticated_principal(str(claims.get("sub") or ""))
+            if principal and principal.get("is_active"):
+                return principal
+            return None
+        except SupabaseAuthError:
+            if AUTH_MODE == "supabase":
+                return None
     payload = verify_jwt(token)
     if not payload:
         return None
@@ -398,6 +461,8 @@ def get_user_by_token(token: str) -> Optional[dict]:
                 u.tenant_id,
                 u.username,
                 u.role,
+                u.account_scope,
+                u.supabase_user_id,
                 u.display_name,
                 u.phone,
                 u.profile_type,
@@ -480,11 +545,46 @@ def public_user(user: dict) -> dict:
 def _account_scope(user: dict) -> str:
     if user.get("account_scope"):
         return str(user["account_scope"])
-    if str(user.get("username") or "").strip() == "admin":
-        return "platform"
     if user.get("role") == "driver":
         return "driver"
     return "carrier"
+
+
+def refresh_auth_session(refresh_token: str) -> dict:
+    if not supabase_enabled():
+        raise ValueError("refresh_not_available")
+    try:
+        result = refresh_supabase_session(refresh_token)
+    except SupabaseAuthError as exc:
+        raise ValueError(str(exc)) from exc
+    _mark_principal_login(result["user"])
+    return result
+
+
+def logout_auth_session(access_token: str) -> None:
+    if not supabase_enabled():
+        return
+    try:
+        sign_out_supabase(access_token)
+    except SupabaseAuthError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _mark_principal_login(principal: dict) -> None:
+    local_user_id = principal.get("local_user_id")
+    agency_account_id = principal.get("agency_account_id")
+    with get_connection() as conn:
+        if local_user_id:
+            conn.execute(
+                "UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (local_user_id,),
+            )
+        elif agency_account_id:
+            conn.execute(
+                "UPDATE travel_agency_accounts SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (agency_account_id,),
+            )
+        conn.commit()
 
 
 def normalize_phone(phone: str | None) -> str:
