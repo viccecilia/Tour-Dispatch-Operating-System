@@ -15,6 +15,8 @@ from backend.services.parser_service import (
     update_draft,
 )
 from backend.services.tenant_context import get_current_tenant_id
+from backend.config import WECHAT_MINIAPP_APPID
+from backend.services.wechat_auth_service import WechatAuthError, bind_principal_wechat
 
 
 def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -37,8 +39,21 @@ def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
         return result
 
     user = result["user"]
-    if user.get("role") not in {"admin", "dispatcher", "operations_manager", "driver"}:
+    if user.get("role") not in {"admin", "dispatcher", "operations_manager"}:
         return None
+    if not username_is_phone and payload.get("client_type") in {"dispatch_miniapp", "miniapp_dispatch", "company_lite"}:
+        try:
+            bind_principal_wechat(
+                user,
+                {
+                    "wx_openid": str(payload.get("wx_openid") or ""),
+                    "wx_unionid": str(payload.get("wx_unionid") or ""),
+                    "wx_appid": str(payload.get("wx_appid") or WECHAT_MINIAPP_APPID),
+                    "wx_client_type": str(payload.get("client_type") or "dispatch_miniapp"),
+                },
+            )
+        except WechatAuthError as exc:
+            return {"error": str(exc)}
 
     dispatcher = _dispatcher_from_user(user)
     return {
@@ -70,7 +85,7 @@ def login_dispatcher_by_wechat(payload: dict[str, Any]) -> dict[str, Any] | None
     if result.get("error"):
         return result
     user = result["user"]
-    if user.get("role") not in {"admin", "dispatcher", "operations_manager", "driver"}:
+    if user.get("role") not in {"admin", "dispatcher", "operations_manager"}:
         return None
     dispatcher = _dispatcher_from_user(user)
     return {
@@ -115,9 +130,8 @@ def login_dispatcher_dev_mock(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def get_dispatcher_context(params: dict[str, str]) -> dict[str, Any]:
-    dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
-    dispatcher = _load_dispatcher(dispatcher_id)
+def get_dispatcher_context(params: dict[str, str], principal: dict[str, Any]) -> dict[str, Any]:
+    dispatcher = _dispatcher_from_user(principal)
     return {
         "ok": True,
         "dispatcher_context": dispatcher,
@@ -131,11 +145,11 @@ def get_dispatcher_context(params: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def get_dispatcher_dashboard(params: dict[str, str]) -> dict[str, Any]:
-    dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
+def get_dispatcher_dashboard(params: dict[str, str], principal: dict[str, Any]) -> dict[str, Any]:
+    dispatcher = _dispatcher_from_user(principal)
+    dispatcher_id = dispatcher["dispatcher_id"]
     today = date.today().isoformat()
     tenant_id = get_current_tenant_id()
-    dispatcher = _load_dispatcher(dispatcher_id)
     owns_all_orders = dispatcher.get("dispatcher_role") == "admin"
     with get_connection() as conn:
         own_filter = "" if owns_all_orders else " AND created_by_dispatcher_id = ?"
@@ -176,10 +190,10 @@ def get_dispatcher_dashboard(params: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def list_dispatcher_unassigned_orders(params: dict[str, str]) -> list[dict[str, Any]]:
-    dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
+def list_dispatcher_unassigned_orders(params: dict[str, str], principal: dict[str, Any]) -> list[dict[str, Any]]:
+    dispatcher = _dispatcher_from_user(principal)
+    dispatcher_id = dispatcher["dispatcher_id"]
     tenant_id = get_current_tenant_id()
-    dispatcher = _load_dispatcher(dispatcher_id)
     owns_all_orders = dispatcher.get("dispatcher_role") == "admin"
     own_filter = "" if owns_all_orders else "AND created_by_dispatcher_id = ?"
     own_params: list[Any] = [] if owns_all_orders else [dispatcher_id]
@@ -201,11 +215,10 @@ def list_dispatcher_unassigned_orders(params: dict[str, str]) -> list[dict[str, 
         ]
 
 
-def get_dispatcher_notifications(params: dict[str, str]) -> dict[str, Any]:
+def get_dispatcher_notifications(params: dict[str, str], principal: dict[str, Any]) -> dict[str, Any]:
     sync_operation_notifications()
     tenant_id = get_current_tenant_id()
-    dispatcher_id = _to_int(params.get("dispatcher_id")) or 1
-    dispatcher = _load_dispatcher(dispatcher_id)
+    dispatcher = _dispatcher_from_user(principal)
     role = dispatcher.get("dispatcher_role") or "dispatcher"
     allowed_roles = {
         "admin": ("", "admin", "dispatcher", "finance", "operations_manager"),
@@ -250,9 +263,9 @@ def get_shared_runtime_state(params: dict[str, str] | None = None) -> dict[str, 
     return {"ok": True, "shared_database": "sqlite", "tables": counts, "samples": samples}
 
 
-def parse_dispatcher_text(payload: dict[str, Any]) -> dict[str, Any]:
+def parse_dispatcher_text(payload: dict[str, Any], principal: dict[str, Any]) -> dict[str, Any]:
     text = payload.get("text", "")
-    dispatcher = _payload_dispatcher(payload)
+    dispatcher = _dispatcher_from_user(principal)
     if payload.get("batch", True):
         drafts = parse_batch_text_to_drafts(text, "text")
     else:
@@ -272,8 +285,8 @@ def parse_dispatcher_text(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "count": len(refreshed), "drafts": refreshed, "dispatcher_context": dispatcher}
 
 
-def parse_dispatcher_daily_text(payload: dict[str, Any]) -> dict[str, Any]:
-    dispatcher = _payload_dispatcher(payload)
+def parse_dispatcher_daily_text(payload: dict[str, Any], principal: dict[str, Any]) -> dict[str, Any]:
+    dispatcher = _dispatcher_from_user(principal)
     result = parse_daily_assignment_text(payload.get("text", ""))
     record_dispatch_mobile_audit(
         "mobile_daily_parse",
@@ -291,10 +304,10 @@ def parse_dispatcher_daily_text(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, **result, "dispatcher_context": dispatcher}
 
 
-def update_dispatcher_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+def update_dispatcher_draft(draft_id: str, payload: dict[str, Any], principal: dict[str, Any]) -> dict[str, Any] | None:
     if not get_draft(draft_id):
         return None
-    dispatcher = _payload_dispatcher(payload)
+    dispatcher = _dispatcher_from_user(principal)
     editable = dict(payload)
     editable["source_channel"] = payload.get("source_channel") or "mobile_dispatch"
     draft = update_draft(draft_id, editable)
@@ -316,8 +329,8 @@ def update_dispatcher_draft(draft_id: str, payload: dict[str, Any]) -> dict[str,
     return updated
 
 
-def mark_order_dispatcher_context(order_id: int | str, payload: dict[str, Any], update_only: bool = False) -> dict[str, Any] | None:
-    dispatcher = _payload_dispatcher(payload)
+def mark_order_dispatcher_context(order_id: int | str, payload: dict[str, Any], principal: dict[str, Any], update_only: bool = False) -> dict[str, Any] | None:
+    dispatcher = _dispatcher_from_user(principal)
     with get_connection() as conn:
         row = conn.execute("SELECT id FROM orders WHERE id = ? AND tenant_id = ?", (_to_int(order_id), get_current_tenant_id())).fetchone()
         if not row:
@@ -473,46 +486,39 @@ def _load_dev_mock_driver_user(payload: dict[str, Any]) -> dict[str, Any] | None
 
 
 def _dispatcher_from_user(user: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "dispatcher_id": int(user.get("id") or 1),
-        "dispatcher_code": f"D{int(user.get('id') or 1):03d}",
-        "dispatcher_name": user.get("display_name") or user.get("username") or "调度员",
-        "dispatcher_role": user.get("role") or "dispatcher",
-        "tenant_id": int(user.get("tenant_id") or 1),
-    }
+    dispatcher_id = _to_int(user.get("local_user_id") or user.get("id"))
+    tenant_id = _to_int(user.get("tenant_id"))
+    if not dispatcher_id or not tenant_id:
+        raise PermissionError("dispatcher_identity_required")
+    return _load_dispatcher(dispatcher_id, tenant_id)
 
 
-def _load_dispatcher(dispatcher_id: int) -> dict[str, Any]:
+def _load_dispatcher(dispatcher_id: int, tenant_id: int) -> dict[str, Any]:
     with get_connection() as conn:
         user = conn.execute(
             """
-            SELECT id, tenant_id, username, role, display_name
-            FROM users
-            WHERE id = ? AND is_active = 1
+            SELECT u.id, u.tenant_id, u.username, u.role, u.display_name, p.operator_code
+            FROM users u
+            LEFT JOIN operator_profiles p ON p.user_id = u.id AND p.tenant_id = u.tenant_id
+            WHERE u.id = ? AND u.tenant_id = ? AND u.is_active = 1
+              AND u.role IN ('admin', 'dispatcher', 'operations_manager')
             """,
-            (dispatcher_id,),
+            (dispatcher_id, tenant_id),
         ).fetchone()
     if user:
-        return _dispatcher_from_user(dict(user))
-    return {
-        "dispatcher_id": dispatcher_id,
-        "dispatcher_code": f"D{dispatcher_id:03d}",
-        "dispatcher_name": "移动调度",
-        "dispatcher_role": "dispatcher",
-        "tenant_id": get_current_tenant_id(),
-    }
+        row = dict(user)
+        return {
+            "dispatcher_id": int(row["id"]),
+            "dispatcher_code": row.get("operator_code") or f"D{int(row['id']):03d}",
+            "dispatcher_name": row.get("display_name") or row.get("username") or "调度员",
+            "dispatcher_role": row.get("role") or "dispatcher",
+            "tenant_id": int(row["tenant_id"]),
+        }
+    raise PermissionError("dispatcher_identity_not_found")
 
 
-def _payload_dispatcher(payload: dict[str, Any]) -> dict[str, Any]:
-    dispatcher_id = _to_int(payload.get("dispatcher_id")) or 1
-    loaded = _load_dispatcher(dispatcher_id)
-    return {
-        "dispatcher_id": dispatcher_id,
-        "dispatcher_code": payload.get("dispatcher_code") or loaded["dispatcher_code"],
-        "dispatcher_name": payload.get("dispatcher_name") or loaded["dispatcher_name"],
-        "dispatcher_role": payload.get("dispatcher_role") or loaded["dispatcher_role"],
-        "tenant_id": _to_int(payload.get("tenant_id")) or loaded["tenant_id"],
-    }
+def _payload_dispatcher(payload: dict[str, Any], principal: dict[str, Any]) -> dict[str, Any]:
+    return _dispatcher_from_user(principal)
 
 
 def _mark_drafts_dispatcher(draft_ids: list[int], dispatcher: dict[str, Any]) -> None:

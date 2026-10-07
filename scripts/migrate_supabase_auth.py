@@ -205,9 +205,6 @@ def apply_migration(db: Path, candidates: list[dict[str, Any]], platform_passwor
     updated = []
     failed = []
     for item in candidates:
-        if item.get("migration_blockers"):
-            continue
-        phone = _phone_key(item.get("phone"))
         email = str(item.get("auth_email") or account_login_email(item["source"], int(item["local_id"])))
         if item.get("supabase_user_id"):
             try:
@@ -219,6 +216,9 @@ def apply_migration(db: Path, candidates: list[dict[str, Any]], platform_passwor
             except SupabaseAuthError as exc:
                 failed.append({"source": item["source"], "local_id": item["local_id"], "error": str(exc)})
             continue
+        if item.get("migration_blockers"):
+            continue
+        phone = _phone_key(item.get("phone"))
         if phone:
             password = phone[-6:]
         elif email and platform_password:
@@ -265,9 +265,17 @@ def main() -> int:
     db = args.db.resolve()
     if not db.is_file():
         raise SystemExit(f"database_not_found:{db}")
+    platform_admin_email = str(args.platform_admin_email or "").strip().lower()
+    if not platform_admin_email:
+        try:
+            from backend.config import SUPABASE_PLATFORM_ADMIN_EMAIL
+
+            platform_admin_email = str(SUPABASE_PLATFORM_ADMIN_EMAIL or "").strip().lower()
+        except (ImportError, RuntimeError):
+            platform_admin_email = ""
     with sqlite3.connect(db) as conn:
         conn.row_factory = sqlite3.Row
-        result = scan(conn, args.platform_admin_email)
+        result = scan(conn, platform_admin_email)
     result.update({"database": str(db), "scanned_at": datetime.now(timezone.utc).isoformat(), "apply_requested": bool(args.apply)})
     if args.apply:
         structural_codes = {"users_table_missing", "auth_identity_schema_not_applied", "agency_auth_identity_schema_not_applied"}

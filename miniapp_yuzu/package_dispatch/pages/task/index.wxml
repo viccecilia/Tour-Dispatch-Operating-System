@@ -86,6 +86,27 @@
     </view>
   </view>
 
+  <view class="panel daily-report-panel">
+    <view class="panel-header-lite">
+      <view>
+        <view class="panel-title">当日司机日报</view>
+        <view class="muted">已预填本人 {{dailyReport.assignment_count || 0}} 单已发布任务。</view>
+      </view>
+      <view class="soft-count">{{dailyReport.status === 'submitted' ? '已提交' : '草稿'}}</view>
+    </view>
+    <view class="daily-report-card">
+      <textarea class="form-textarea" value="{{dailyReport.summary}}" data-key="summary" bindinput="onDailyReportInput" placeholder="记录实际行程、异常、代收或需跟进事项"></textarea>
+      <view class="form-field daily-report-rest">
+        <text class="form-label">休息时长（小时，可手填）</text>
+        <input class="form-input" value="{{dailyReport.rest_hours}}" data-key="rest_hours" type="digit" bindinput="onDailyReportInput" placeholder="例：8.0" />
+      </view>
+      <view class="daily-report-actions">
+        <button class="task-secondary" loading="{{dailyReportSaving}}" data-submit="false" bindtap="saveDailyReport">保存草稿</button>
+        <button class="task-primary compact" loading="{{dailyReportSaving}}" data-submit="true" bindtap="saveDailyReport">提交日报</button>
+      </view>
+    </view>
+  </view>
+
   <view wx:if="{{runDocuments.length}}" class="panel run-doc-panel">
     <view class="panel-header-lite">
       <view>

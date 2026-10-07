@@ -693,6 +693,86 @@ def list_driver_history(driver_id: Any, params: dict[str, Any] | None = None) ->
     return [dict(row) for row in rows]
 
 
+def get_driver_daily_report(driver_id: Any, business_date: str | None = None) -> dict[str, Any]:
+    """Return the driver's own daily-report draft together with a task prefill."""
+    driver_id_int = _to_int(driver_id)
+    day = str(business_date or date.today().isoformat())[:10]
+    if not driver_id_int:
+        return {"success": False, "error": "missing_driver_id"}
+    assignments = [item for item in list_driver_assignments(driver_id_int) if item.get("order_date") == day]
+    snapshot = [
+        {
+            "assignment_id": item.get("assignment_id"),
+            "order_id": item.get("order_id"),
+            "oid": item.get("oid"),
+            "start_time": item.get("start_time"),
+            "end_time": item.get("end_time"),
+            "pickup_location": item.get("pickup_location"),
+            "dropoff_location": item.get("dropoff_location"),
+            "execution_status": item.get("execution_status"),
+        }
+        for item in assignments
+    ]
+    with get_connection() as conn:
+        driver = conn.execute(
+            "SELECT id FROM drivers WHERE tenant_id = ? AND id = ?",
+            (get_current_tenant_id(), driver_id_int),
+        ).fetchone()
+        if not driver:
+            return {"success": False, "error": "driver_not_found"}
+        row = conn.execute(
+            """SELECT * FROM driver_daily_reports
+               WHERE tenant_id = ? AND driver_id = ? AND business_date = ?""",
+            (get_current_tenant_id(), driver_id_int, day),
+        ).fetchone()
+    report = dict(row) if row else {
+        "tenant_id": get_current_tenant_id(),
+        "driver_id": driver_id_int,
+        "business_date": day,
+        "status": "draft",
+        "summary": "",
+        "rest_hours": None,
+    }
+    report["assignments"] = snapshot
+    report["assignment_count"] = len(snapshot)
+    return {"success": True, "report": report}
+
+
+def save_driver_daily_report(payload: dict[str, Any]) -> dict[str, Any]:
+    """Save or submit a daily report for the currently scoped driver tenant."""
+    driver_id_int = _to_int(payload.get("driver_id"))
+    day = str(payload.get("business_date") or date.today().isoformat())[:10]
+    if not driver_id_int:
+        return {"success": False, "error": "missing_driver_id"}
+    rest_hours = _optional_float(payload.get("rest_hours"))
+    if rest_hours is not None and rest_hours < 0:
+        return {"success": False, "error": "invalid_rest_hours"}
+    current = get_driver_daily_report(driver_id_int, day)
+    if not current.get("success"):
+        return current
+    report = current["report"]
+    status = "submitted" if bool(payload.get("submit")) else (report.get("status") or "draft")
+    snapshot_json = json.dumps(report.get("assignments") or [], ensure_ascii=False)
+    summary = str(payload.get("summary") or "").strip()
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO driver_daily_reports (
+                   tenant_id, driver_id, business_date, status, assignment_snapshot_json,
+                   summary, rest_hours, submitted_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'submitted' THEN CURRENT_TIMESTAMP ELSE NULL END)
+               ON CONFLICT(tenant_id, driver_id, business_date) DO UPDATE SET
+                   status = excluded.status,
+                   assignment_snapshot_json = excluded.assignment_snapshot_json,
+                   summary = excluded.summary,
+                   rest_hours = excluded.rest_hours,
+                   submitted_at = CASE WHEN excluded.status = 'submitted' THEN CURRENT_TIMESTAMP ELSE driver_daily_reports.submitted_at END,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (get_current_tenant_id(), driver_id_int, day, status, snapshot_json, summary, rest_hours, status),
+        )
+        conn.commit()
+    return get_driver_daily_report(driver_id_int, day)
+
+
 def get_driver_workbench(driver_id: Any) -> dict[str, Any]:
     driver_id_int = _to_int(driver_id)
     today = date.today().isoformat()

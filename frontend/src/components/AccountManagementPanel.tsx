@@ -56,7 +56,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
   });
   const availableDrivers = useQuery({
     queryKey: ["account-driver-options", selectedTenantNumber || currentUser.tenant_id],
-    queryFn: () => api.resourceDrivers({ tenant_id: selectedTenantNumber || currentUser.tenant_id, status: "active" }),
+    queryFn: () => api.resourceDrivers({ tenant_id: selectedTenantNumber || currentUser.tenant_id }),
     enabled: Boolean(!platform || selectedTenantNumber),
   });
   const allowedRoleOptions: AccountRole[] = platform
@@ -153,7 +153,7 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
 
   const isDriver = form.role === "driver";
   const canCreate = Boolean(
-    (isDriver ? form.driver_id : (form.display_name.trim() && form.phone.trim() && form.operator_code.trim()))
+    (isDriver ? (form.driver_id && form.phone.trim()) : (form.display_name.trim() && form.phone.trim() && form.operator_code.trim()))
     && (!platform || selectedTenantNumber)
   );
 
@@ -241,8 +241,8 @@ export function AccountManagementPanel({ currentUser }: { currentUser: AuthUser 
               >
                 <option value="">选择司机资料</option>
                 {(availableDrivers.data || []).map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.name} · {driver.driver_code || driver.id} · {driver.phone || "未登记手机号"}
+                  <option key={driver.id} value={driver.id} disabled={!driver.phone}>
+                    {driver.name} · {driver.driver_code || driver.id} · {driver.phone || "未登记手机号（不可创建）"} · {driver.status || driver.driver_status || "状态未知"}
                   </option>
                 ))}
               </select>

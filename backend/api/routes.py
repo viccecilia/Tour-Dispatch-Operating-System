@@ -1,6 +1,7 @@
 import json
 import logging
 import mimetypes
+from datetime import date
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
@@ -116,6 +117,7 @@ from backend.services.driver_service import (
     get_driver_assignment,
     get_assignment_evidence_chain,
     get_driver_dashboard,
+    get_driver_daily_report,
     get_driver_profile,
     get_driver_workbench,
     get_order_evidence_chain,
@@ -131,6 +133,7 @@ from backend.services.driver_service import (
     submit_driver_location,
     submit_driver_report,
     submit_driver_workflow_event,
+    save_driver_daily_report,
     update_driver_profile,
     upload_driver_evidence,
     upload_driver_profile_document,
@@ -213,7 +216,9 @@ from backend.services.run_document_service import (
     review_run_document,
     resolve_run_document,
 )
+from backend.services.wechat_auth_service import WechatAuthError, login_with_wechat_code
 from backend.services.flight_info_service import build_flight_update, query_flight_info
+from backend.services.fixed_tour_service import copy_route as copy_fixed_tour_route, list_routes as list_fixed_tour_routes, list_today_runs as list_fixed_tour_today_runs, materialize as materialize_fixed_tour, route_detail as fixed_tour_route_detail, save_route as save_fixed_tour_route, set_route_status as set_fixed_tour_route_status, update_run as update_fixed_tour_run
 from backend.services.settings_service import (
     get_platform_auth_settings,
     get_reminder_settings,
@@ -376,14 +381,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not user:
                 return
         if path == "/api/dispatch-mobile/context":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            self.send_json(get_dispatcher_context(params))
+            self.send_json(get_dispatcher_context(params, principal))
             return
         if path == "/api/dispatch-mobile/dashboard":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            self.send_json(get_dispatcher_dashboard(params))
+            self.send_json(get_dispatcher_dashboard(params, principal))
             return
         if path == "/api/dispatch-mobile/shared-state":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -391,9 +398,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json(get_shared_runtime_state(params))
             return
         if path == "/api/dispatch-mobile/unassigned-orders":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            self.send_json({"orders": list_dispatcher_unassigned_orders(params)})
+            self.send_json({"orders": list_dispatcher_unassigned_orders(params, principal)})
             return
         if path == "/api/dispatch-mobile/drafts":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -409,6 +417,35 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json({"vehicles": list_available_vehicles()})
+            return
+        if path == "/api/dispatch-mobile/resource-search":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            resource_type = params.get("type", "")
+            query = params.get("q", "")
+            if resource_type == "fixed_route":
+                self.send_json({"items": list_fixed_tour_routes(query)})
+            elif resource_type == "driver":
+                self.send_json({"items": [item for item in list_available_drivers() if query.lower() in json.dumps(item, ensure_ascii=False).lower()]})
+            elif resource_type == "vehicle":
+                self.send_json({"items": [item for item in list_available_vehicles() if query.lower() in json.dumps(item, ensure_ascii=False).lower()]})
+            else:
+                self.send_json({"error": "resource_search_type_invalid"}, HTTPStatus.BAD_REQUEST)
+            return
+        if path == "/api/fixed-tour/routes":
+            user = self.require_role({"admin", "operations_manager"})
+            if not user:
+                return
+            tenant_id = resolve_tenant_filter(user, params.get("tenant_id"))
+            self.send_json({"routes": list_fixed_tour_routes(params.get("q", ""), params.get("include_inactive") == "1", tenant_id)})
+            return
+        if path.startswith("/api/fixed-tour/routes/"):
+            user = self.require_role({"admin", "operations_manager"})
+            if not user:
+                return
+            route_id = path.rsplit("/", 1)[-1]
+            route = fixed_tour_route_detail(route_id, resolve_tenant_filter(user, params.get("tenant_id")))
+            self.send_json({"route": route} if route else {"error": "fixed_tour_route_not_found"}, HTTPStatus.OK if route else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/dispatch-mobile/resource-library":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -433,6 +470,11 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json({"groups": list_run_groups(params.get("date"))})
+            return
+        if path == "/api/dispatch-mobile/fixed-tour/today-runs":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json({"runs": list_fixed_tour_today_runs(params.get("date") or date.today().isoformat())})
             return
         if path == "/api/run-documents/file":
             target = resolve_run_document(params.get("document_id") or 0, self.current_user())
@@ -468,9 +510,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json(list_finance_driver_expenses(params))
             return
         if path == "/api/dispatch-mobile/notifications":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            self.send_json(get_dispatcher_notifications(params))
+            self.send_json(get_dispatcher_notifications(params, principal))
             return
         if path == "/api/dispatch-mobile/audit-logs":
             if not self.require_role({"admin"}):
@@ -927,6 +970,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/driver/workflow-events":
             self.send_json({"events": list_driver_workflow_events(self.driver_id(params), params.get("date"))})
             return
+        if path == "/api/driver/daily-report":
+            self.send_json(get_driver_daily_report(self.driver_id(params), params.get("date")))
+            return
         if path == "/api/driver/expenses":
             self.send_json({"expenses": list_driver_expenses(self.driver_id(params), params)})
             return
@@ -994,9 +1040,27 @@ class ApiHandler(BaseHTTPRequestHandler):
         path = parsed.path
         params = self.query_params(parsed.query)
         payload = self.read_json()
+        if path == "/api/auth/wechat-login":
+            try:
+                result = login_with_wechat_code(payload.get("wx_code"), payload.get("client_type", ""))
+            except WechatAuthError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus(exc.status))
+                return
+            self.send_json(result)
+            return
         if path == "/api/agency-portal/login":
+            if payload.get("client_type") in {"agency_miniapp", "miniapp_agency"} and not payload.get("wx_code"):
+                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+                return
+            if payload.get("wx_code"):
+                try:
+                    payload.update(resolve_wechat_login_code(payload.get("wx_code"), payload.get("client_type", "agency_miniapp")))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                    return
             result = agency_portal_login(payload)
-            self.send_json(result if result else {"error": "invalid_agency_credentials"}, HTTPStatus.OK if result else HTTPStatus.UNAUTHORIZED)
+            ok = bool(result and not result.get("error"))
+            self.send_json(result if result else {"error": "invalid_agency_credentials"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
         if path == "/api/agency-portal/password":
             self.safe_agency(lambda: change_agency_portal_password(self.agency_token(), payload))
@@ -1041,16 +1105,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.safe_agency(lambda: upload_agency_payment_receipt(self.agency_token(), agency_payment_receipt_id, payload), HTTPStatus.CREATED)
             return
         if path == "/api/dispatch-mobile/login":
+            if payload.get("client_type") in {"dispatch_miniapp", "miniapp_dispatch", "company_lite"} and not payload.get("wx_code"):
+                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+                return
             if payload.get("wx_code") and not payload.get("wx_openid"):
                 try:
-                    payload.update(resolve_wechat_login_code(payload.get("wx_code")))
+                    payload.update(resolve_wechat_login_code(payload.get("wx_code"), payload.get("client_type", "dispatch_miniapp")))
                 except ValueError as exc:
-                    if str(exc) == "wechat_code_exchange_unavailable":
-                        payload.pop("wx_code", None)
-                        payload["client_type"] = "web"
-                    else:
-                        self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
-                        return
+                    self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                    return
             result = login_dispatcher(payload)
             ok = bool(result and not result.get("error"))
             log_operation("DISPATCHER_MOBILE_LOGIN_OK" if ok else "DISPATCHER_MOBILE_LOGIN_FAIL", path, {"username": payload.get("username", ""), "phone": payload.get("phone", ""), "error": result.get("error") if result else "invalid_dispatcher_credentials"}, payload.get("username", "") or payload.get("phone", ""))
@@ -1059,11 +1122,17 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/dispatch-mobile/wechat-login":
             if payload.get("code") and not payload.get("wx_code"):
                 payload["wx_code"] = payload.get("code")
-            if payload.get("openid") and not payload.get("wx_openid"):
+            if self.is_local_request() and payload.get("dev_mock_wechat_identity") and payload.get("openid") and not payload.get("wx_openid"):
                 payload["wx_openid"] = payload.get("openid")
-            if payload.get("unionid") and not payload.get("wx_unionid"):
+            if self.is_local_request() and payload.get("dev_mock_wechat_identity") and payload.get("unionid") and not payload.get("wx_unionid"):
                 payload["wx_unionid"] = payload.get("unionid")
             local_request = self.is_local_request()
+            if not local_request and not payload.get("wx_code"):
+                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+                return
+            if local_request and (payload.get("wx_openid") or payload.get("wx_unionid")) and not payload.get("dev_mock_wechat_identity"):
+                self.send_json({"error": "dev_mock_wechat_identity_required"}, HTTPStatus.BAD_REQUEST)
+                return
             if local_request and not payload.get("wx_code") and not payload.get("wx_openid"):
                 result = login_dispatcher_dev_mock(payload)
                 ok = bool(result and not result.get("error"))
@@ -1077,7 +1146,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             if payload.get("wx_code") and not payload.get("wx_openid"):
                 try:
-                    payload.update(resolve_wechat_login_code(payload.get("wx_code")))
+                    payload.update(resolve_wechat_login_code(payload.get("wx_code"), payload.get("client_type", "dispatch_miniapp")))
                 except ValueError as exc:
                     if local_request and str(exc) == "wechat_code_exchange_unavailable":
                         result = login_dispatcher_dev_mock(payload)
@@ -1102,7 +1171,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             )
             self.send_json(result if result else {"error": "wechat_not_bound"}, HTTPStatus.OK if ok else HTTPStatus.UNAUTHORIZED)
             return
-        public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/register", "/api/auth/refresh"}
+        public_auth_paths = {"/api/auth/login", "/api/auth/login-phone", "/api/auth/wechat-login", "/api/auth/register", "/api/auth/refresh"}
         public_dispatch_mobile_paths = {"/api/dispatch-mobile/login", "/api/dispatch-mobile/wechat-login"}
         if (path.startswith("/api/dispatch-mobile/") and path not in public_dispatch_mobile_paths) or path.startswith("/api/driver/"):
             if not self.require_api_user():
@@ -1125,16 +1194,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/auth/login-phone":
             phone_login_value = payload.get("phone") or payload.get("username") or payload.get("account") or ""
+            if payload.get("client_type") in {"driver_miniapp", "miniapp_driver", "dispatch_miniapp", "miniapp_dispatch", "company_lite", "agency_miniapp", "miniapp_agency"} and not payload.get("wx_code"):
+                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+                return
             if payload.get("wx_code") and not payload.get("wx_openid"):
                 try:
-                    payload.update(resolve_wechat_login_code(payload.get("wx_code")))
+                    payload.update(resolve_wechat_login_code(payload.get("wx_code"), payload.get("client_type", "web")))
                 except ValueError as exc:
-                    if str(exc) == "wechat_code_exchange_unavailable":
-                        payload.pop("wx_code", None)
-                        payload["client_type"] = "web"
-                    else:
-                        self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
-                        return
+                    self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                    return
             result = authenticate_phone(
                 phone_login_value,
                 payload.get("password", ""),
@@ -1185,10 +1253,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"user": user} if user else {"error": "user_not_found"}, HTTPStatus.OK if user else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/auth/admin/reset-password":
-            if not self.require_role({"admin"}):
+            actor_user = self.require_role({"admin"})
+            if not actor_user:
                 return
             try:
-                user = reset_user_password_to_phone_tail(payload.get("user_id"), self.actor_label())
+                user = reset_account_password(
+                    payload.get("user_id"),
+                    actor_user,
+                    int(actor_user.get("tenant_id") or 1),
+                )
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
@@ -1650,19 +1723,22 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json({"draft": draft, "parse_result": draft.get("parse_result"), "parse_status": draft["parse_status"]}, HTTPStatus.CREATED)
             return
         if path == "/api/dispatch-mobile/parser/text":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            self.send_json(parse_dispatcher_text(payload), HTTPStatus.CREATED)
+            self.send_json(parse_dispatcher_text(payload, principal), HTTPStatus.CREATED)
             return
         if path == "/api/dispatch-mobile/parser/daily":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            self.send_json(parse_dispatcher_daily_text(payload), HTTPStatus.OK)
+            self.send_json(parse_dispatcher_daily_text(payload, principal), HTTPStatus.OK)
             return
         if path == "/api/dispatch-mobile/order-context":
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            order = mark_order_dispatcher_context(payload.get("order_id"), payload, bool(payload.get("update_only")))
+            order = mark_order_dispatcher_context(payload.get("order_id"), payload, principal, bool(payload.get("update_only")))
             self.send_json({"ok": bool(order), "order": order} if order else {"ok": False, "error": "order_not_found"}, HTTPStatus.OK if order else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/dispatch-mobile/daily-import/assign":
@@ -1674,6 +1750,50 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.dispatch_assign_with_audit(payload, path)
+            return
+        if path == "/api/fixed-tour/routes":
+            user = self.require_role({"admin"})
+            if not user:
+                return
+            try:
+                route = save_fixed_tour_route(payload, resolve_write_tenant(user, payload.get("tenant_id")))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"route": route}, HTTPStatus.CREATED)
+            return
+        if path.startswith("/api/fixed-tour/routes/") and path.endswith("/copy"):
+            user = self.require_role({"admin"})
+            if not user: return
+            route_id = path.split("/")[-2]
+            try: self.send_json({"route": copy_fixed_tour_route(route_id, resolve_write_tenant(user, payload.get("tenant_id")))}, HTTPStatus.CREATED)
+            except ValueError as exc: self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if path.startswith("/api/fixed-tour/routes/") and path.endswith("/status"):
+            user = self.require_role({"admin"})
+            if not user: return
+            route_id = path.split("/")[-2]
+            try: self.send_json({"route": set_fixed_tour_route_status(route_id, str(payload.get("status") or ""), resolve_write_tenant(user, payload.get("tenant_id")))})
+            except ValueError as exc: self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if path == "/api/dispatch-mobile/fixed-tour/materialize":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                self.send_json(materialize_fixed_tour(payload, user), HTTPStatus.CREATED)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/runs/"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            run_id = path.rsplit("/", 1)[-1]
+            try:
+                self.send_json(update_fixed_tour_run(run_id, payload, user))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if path == "/api/dispatch-mobile/run-confirm":
             user = self.require_role({"admin", "dispatcher", "operations_manager"})
@@ -1756,21 +1876,23 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            draft = update_dispatcher_draft(mobile_draft_id, payload)
+            draft = update_dispatcher_draft(mobile_draft_id, payload, principal)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
             return
         mobile_confirm_id = self.match_dispatch_mobile_confirm_path(path)
         if mobile_confirm_id:
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
             result = confirm_draft(mobile_confirm_id)
             if result and result.get("order_id"):
-                result["order"] = mark_order_dispatcher_context(result["order_id"], payload) or result.get("order")
+                result["order"] = mark_order_dispatcher_context(result["order_id"], payload, principal) or result.get("order")
                 record_dispatch_mobile_audit(
                     "mobile_confirm_order",
-                    payload,
+                    get_dispatcher_context({}, principal)["dispatcher_context"],
                     entity_type="order",
                     entity_id=result.get("order_id"),
                     after=result,
@@ -1781,12 +1903,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         mobile_order_update_id = self.match_dispatch_mobile_order_update_path(path)
         if mobile_order_update_id:
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
             before = get_order(mobile_order_update_id)
             order = update_order(mobile_order_update_id, payload)
             if order:
-                mark_order_dispatcher_context(order["id"], payload, True)
+                mark_order_dispatcher_context(order["id"], payload, principal, True)
                 record_audit(
                     "order_update",
                     "order",
@@ -1799,7 +1922,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 )
                 record_dispatch_mobile_audit(
                     "mobile_order_update",
-                    payload,
+                    get_dispatcher_context({}, principal)["dispatcher_context"],
                     entity_type="order",
                     entity_id=order.get("id"),
                     before=before,
@@ -1823,6 +1946,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 summary=f"Driver report {payload.get('report_type')} for assignment {payload.get('assignment_id')}",
             )
             self.send_json(result)
+            return
+        if path == "/api/driver/daily-report":
+            self.send_json(save_driver_daily_report(payload))
             return
         if path == "/api/audit/scan":
             if not self.require_role({"admin"}):
@@ -1851,14 +1977,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         confirm_id = self.match_parser_confirm_path(path)
         if confirm_id:
-            if not self.require_role({"admin", "dispatcher"}):
+            principal = self.require_role({"admin", "dispatcher"})
+            if not principal:
                 return
             result = confirm_draft(confirm_id)
-            if result and result.get("order_id") and (payload.get("dispatcher_id") or payload.get("dispatcher_code") or payload.get("dispatcher_name")):
-                result["order"] = mark_order_dispatcher_context(result["order_id"], payload) or result.get("order")
+            if result and result.get("order_id"):
+                result["order"] = mark_order_dispatcher_context(result["order_id"], payload, principal) or result.get("order")
                 record_dispatch_mobile_audit(
                     "mobile_confirm_order",
-                    payload,
+                    get_dispatcher_context({}, principal)["dispatcher_context"],
                     entity_type="order",
                     entity_id=result.get("order_id"),
                     after=result,
@@ -1876,9 +2003,10 @@ class ApiHandler(BaseHTTPRequestHandler):
         payload = self.read_json()
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            draft = update_dispatcher_draft(mobile_draft_id, payload)
+            draft = update_dispatcher_draft(mobile_draft_id, payload, principal)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
             return
         agency_order_id = self._match_prefixed_id(path, "/api/agency-portal/orders/")
@@ -1972,9 +2100,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         mobile_draft_id = self.match_dispatch_mobile_draft_path(path)
         if mobile_draft_id:
-            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+            principal = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not principal:
                 return
-            draft = update_dispatcher_draft(mobile_draft_id, payload)
+            draft = update_dispatcher_draft(mobile_draft_id, payload, principal)
             self.send_json({"draft": draft} if draft else {"error": "draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
             return
         order_id = self.match_order_path(path)
@@ -2316,7 +2445,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         )
         record_dispatch_mobile_audit(
             "mobile_daily_import_assign" if not publish_assignment else "mobile_dispatch_assign",
-            payload,
+            get_dispatcher_context({}, self.current_user())["dispatcher_context"],
             entity_type="assignment",
             entity_id=entity_id,
             after=result,
@@ -2351,7 +2480,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             )
             record_dispatch_mobile_audit(
                 "mobile_daily_import_assign",
-                payload,
+                get_dispatcher_context({}, self.current_user())["dispatcher_context"],
                 entity_type="assignment",
                 entity_id=entity_id,
                 after=result,

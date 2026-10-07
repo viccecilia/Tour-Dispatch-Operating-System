@@ -90,6 +90,10 @@ module.exports = {
     method: 'POST',
     data: { phone, password, wx_code: wxCode, client_type: 'driver_miniapp' }
   }),
+  loginWechat: (wxCode) => request('/api/auth/wechat-login', {
+    method: 'POST',
+    data: { wx_code: wxCode, client_type: 'driver_miniapp' }
+  }),
   registerPhone: (data) => request('/api/auth/register', {
     method: 'POST',
     data: { ...data, client_type: data.client_type || 'driver_miniapp' }
@@ -148,6 +152,8 @@ module.exports = {
   updateDriverProfile: (data) => request('/api/driver/profile', { method: 'POST', data }),
   driverWorkbench: () => request('/api/driver/workbench'),
   driverWorkflowEvents: () => request('/api/driver/workflow-events'),
+  driverDailyReport: (date) => request(`/api/driver/daily-report${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+  saveDriverDailyReport: (data) => request('/api/driver/daily-report', { method: 'POST', data }),
   submitDriverWorkflowEvent: (data) => request('/api/driver/workflow-event', { method: 'POST', data }),
   driverExpenses: () => request('/api/driver/expenses'),
   submitDriverExpense: (data) => request('/api/driver/expense', { method: 'POST', data }),

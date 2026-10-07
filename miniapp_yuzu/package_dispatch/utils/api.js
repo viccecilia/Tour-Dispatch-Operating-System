@@ -179,7 +179,6 @@ function request(path, options = {}) {
             path,
             method: options.method || 'GET',
             statusCode: res.statusCode,
-            requestPayload,
             responseBody: res.data
           });
           if (res.statusCode === 401 && !options._retried && path.indexOf('/login') < 0 && session && session.refresh_token) {
@@ -206,7 +205,6 @@ function request(path, options = {}) {
           path,
           method: options.method || 'GET',
           baseUrl: API_CONFIG.baseUrl,
-          requestPayload,
           error: err
         });
         const errMsg = err && err.errMsg ? String(err.errMsg) : '';
@@ -268,23 +266,7 @@ function refreshSession(refreshToken) {
 
 function buildWechatLoginPayload(wxCode = '', overrides = {}) {
   const code = String(wxCode || '').trim();
-  const local = isLocalBaseUrl();
-  const payload = {
-    code,
-    wx_code: code,
-    driver_code: overrides.driver_code || overrides.mock_driver_code || '',
-    openid: overrides.openid || overrides.wx_openid || '',
-    wx_openid: overrides.wx_openid || overrides.openid || '',
-    phone: overrides.phone || '',
-    client_type: 'dispatch_miniapp'
-  };
-  if (local) {
-    payload.mock_dev = true;
-    payload.mock_driver_id = overrides.mock_driver_id || 'D411';
-    payload.mock_driver_code = overrides.mock_driver_code || overrides.driver_code || 'SKR-D02';
-  }
-  console.info('[dispatch-mobile wechat-login payload]', payload);
-  return payload;
+  return { wx_code: code, client_type: 'dispatch_miniapp' };
 }
 
 function toQuery(params = {}) {
@@ -332,7 +314,7 @@ module.exports = {
   appConfig: () => request('/api/dispatch-mobile/app-config'),
   login: (username, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
   loginPhone: (phone, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
-  loginWechat: (wxCode, overrides = {}) => request('/api/dispatch-mobile/wechat-login', { method: 'POST', data: buildWechatLoginPayload(wxCode, overrides) }),
+  loginWechat: (wxCode, overrides = {}) => request('/api/auth/wechat-login', { method: 'POST', data: buildWechatLoginPayload(wxCode, overrides) }),
   registerPhone: (data) => request('/api/auth/register', { method: 'POST', data: { ...data, client_type: data.client_type || 'dispatch_miniapp' } }),
   context: () => {
     const session = getSession();
@@ -369,6 +351,8 @@ module.exports = {
   markDriverNotificationRead: (_driverId, notificationId) => request(`/api/driver/notifications/${notificationId}/read`, { method: 'POST', data: {} }),
   driverAssignments: () => request('/api/driver/assignments'),
   driverWorkbench: () => request('/api/driver/workbench'),
+  driverDailyReport: (date) => request(`/api/driver/daily-report${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+  saveDriverDailyReport: (data) => request('/api/driver/daily-report', { method: 'POST', data }),
   driverProfile: () => request('/api/driver/profile'),
   updateDriverProfile: (data) => request('/api/driver/profile', { method: 'POST', data }),
   uploadDriverProfileDocument: (data) => request('/api/driver/profile-document', { method: 'POST', data }),
@@ -388,6 +372,9 @@ module.exports = {
   orderHistory: (orderId) => request(`/api/audit/history?entity_type=order&entity_id=${orderId}&limit=30`),
   drivers: () => request('/api/dispatch-mobile/drivers'),
   vehicles: () => request('/api/dispatch-mobile/vehicles'),
+  resourceSearch: (type, q = '', date = '', routeId = '') => request(`/api/dispatch-mobile/resource-search${toQuery({ type, q, date, route_id: routeId })}`),
+  fixedTourRoutes: (q = '') => request(`/api/fixed-tour/routes${toQuery({ q })}`),
+  materializeFixedTour: (payload) => request('/api/dispatch-mobile/fixed-tour/materialize', { method: 'POST', data: withDispatcher(payload) }),
   resourceDrivers: (status = '') => request(`/api/resources/drivers${toQuery({ status })}`),
   updateResourceDriver: (id, data) => request(`/api/resources/drivers/${id}`, { method: 'PUT', data }),
   deleteResourceDriver: (id) => request(`/api/resources/drivers/${id}`, { method: 'DELETE' }),

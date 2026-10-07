@@ -123,9 +123,18 @@ function request(path, options = {}) {
             path,
             method: options.method || 'GET',
             statusCode: res.statusCode,
-            requestPayload,
             responseBody: res.data
           });
+          if (res.statusCode === 401 && !options._retried && path.indexOf('/login') < 0 && session && session.refresh_token) {
+            refreshSession(session.refresh_token).then(() => {
+              request(path, { ...options, _retried: true }).then(resolve).catch(reject);
+            }).catch(() => {
+              clearSession();
+              wx.reLaunch({ url: '/package_company_lite/pages/home/index' });
+              reject(res.data || { error: 'unauthorized' });
+            });
+            return;
+          }
           if (res.statusCode === 401 && path.indexOf('/login') < 0) {
             clearSession();
             wx.reLaunch({ url: '/package_company_lite/pages/home/index' });
@@ -140,7 +149,6 @@ function request(path, options = {}) {
           path,
           method: options.method || 'GET',
           baseUrl: API_CONFIG.baseUrl,
-          requestPayload,
           error: err
         });
         const errMsg = err && err.errMsg ? String(err.errMsg) : '';
@@ -155,25 +163,26 @@ function request(path, options = {}) {
   });
 }
 
+function refreshSession(refreshToken) {
+  return new Promise((resolve, reject) => wx.request({
+    url: `${API_CONFIG.baseUrl}/api/auth/refresh`,
+    method: 'POST',
+    data: { refresh_token: refreshToken },
+    timeout: REQUEST_TIMEOUT_MS,
+    header: { 'Content-Type': 'application/json' },
+    success: (res) => {
+      if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.token) {
+        setSession(res.data);
+        resolve(res.data);
+      } else reject(res.data || { error: 'invalid_refresh_token' });
+    },
+    fail: reject
+  }));
+}
+
 function buildWechatLoginPayload(wxCode = '', overrides = {}) {
   const code = String(wxCode || '').trim();
-  const local = isLocalBaseUrl();
-  const payload = {
-    code,
-    wx_code: code,
-    driver_code: overrides.driver_code || overrides.mock_driver_code || '',
-    openid: overrides.openid || overrides.wx_openid || '',
-    wx_openid: overrides.wx_openid || overrides.openid || '',
-    phone: overrides.phone || '',
-    client_type: 'dispatch_miniapp'
-  };
-  if (local) {
-    payload.mock_dev = true;
-    payload.mock_driver_id = overrides.mock_driver_id || 'D411';
-    payload.mock_driver_code = overrides.mock_driver_code || overrides.driver_code || 'SKR-D02';
-  }
-  console.info('[dispatch-mobile wechat-login payload]', payload);
-  return payload;
+  return { wx_code: code, client_type: 'company_lite' };
 }
 
 function toQuery(params = {}) {
@@ -219,7 +228,7 @@ module.exports = {
   appConfig: () => request('/api/dispatch-mobile/app-config'),
   login: (username, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { username, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
   loginPhone: (phone, password, wxCode = '') => request('/api/dispatch-mobile/login', { method: 'POST', data: { phone, password, wx_code: wxCode, client_type: wxCode ? 'dispatch_miniapp' : 'web' } }),
-  loginWechat: (wxCode, overrides = {}) => request('/api/dispatch-mobile/wechat-login', { method: 'POST', data: buildWechatLoginPayload(wxCode, overrides) }),
+  loginWechat: (wxCode, overrides = {}) => request('/api/auth/wechat-login', { method: 'POST', data: buildWechatLoginPayload(wxCode, overrides) }),
   registerPhone: (data) => request('/api/auth/register', { method: 'POST', data: { ...data, client_type: data.client_type || 'dispatch_miniapp' } }),
   context: () => {
     const session = getSession();

@@ -63,7 +63,6 @@ function request(path, options = {}) {
             path,
             method: options.method || 'GET',
             statusCode: res.statusCode,
-            requestPayload,
             responseBody: payload
           });
           reject(payload.error ? payload : { error: `request_failed_${res.statusCode}` });
@@ -79,7 +78,6 @@ function request(path, options = {}) {
           path,
           method: options.method || 'GET',
           baseUrl: API_CONFIG.baseUrl,
-          requestPayload,
           error
         });
         const errMsg = error && error.errMsg ? String(error.errMsg) : '';
@@ -94,10 +92,20 @@ function request(path, options = {}) {
   });
 }
 
-function loginAgency(loginCode, password) {
+function loginAgency(loginCode, password, wxCode = '') {
   return request('/api/agency-portal/login', {
     method: 'POST',
-    data: { portal_code: loginCode, password }
+    data: { portal_code: loginCode, password, wx_code: wxCode, client_type: 'agency_miniapp' }
+  });
+}
+
+function loginWechat(wxCode, port) {
+  return request('/api/auth/wechat-login', {
+    method: 'POST',
+    data: {
+      wx_code: wxCode,
+      client_type: port === 'agency' ? 'agency_miniapp' : 'dispatch_miniapp'
+    }
   });
 }
 
@@ -123,5 +131,6 @@ module.exports = {
   syncEnvironmentBaseUrl,
   request,
   loginAgency,
-  loginDispatch
+  loginDispatch,
+  loginWechat
 };

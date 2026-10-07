@@ -306,10 +306,17 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
     return dict(row)
 
 
-def mark_order_changed(order_id: Any, before: dict[str, Any], after: dict[str, Any], tenant_id: int | None = None) -> bool:
+def mark_order_changed(
+    order_id: Any,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    tenant_id: int | None = None,
+    *,
+    force: bool = False,
+) -> bool:
     if not before or not after:
         return False
-    changed = any(_normalized(before.get(key)) != _normalized(after.get(key)) for key in EDITABLE_FIELDS)
+    changed = force or any(_normalized(before.get(key)) != _normalized(after.get(key)) for key in EDITABLE_FIELDS)
     if not changed:
         return False
     tenant = int(tenant_id or after.get("tenant_id") or get_current_tenant_id())
@@ -333,6 +340,19 @@ def mark_order_changed(order_id: Any, before: dict[str, Any], after: dict[str, A
                 _mark_group_stale(conn, tenant, str(after.get("order_date")), assignment["driver_id"], assignment["vehicle_id"])
         conn.commit()
     return True
+
+
+def mark_run_group_stale(
+    business_date: Any,
+    driver_id: Any,
+    vehicle_id: Any,
+    tenant_id: int | None = None,
+) -> None:
+    """Invalidate the existing packet for an assignment group without a renderer change."""
+    tenant = int(tenant_id or get_current_tenant_id())
+    with closing(get_connection()) as conn:
+        _mark_group_stale(conn, tenant, str(business_date), int(driver_id), int(vehicle_id))
+        conn.commit()
 
 
 def generate_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, Any]:

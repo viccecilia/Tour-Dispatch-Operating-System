@@ -10,6 +10,7 @@ from backend.db.database import get_connection
 from backend.services.account_policy import assert_can_grant_role, assert_can_manage_target
 from backend.services.auth_account_service import (
     SupabaseAuthError,
+    account_login_email,
     create_supabase_account,
     delete_supabase_account,
     disable_supabase_account,
@@ -71,6 +72,10 @@ def ensure_travel_agency_schema() -> None:
                 password_seed TEXT,
                 must_change_password INTEGER NOT NULL DEFAULT 1,
                 wx_openid TEXT,
+                wx_unionid TEXT,
+                wx_appid TEXT,
+                wx_client_type TEXT,
+                wx_bound_at TEXT,
                 wx_bind_status TEXT NOT NULL DEFAULT 'unbound',
                 status TEXT NOT NULL DEFAULT 'active',
                 permissions_json TEXT NOT NULL DEFAULT '[]',
@@ -87,6 +92,10 @@ def ensure_travel_agency_schema() -> None:
             "supabase_user_id": "TEXT",
             "auth_linked_at": "TEXT",
             "last_login_at": "TEXT",
+            "wx_unionid": "TEXT",
+            "wx_appid": "TEXT",
+            "wx_client_type": "TEXT",
+            "wx_bound_at": "TEXT",
         }.items():
             if name not in existing_account_columns:
                 conn.execute(f"ALTER TABLE travel_agency_accounts ADD COLUMN {name} {definition}")
@@ -294,26 +303,13 @@ def create_company(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
                 ),
             )
             company_id = cursor.lastrowid
-            if supabase_enabled():
-                remote = create_supabase_account(
-                    master_phone,
-                    _phone_tail(master_phone),
-                    app_metadata={
-                        "account_scope": "agency",
-                        "role": "agency_owner",
-                        "tenant_id": tenant_id,
-                        "organization_id": company_id,
-                    },
-                )
-                auth_user_id = str(remote.get("id") or "")
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO travel_agency_accounts (
                     tenant_id, company_id, role, display_name, phone, password_seed,
-                    must_change_password, permissions_json, updated_at,
-                    supabase_user_id, auth_linked_at
+                    must_change_password, permissions_json, updated_at
                 )
-                VALUES (?, ?, 'agency_owner', ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, ?, CASE WHEN ? <> '' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                VALUES (?, ?, 'agency_owner', ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     tenant_id,
@@ -322,10 +318,29 @@ def create_company(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
                     master_phone,
                     None if supabase_enabled() else _phone_tail(master_phone),
                     _json(ROLE_MATRIX["agency_owner"]),
-                    auth_user_id or None,
-                    auth_user_id,
                 ),
             )
+            account_id = int(cursor.lastrowid)
+            if supabase_enabled():
+                remote = create_supabase_account(
+                    master_phone,
+                    _phone_tail(master_phone),
+                    email=account_login_email("travel_agency_accounts", account_id),
+                    app_metadata={
+                        "account_scope": "agency",
+                        "role": "agency_owner",
+                        "tenant_id": tenant_id,
+                        "organization_id": company_id,
+                        "agency_account_id": account_id,
+                    },
+                )
+                auth_user_id = str(remote.get("id") or "")
+                if not auth_user_id:
+                    raise ValueError("supabase_identity_create_failed")
+                conn.execute(
+                    "UPDATE travel_agency_accounts SET supabase_user_id = ?, auth_linked_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (auth_user_id, account_id),
+                )
             _audit(conn, tenant_id, company_id, _actor_label(actor), "company_create", "travel_agency_company", company_id, None, payload)
             conn.commit()
         except Exception:
@@ -383,21 +398,6 @@ def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
         _require_company(conn, tenant_id, company_id)
         if _phone_exists(conn, phone):
             raise ValueError("account_phone_exists")
-    if supabase_enabled():
-        try:
-            remote = create_supabase_account(
-                phone,
-                _phone_tail(phone),
-                app_metadata={
-                    "account_scope": "agency",
-                    "role": role,
-                    "tenant_id": tenant_id,
-                    "organization_id": company_id,
-                },
-            )
-            auth_user_id = str(remote.get("id") or "")
-        except SupabaseAuthError as exc:
-            raise ValueError(str(exc)) from exc
     try:
         with get_connection() as conn:
             _require_company(conn, tenant_id, company_id)
@@ -405,10 +405,9 @@ def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
                 """
                 INSERT INTO travel_agency_accounts (
                     tenant_id, company_id, role, display_name, phone, password_seed,
-                    must_change_password, permissions_json, updated_at,
-                    supabase_user_id, auth_linked_at
+                    must_change_password, permissions_json, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, ?, CASE WHEN ? <> '' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     tenant_id,
@@ -418,11 +417,32 @@ def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
                     phone,
                     None if supabase_enabled() else _phone_tail(phone),
                     _json(ROLE_MATRIX[role]),
-                    auth_user_id or None,
-                    auth_user_id,
                 ),
             )
             account_id = cursor.lastrowid
+            if supabase_enabled():
+                try:
+                    remote = create_supabase_account(
+                        phone,
+                        _phone_tail(phone),
+                        email=account_login_email("travel_agency_accounts", int(account_id)),
+                        app_metadata={
+                            "account_scope": "agency",
+                            "role": role,
+                            "tenant_id": tenant_id,
+                            "organization_id": company_id,
+                            "agency_account_id": int(account_id),
+                        },
+                    )
+                except SupabaseAuthError as exc:
+                    raise ValueError(str(exc)) from exc
+                auth_user_id = str(remote.get("id") or "")
+                if not auth_user_id:
+                    raise ValueError("supabase_identity_create_failed")
+                conn.execute(
+                    "UPDATE travel_agency_accounts SET supabase_user_id = ?, auth_linked_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (auth_user_id, account_id),
+                )
             _audit(conn, tenant_id, company_id, _actor_label(actor), "account_create", "travel_agency_account", account_id, None, payload)
             conn.commit()
     except Exception:
@@ -591,7 +611,9 @@ def unbind_account_wechat(account_id: int | str, actor: dict[str, Any]) -> dict[
         conn.execute(
             """
             UPDATE travel_agency_accounts
-            SET wx_openid = NULL, wx_bind_status = 'unbound', updated_at = CURRENT_TIMESTAMP
+            SET wx_openid = NULL, wx_unionid = NULL, wx_appid = NULL,
+                wx_client_type = NULL, wx_bound_at = NULL,
+                wx_bind_status = 'unbound', updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = ? AND id = ?
             """,
             (tenant_id, int(row["id"])),

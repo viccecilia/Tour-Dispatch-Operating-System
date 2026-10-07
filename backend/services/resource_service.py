@@ -120,9 +120,12 @@ def list_drivers(status: str | None = None, tenant_id: int | None | object = _DE
                d.driver_external_id, d.license_number, d.residence_status, d.residence_due_date,
                health_check_remaining_days, wechat, line, whatsapp, kakao, email,
                license_due_date, health_check_due_date, license_file_url, health_check_file_url, license_expires_at, medical_check_expires_at,
-               d.created_at, d.updated_at
+               d.created_at, d.updated_at,
+               CASE WHEN u.id IS NULL THEN 0 ELSE 1 END AS account_bound,
+               COALESCE(u.wx_bind_status, 'unbound') AS wx_bind_status
         FROM drivers d
         LEFT JOIN tenants t ON t.id = d.tenant_id
+        LEFT JOIN users u ON u.id = d.user_id AND u.tenant_id = d.tenant_id AND u.is_active = 1
         WHERE 1 = 1
         """
     ]
@@ -138,7 +141,7 @@ def list_drivers(status: str | None = None, tenant_id: int | None | object = _DE
         params.append(status)
     elif not include_archived:
         sql.append("AND COALESCE(d.status, '') NOT IN ('deleted', 'retired')")
-    sql.append("ORDER BY t.name, CASE d.status WHEN 'available' THEN 0 WHEN 'busy' THEN 1 WHEN 'resting' THEN 2 ELSE 3 END, d.id")
+    sql.append("ORDER BY t.name, CASE WHEN u.id IS NULL THEN 0 ELSE 1 END, CASE d.status WHEN 'available' THEN 0 WHEN 'busy' THEN 1 WHEN 'resting' THEN 2 ELSE 3 END, d.id")
     with get_connection() as conn:
         return [_with_resource_alert(dict(row), "driver") for row in conn.execute(" ".join(sql), params).fetchall()]
 

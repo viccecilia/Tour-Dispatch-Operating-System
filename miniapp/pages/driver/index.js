@@ -129,6 +129,7 @@ Page({
     });
     this.startClock();
     if (savedSession) this.loadAll();
+    else if (!wx.getStorageSync('driver_manual_logout')) this.tryWechatAutoLogin();
   },
 
   onShow() {
@@ -1135,6 +1136,7 @@ Page({
         throw new Error('driver_profile_not_bound');
       }
       wx.setStorageSync('driver_session', res);
+      wx.removeStorageSync('driver_manual_logout');
       this.setData({
         authSession: res,
         driverId,
@@ -1157,6 +1159,24 @@ Page({
     });
   },
 
+  tryWechatAutoLogin() {
+    this.setData({ loginLoading: true, loginError: '' });
+    this.getWechatLoginCode()
+      .then((wxCode) => api.loginWechat(wxCode))
+      .then((res) => {
+        if (!res || !res.token || !res.user || res.user.role !== 'driver' || !res.user.profile_id) {
+          throw new Error('not_driver_account');
+        }
+        wx.setStorageSync('driver_session', res);
+        this.setData({ authSession: res, driverId: Number(res.user.profile_id), loginLoading: false, loginError: '' });
+        return this.loadAll();
+      })
+      .catch((err) => {
+        const code = err && (err.error || err.message);
+        this.setData({ loginLoading: false, loginError: code === 'wechat_not_bound' ? '' : '微信自动登录失败，请使用手机号登录' });
+      });
+  },
+
   getWechatLoginCode() {
     return new Promise((resolve, reject) => {
       wx.login({
@@ -1170,6 +1190,7 @@ Page({
   },
 
   logoutDriver() {
+    wx.setStorageSync('driver_manual_logout', true);
     wx.removeStorageSync('driver_session');
     this.setData({
       authSession: null,

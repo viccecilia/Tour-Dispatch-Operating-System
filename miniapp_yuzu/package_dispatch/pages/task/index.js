@@ -60,6 +60,8 @@ Page({
       alcohol: { file_name: '', image_base64: '' },
       daily_report: { file_name: '', image_base64: '' }
     },
+    dailyReport: { status: 'draft', assignment_count: 0, assignments: [], summary: '', rest_hours: '' },
+    dailyReportSaving: false,
     message: '',
     loading: false,
     submitting: false
@@ -114,9 +116,10 @@ Page({
     Promise.all([
       api.driverAssignments(this.data.driverId),
       api.driverWorkbench(this.data.driverId).catch(() => ({})),
-      api.driverRunDocuments(this.data.driverId).catch(() => ({ documents: [] }))
+      api.driverRunDocuments(this.data.driverId).catch(() => ({ documents: [] })),
+      api.driverDailyReport(this.data.selectedDate || this.data.today).catch(() => ({ report: {} }))
     ])
-      .then(([res, workbench, documentsRes]) => {
+      .then(([res, workbench, documentsRes, dailyReportRes]) => {
         const allRows = (res.assignments || []).map((item) => this.decorateAssignment(item));
         const selectedDate = this.data.selectedDate || this.data.today;
         const selectedRows = allRows.filter((item) => this.isOnDate(item, selectedDate));
@@ -137,6 +140,13 @@ Page({
             title: `${item.business_date} 运行文件`,
             meta: `${item.plate_number || ''} · PDF V${item.version} · ${item.page_count || 0}页`
           })),
+          dailyReport: {
+            status: (dailyReportRes.report || {}).status || 'draft',
+            assignment_count: (dailyReportRes.report || {}).assignment_count || 0,
+            assignments: (dailyReportRes.report || {}).assignments || [],
+            summary: (dailyReportRes.report || {}).summary || '',
+            rest_hours: (dailyReportRes.report || {}).rest_hours === null || (dailyReportRes.report || {}).rest_hours === undefined ? '' : String((dailyReportRes.report || {}).rest_hours)
+          },
           loading: false
         });
         this.applySelectedDate();
@@ -230,6 +240,7 @@ Page({
       selectedDayAnchor: this.dayAnchor(date)
     });
     this.applySelectedDate();
+    this.loadTasks();
   },
 
   toggleMonth() {
@@ -249,6 +260,7 @@ Page({
       showMonth: true
     });
     this.applySelectedDate();
+    this.loadTasks();
   },
 
   toggleTask(e) {
@@ -444,6 +456,38 @@ Page({
       name: item.file_name || `${kind}.jpg`,
       image_base64: item.image_base64
     };
+  },
+
+  onDailyReportInput(event) {
+    const key = event.currentTarget.dataset.key;
+    this.setData({ [`dailyReport.${key}`]: event.detail.value });
+  },
+
+  saveDailyReport(event) {
+    if (this.data.dailyReportSaving) return;
+    const submit = event.currentTarget.dataset.submit === 'true';
+    this.setData({ dailyReportSaving: true, message: '' });
+    api.saveDriverDailyReport({
+      driver_id: this.data.driverId,
+      business_date: this.data.selectedDate || this.data.today,
+      summary: this.data.dailyReport.summary,
+      rest_hours: this.data.dailyReport.rest_hours,
+      submit
+    }).then((result) => {
+      if (!result || result.success === false) throw result || new Error('daily_report_save_failed');
+      const report = result.report || {};
+      this.setData({
+        dailyReportSaving: false,
+        'dailyReport.status': report.status || (submit ? 'submitted' : 'draft'),
+        'dailyReport.assignment_count': report.assignment_count || 0,
+        'dailyReport.assignments': report.assignments || [],
+        'dailyReport.summary': report.summary || '',
+        'dailyReport.rest_hours': report.rest_hours === null || report.rest_hours === undefined ? '' : String(report.rest_hours)
+      });
+      wx.showToast({ title: submit ? '日报已提交' : '日报已保存', icon: 'success' });
+    }).catch(() => {
+      this.setData({ dailyReportSaving: false, message: '日报保存失败，请稍后重试。' });
+    });
   },
 
   submitYardEvent(eventType, extra, successTitle, options = {}) {

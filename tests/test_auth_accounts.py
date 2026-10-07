@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from backend.db import database
-from backend.services import auth_account_service, auth_service
+from backend.services import auth_account_service, auth_service, dispatcher_mobile_service, wechat_auth_service
 from backend.services.travel_agency_service import ensure_travel_agency_schema
 from backend.services.account_policy import (
     AGENCY_OWNER_GRANTS,
@@ -73,6 +73,15 @@ class SupabaseIdentityTest(unittest.TestCase):
                     supabase_user_id, is_active
                 ) VALUES (11, 1, 'driver-a', 'legacy', 'driver', 'Driver A',
                           '08000000001', 'driver', 101, 'driver', 'auth-driver-a', 1)
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO users (
+                    id, tenant_id, username, password_hash, role, display_name,
+                    phone, profile_type, account_scope, supabase_user_id, is_active
+                ) VALUES (13, 1, 'dispatcher-a', 'legacy', 'dispatcher', 'Dispatcher A',
+                          '08000000003', 'operator', 'carrier', 'auth-dispatcher-a', 1)
                 """
             )
             conn.execute(
@@ -165,7 +174,10 @@ class SupabaseIdentityTest(unittest.TestCase):
         self.assertEqual(row["wx_openid"], "wx-first-login")
         self.assertEqual(row["wx_bind_status"], "bound")
 
-        with patch.object(auth_service, "supabase_enabled", return_value=True):
+        with (
+            patch.object(auth_service, "supabase_enabled", return_value=True),
+            patch.object(wechat_auth_service, "issue_supabase_session", return_value=session),
+        ):
             wechat_result = auth_service.authenticate_wechat(
                 wx_openid="wx-first-login",
                 client_type="driver_miniapp",
@@ -180,12 +192,30 @@ class SupabaseIdentityTest(unittest.TestCase):
             )
             conn.commit()
         with patch.object(auth_service, "supabase_enabled", return_value=True):
-            self.assertIsNone(
+            with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
                 auth_service.authenticate_wechat(
                     wx_openid="wx-unlinked",
                     client_type="driver_miniapp",
                 )
+        self.assertEqual(str(error.exception), "supabase_identity_required")
+
+    def test_unbound_wechat_requires_first_password_login(self):
+        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+            wechat_auth_service.login_with_wechat_identity(
+                {"wx_openid": "never-bound", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"}
             )
+        self.assertEqual(str(error.exception), "wechat_not_bound")
+
+    def test_inactive_bound_account_cannot_auto_login(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
+        identity = {"wx_openid": "disabled-driver", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"}
+        wechat_auth_service.bind_principal_wechat(principal, identity)
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE users SET is_active = 0 WHERE id = 11")
+            conn.commit()
+        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+            wechat_auth_service.login_with_wechat_identity(identity)
+        self.assertEqual(str(error.exception), "account_disabled")
 
     def test_jwt_validation_requires_signature_exp_issuer_and_audience(self):
         fake_client = Mock()
@@ -202,6 +232,122 @@ class SupabaseIdentityTest(unittest.TestCase):
         self.assertEqual(kwargs["audience"], "authenticated")
         self.assertEqual(kwargs["issuer"], "https://example.supabase.co/auth/v1")
         self.assertEqual(set(kwargs["options"]["require"]), {"exp", "sub", "iss", "aud"})
+
+    def test_account_creation_writes_phone_and_hidden_email(self):
+        calls = []
+        with (
+            patch.object(auth_account_service, "_require_admin_key"),
+            patch.object(auth_account_service, "_request_json", side_effect=lambda method, path, payload, **kwargs: calls.append(payload) or {"id": "new"}),
+        ):
+            auth_account_service.create_supabase_account(
+                "080-0000-0001",
+                "secret1",
+                email=auth_account_service.account_login_email("users", 99),
+            )
+        self.assertEqual(calls[0]["phone"], "+818000000001")
+        self.assertEqual(calls[0]["email"], "tourflow-user-99@auth.taxi-airport.jp")
+        self.assertTrue(calls[0]["phone_confirm"])
+        self.assertTrue(calls[0]["email_confirm"])
+
+    def test_supabase_session_uses_admin_link_then_verify_otp(self):
+        requests = []
+        responses = [
+            {"id": "auth-driver-a", "email": "tourflow-user-11@auth.taxi-airport.jp"},
+            {"properties": {"hashed_token": "one-time-hash"}},
+            {"access_token": "real-access", "refresh_token": "real-refresh", "user": {"id": "auth-driver-a"}},
+        ]
+        with (
+            patch.object(auth_account_service, "_require_admin_key"),
+            patch.object(auth_account_service, "_request_json", side_effect=lambda *args, **kwargs: requests.append((args, kwargs)) or responses.pop(0)),
+        ):
+            result = auth_account_service.issue_supabase_session("auth-driver-a")
+        self.assertEqual(result["access_token"], "real-access")
+        self.assertEqual(result["refresh_token"], "real-refresh")
+        self.assertEqual(requests[1][0][1], "/auth/v1/admin/generate_link")
+        self.assertEqual(requests[2][0][1], "/auth/v1/verify")
+        self.assertEqual(requests[2][0][2], {"type": "email", "token_hash": "one-time-hash"})
+
+    def test_cross_table_wechat_binding_conflict_is_rejected(self):
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE users SET wx_openid = 'shared', wx_appid = 'app' WHERE id = 11")
+            conn.execute("UPDATE travel_agency_accounts SET wx_openid = 'shared', wx_appid = 'app' WHERE id = 22")
+            conn.commit()
+        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+            wechat_auth_service.login_with_wechat_identity(
+                {"wx_openid": "shared", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"}
+            )
+        self.assertEqual(str(error.exception), "wechat_binding_conflict")
+
+    def test_dispatch_client_rejects_driver_role(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
+        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+            wechat_auth_service.bind_principal_wechat(
+                principal,
+                {"wx_openid": "dispatch-driver", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "dispatch_miniapp"},
+            )
+        self.assertEqual(str(error.exception), "client_role_forbidden")
+
+    def test_driver_client_rejects_agency_role(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-owner-a")
+        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+            wechat_auth_service.bind_principal_wechat(
+                principal,
+                {"wx_openid": "agency-driver", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"},
+            )
+        self.assertEqual(str(error.exception), "client_role_forbidden")
+
+    def test_binding_same_account_to_different_wechat_is_mismatch(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
+        identity = {"wx_openid": "first", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"}
+        wechat_auth_service.bind_principal_wechat(principal, identity)
+        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+            wechat_auth_service.bind_principal_wechat(principal, {**identity, "wx_openid": "second"})
+        self.assertEqual(str(error.exception), "wechat_binding_mismatch")
+
+    def test_admin_unbind_allows_driver_to_bind_a_new_wechat(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
+        base = {"wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"}
+        wechat_auth_service.bind_principal_wechat(principal, {**base, "wx_openid": "wechat-a"})
+        auth_service.unbind_user_wechat(11, actor="admin-test")
+        self.assertEqual(
+            wechat_auth_service.bind_principal_wechat(principal, {**base, "wx_openid": "wechat-b"}),
+            "bound",
+        )
+
+    def test_wechat_login_returns_real_supabase_tokens_not_legacy_jwt(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
+        identity = {"wx_openid": "real-session", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "driver_miniapp"}
+        wechat_auth_service.bind_principal_wechat(principal, identity)
+        expected = {"token": "sb-access", "access_token": "sb-access", "refresh_token": "sb-refresh", "user": principal}
+        with (
+            patch.object(wechat_auth_service, "issue_supabase_session", return_value=expected),
+            patch.object(auth_service, "create_jwt", side_effect=AssertionError("legacy jwt must not be used")),
+        ):
+            result = wechat_auth_service.login_with_wechat_identity(identity)
+        self.assertEqual(result["token"], "sb-access")
+        self.assertEqual(result["refresh_token"], "sb-refresh")
+
+    def test_invalid_old_password_does_not_update_supabase(self):
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = 11", (database.hash_password("correct-old"),))
+            conn.commit()
+        with (
+            patch.object(auth_service, "supabase_enabled", return_value=True),
+            patch.object(auth_service, "update_self_password") as remote_update,
+        ):
+            with self.assertRaisesRegex(ValueError, "invalid_old_password"):
+                auth_service.change_user_password(11, "wrong-old", "new-secret", access_token="token")
+        remote_update.assert_not_called()
+
+    def test_dispatcher_payload_cannot_impersonate_another_user(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-dispatcher-a")
+        context = dispatcher_mobile_service.get_dispatcher_context(
+            {"dispatcher_id": "999", "dispatcher_code": "FAKE", "tenant_id": "999"},
+            principal,
+        )["dispatcher_context"]
+        self.assertEqual(context["dispatcher_id"], 13)
+        self.assertEqual(context["tenant_id"], 1)
+        self.assertNotEqual(context["dispatcher_code"], "FAKE")
 
 
 if __name__ == "__main__":

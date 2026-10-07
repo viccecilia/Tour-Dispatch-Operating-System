@@ -400,6 +400,62 @@
   border: 0;
 }
 
+.daily-report-panel {
+  border-color: #bae6fd;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
+}
+
+.daily-report-card {
+  margin-top: 16rpx;
+}
+
+.form-textarea {
+  width: 100%;
+  min-height: 132rpx;
+  box-sizing: border-box;
+  padding: 18rpx;
+  border: 1rpx solid #bfdbfe;
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 25rpx;
+  line-height: 1.55;
+}
+
+.daily-report-rest {
+  margin-top: 14rpx;
+}
+
+.daily-report-actions {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.task-secondary,
+.task-primary.compact {
+  flex: 1;
+  width: auto;
+  height: 72rpx;
+  margin: 0;
+  border-radius: 18rpx;
+  font-size: 25rpx;
+}
+
+.task-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #0f766e;
+  border: 1rpx solid #99f6e4;
+  font-weight: 900;
+}
+
+.task-secondary::after {
+  border: 0;
+}
+
 .task-list {
   display: flex;
   flex-direction: column;

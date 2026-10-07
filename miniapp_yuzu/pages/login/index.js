@@ -19,6 +19,7 @@ function bridgeLegacySession(port, payload, baseUrl) {
   if (port === 'agency') {
     wx.setStorageSync('tourflow_agency_api_base_url', baseUrl);
     wx.setStorageSync('tourflow_agency_session', payload);
+    wx.removeStorageSync('agency_manual_logout');
     return;
   }
   const dispatchSession = Object.assign({}, payload, { port: 'dispatch' });
@@ -75,6 +76,7 @@ Page({
       port,
       meta: PORT_META[port] || PORT_META.agency
     });
+    this.autoLoginTried = false;
   },
 
   onShow() {
@@ -86,6 +88,60 @@ Page({
         forceRoute(homeUrl, this, 'login-onshow');
       }
     }
+    if (!this.autoLoginTried && !wx.getStorageSync(this.data.port === 'agency' ? 'agency_manual_logout' : 'dispatch_manual_logout')) {
+      this.tryWechatAutoLogin();
+    }
+  },
+
+  getWechatLoginCode() {
+    return new Promise((resolve, reject) => {
+      wx.login({
+        success: (res) => res.code ? resolve(res.code) : reject({ error: 'wechat_login_failed' }),
+        fail: () => reject({ error: 'wechat_login_failed' })
+      });
+    });
+  },
+
+  normalizeWechatSession(payload) {
+    if (this.data.port !== 'agency') return Object.assign({}, payload, { port: 'dispatch' });
+    const user = payload.user || {};
+    return Object.assign({}, payload, {
+      port: 'agency',
+      account: {
+        id: user.agency_account_id,
+        role: user.role,
+        display_name: user.display_name,
+        phone: user.phone,
+        company_id: user.organization_id,
+        company_code: user.company_code,
+        company_name: user.company_name
+      },
+      agency: {
+        id: user.organization_id,
+        name: user.company_name,
+        company_code: user.company_code
+      }
+    });
+  },
+
+  tryWechatAutoLogin() {
+    this.autoLoginTried = true;
+    this.setData({ loading: true, message: '' });
+    this.getWechatLoginCode()
+      .then((code) => api.loginWechat(code, this.data.port))
+      .then((payload) => {
+        const nextSession = this.normalizeWechatSession(payload);
+        session.setSelectedPort(this.data.port);
+        session.setSession(nextSession);
+        bridgeLegacySession(this.data.port, nextSession, api.getBaseUrl());
+        getApp().globalData.session = nextSession;
+        forceRoute(router.homeForSession(nextSession), this, 'wechat-auto-login');
+      })
+      .catch((err) => {
+        const code = err && err.error;
+        this.setData({ message: code && code !== 'wechat_not_bound' ? `微信自动登录失败：${code}` : '' });
+      })
+      .finally(() => this.setData({ loading: false }));
   },
 
   switchPort(event) {
@@ -126,9 +182,10 @@ Page({
     this.setData({ loading: true, message: '' });
     try {
       console.info('[yozi login submit]', { port: this.data.port, baseUrl: api.getBaseUrl(), loginCode });
+      const wxCode = await this.getWechatLoginCode();
       const payload = this.data.port === 'agency'
-        ? await api.loginAgency(loginCode, password)
-        : await api.loginDispatch(loginCode, password);
+        ? await api.loginAgency(loginCode, password, wxCode)
+        : await api.loginDispatch(loginCode, password, wxCode);
       console.info('[yozi login success]', {
         port: this.data.port,
         role: payload && payload.user ? payload.user.role : payload.role,

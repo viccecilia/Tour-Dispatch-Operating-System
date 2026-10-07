@@ -77,7 +77,6 @@ function request(path, options = {}) {
             path,
             method: options.method || 'GET',
             statusCode: res.statusCode,
-            requestPayload,
             responseBody: payload
           });
           if (res.statusCode === 401 && !options._retried && session && session.refresh_token) {
@@ -102,7 +101,6 @@ function request(path, options = {}) {
           path,
           method: options.method || 'GET',
           baseUrl: API_CONFIG.baseUrl,
-          requestPayload,
           error
         });
         const errMsg = error && error.errMsg ? String(error.errMsg) : '';
@@ -115,6 +113,11 @@ function request(path, options = {}) {
       }
     });
   });
+}
+
+function setManualLogout(value) {
+  if (value) wx.setStorageSync('agency_manual_logout', true);
+  else wx.removeStorageSync('agency_manual_logout');
 }
 
 function refreshSession(refreshToken) {
@@ -192,10 +195,15 @@ module.exports = {
   assetUrl,
   agencies: () => request('/api/agency-portal/agencies').then((res) => listFrom(res, ['agencies', 'items', 'data'])),
   resolveAccount: (loginCode) => request(`/api/agency-portal/resolve?portal_code=${encodeURIComponent(loginCode)}`),
-  login: (loginCode, password) => request('/api/agency-portal/login', {
+  login: (loginCode, password, wxCode = '') => request('/api/agency-portal/login', {
     method: 'POST',
-    data: { portal_code: loginCode, password }
+    data: { portal_code: loginCode, password, wx_code: wxCode, client_type: 'agency_miniapp' }
   }),
+  loginWechat: (wxCode) => request('/api/auth/wechat-login', {
+    method: 'POST',
+    data: { wx_code: wxCode, client_type: 'agency_miniapp' }
+  }),
+  setManualLogout,
   profile: () => request('/api/agency-portal/profile'),
   updateProfile: (payload) => request('/api/agency-portal/profile', {
     method: 'POST',

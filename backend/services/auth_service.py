@@ -5,10 +5,8 @@ import json
 import time
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urlencode
-from urllib.request import urlopen
 
-from backend.config import AUTH_MODE, DEMO_MODE, JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, TRIAL_MODE, WECHAT_MINIAPP_APPID, WECHAT_MINIAPP_SECRET
+from backend.config import AUTH_MODE, JWT_EXPIRES_SECONDS, JWT_SECRET, SUPER_WECHAT_IDS, WECHAT_MINIAPP_APPID
 from backend.db.database import get_connection, hash_password
 from backend.services.auth_account_service import (
     SupabaseAuthError,
@@ -22,10 +20,16 @@ from backend.services.auth_account_service import (
 )
 from backend.services.audit_service import record_audit
 from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
+from backend.services.wechat_auth_service import (
+    WechatAuthError,
+    bind_principal_wechat,
+    exchange_wechat_code,
+    login_with_wechat_identity,
+)
 
 
 ROLES = {"admin", "dispatcher", "operations_manager", "driver"}
-MINIAPP_CLIENTS = {"driver_miniapp", "dispatch_miniapp", "miniapp_driver", "miniapp_dispatch"}
+MINIAPP_CLIENTS = {"driver_miniapp", "dispatch_miniapp", "miniapp_driver", "miniapp_dispatch", "company_lite", "agency_miniapp", "miniapp_agency"}
 DEFAULT_COMPANY_CODE = "DAITORA"
 
 
@@ -108,14 +112,22 @@ def authenticate_phone(phone: str, password: str, wx_openid: str | None = None, 
         try:
             result = sign_in_with_password(phone, password)
             principal = result["user"]
-            if principal.get("local_user_id") and _requires_wechat(client_type, str(principal.get("role") or "")):
+            if _requires_wechat(client_type, str(principal.get("role") or "")):
                 if not wx_openid:
                     return {"error": "wechat_openid_required"}  # type: ignore[return-value]
-                bind_result = _ensure_wechat_binding(principal, wx_openid, wx_unionid)
-                if bind_result == "mismatch":
-                    return {"error": "wechat_binding_mismatch"}  # type: ignore[return-value]
-                principal = _load_user_public(int(principal["local_user_id"])) or principal
-                result["user"] = public_user(principal)
+                identity = {
+                    "wx_openid": str(wx_openid),
+                    "wx_unionid": str(wx_unionid or ""),
+                    "wx_appid": WECHAT_MINIAPP_APPID,
+                    "wx_client_type": client_type,
+                }
+                try:
+                    bind_principal_wechat(principal, identity)
+                except WechatAuthError as exc:
+                    return {"error": str(exc)}  # type: ignore[return-value]
+                refreshed = resolve_authenticated_principal(str(principal.get("auth_user_id") or ""))
+                if refreshed:
+                    result["user"] = refreshed
             _mark_principal_login(result["user"])
             return result
         except SupabaseAuthError:
@@ -188,6 +200,15 @@ def authenticate_wechat(wx_openid: str | None = None, wx_unionid: str | None = N
     unionid = str(wx_unionid or "").strip()
     if not openid and not unionid:
         return None
+    if supabase_enabled():
+        return login_with_wechat_identity(
+            {
+                "wx_openid": openid,
+                "wx_unionid": unionid,
+                "wx_appid": WECHAT_MINIAPP_APPID,
+                "wx_client_type": client_type,
+            }
+        )
     with get_connection() as conn:
         user = conn.execute(
             """
@@ -235,29 +256,11 @@ def authenticate_wechat(wx_openid: str | None = None, wx_unionid: str | None = N
     return {"token": create_jwt(public), "user": public}
 
 
-def resolve_wechat_login_code(wx_code: str | None) -> dict:
-    code = str(wx_code or "").strip()
-    if not code:
-        return {}
-    if not WECHAT_MINIAPP_APPID or not WECHAT_MINIAPP_SECRET:
-        raise ValueError("wechat_code_exchange_unavailable")
-    query = urlencode(
-        {
-            "appid": WECHAT_MINIAPP_APPID,
-            "secret": WECHAT_MINIAPP_SECRET,
-            "js_code": code,
-            "grant_type": "authorization_code",
-        }
-    )
-    url = f"https://api.weixin.qq.com/sns/jscode2session?{query}"
-    with urlopen(url, timeout=8) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    if data.get("errcode"):
-        raise ValueError(f"wechat_code_exchange_failed:{data.get('errcode')}")
-    return {
-        "wx_openid": data.get("openid") or "",
-        "wx_unionid": data.get("unionid") or "",
-    }
+def resolve_wechat_login_code(wx_code: str | None, client_type: str = "dispatch_miniapp") -> dict:
+    try:
+        return exchange_wechat_code(wx_code, client_type)
+    except WechatAuthError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def register_bound_account(payload: dict) -> dict:
@@ -379,6 +382,12 @@ def change_user_password(user_id: int | str, old_password: str, new_password: st
         raise ValueError("password_required")
     if len(str(new_password)) < 6:
         raise ValueError("password_too_short")
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
+        if not row:
+            return None
+        if row["password_hash"] != hash_password(old_password):
+            raise ValueError("invalid_old_password")
     if supabase_enabled():
         if not access_token:
             raise ValueError("access_token_required")
@@ -386,24 +395,29 @@ def change_user_password(user_id: int | str, old_password: str, new_password: st
             update_self_password(access_token, new_password)
         except SupabaseAuthError as exc:
             raise ValueError(str(exc)) from exc
-    with get_connection() as conn:
-        row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
-        if not row:
-            return None
-        if row["password_hash"] != hash_password(old_password):
-            raise ValueError("invalid_old_password")
-        conn.execute(
-            """
-            UPDATE users
-            SET password_hash = ?,
-                password_changed_at = CURRENT_TIMESTAMP,
-                must_change_password = 0,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND tenant_id = ?
-            """,
-            (hash_password(new_password), user_id, get_current_tenant_id()),
-        )
-        conn.commit()
+    try:
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id = ? AND tenant_id = ?", (user_id, get_current_tenant_id())).fetchone()
+            if not row:
+                raise ValueError("account_not_found_after_remote_password_change")
+            if row["password_hash"] != hash_password(old_password):
+                raise ValueError("local_password_changed_during_update")
+            conn.execute(
+                """
+                UPDATE users
+                SET password_hash = ?,
+                    password_changed_at = CURRENT_TIMESTAMP,
+                    must_change_password = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND tenant_id = ?
+                """,
+                (hash_password(new_password), user_id, get_current_tenant_id()),
+            )
+            conn.commit()
+    except Exception:
+        if supabase_enabled():
+            _audit_auth("password_change_consistency_failure", {"user_id": user_id, "reason": "remote_updated_local_failed"}, actor=actor)
+        raise
     user = _load_user_public(int(user_id))
     _audit_auth("password_change", {"user_id": user_id}, actor=actor)
     return public_user(user) if user else None
@@ -425,6 +439,8 @@ def unbind_user_wechat(user_id: int | str, actor: str = "system") -> dict | None
             UPDATE users
             SET wx_openid = NULL,
                 wx_unionid = NULL,
+                wx_appid = NULL,
+                wx_client_type = NULL,
                 wx_bound_at = NULL,
                 wx_bind_status = 'unbound',
                 updated_at = CURRENT_TIMESTAMP
@@ -524,6 +540,8 @@ def public_user(user: dict) -> dict:
     user.pop("password_hash", None)
     user.pop("wx_openid", None)
     user.pop("wx_unionid", None)
+    user.pop("wx_appid", None)
+    user.pop("wx_client_type", None)
     user["is_active"] = bool(user.get("is_active", 1))
     user["must_change_password"] = bool(user.get("must_change_password", 0))
     user["tenant_id"] = int(user.get("tenant_id") or 1)
@@ -598,16 +616,7 @@ def _mark_login(user_id: int | str) -> None:
 
 
 def _requires_wechat(client_type: str, role: str) -> bool:
-    if DEMO_MODE or TRIAL_MODE:
-        return False
-    try:
-        from backend.services.settings_service import is_wechat_binding_required
-
-        if not is_wechat_binding_required():
-            return False
-    except Exception:
-        return False
-    return client_type in MINIAPP_CLIENTS and role in {"driver", "dispatcher", "operations_manager", "admin"}
+    return client_type in MINIAPP_CLIENTS
 
 
 def _ensure_wechat_binding(user: dict, wx_openid: str, wx_unionid: str | None = None) -> str:

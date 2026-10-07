@@ -169,7 +169,6 @@ Page({
     const codeTask = loginWithCode ? this.getWechatLoginCode().catch(() => '') : Promise.resolve('');
     codeTask
       .then((wxCode) => (isPhone ? api.loginPhone(account, password, wxCode) : api.login(account, password, wxCode)))
-      .catch(() => (isPhone ? api.loginPhone(account.replace(/[^\d]/g, ''), password, '') : Promise.reject({ error: 'login_failed' })))
       .then((res) => {
         api.setSession(res);
         this.setSessionState(res);

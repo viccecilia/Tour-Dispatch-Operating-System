@@ -33,6 +33,7 @@ from backend.services.order_service import create_order
 from backend.services.order_number_service import normalize_account_code, normalize_vehicle_type_label
 from backend.services.parser_service import parse_chinese_order, split_batch_order_text
 from backend.services.tenant_context import get_current_tenant_id, set_current_tenant_id
+from backend.services.wechat_auth_service import WechatAuthError, bind_principal_wechat
 
 REQUEST_FIELDS = {
     "order_date",
@@ -173,6 +174,21 @@ def agency_portal_login(payload: dict[str, Any]) -> dict[str, Any] | None:
             principal = session.get("user") or {}
             if principal.get("account_scope") != "agency":
                 return None
+            if str(payload.get("client_type") or "") in {"agency_miniapp", "miniapp_agency"}:
+                if not payload.get("wx_openid"):
+                    return {"error": "wechat_openid_required"}
+                try:
+                    bind_principal_wechat(
+                        principal,
+                        {
+                            "wx_openid": str(payload.get("wx_openid") or ""),
+                            "wx_unionid": str(payload.get("wx_unionid") or ""),
+                            "wx_appid": str(payload.get("wx_appid") or ""),
+                            "wx_client_type": str(payload.get("client_type") or "agency_miniapp"),
+                        },
+                    )
+                except WechatAuthError as exc:
+                    return {"error": str(exc)}
             agency = _agency_for_principal(principal)
             if not agency:
                 return None

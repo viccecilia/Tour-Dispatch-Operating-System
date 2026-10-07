@@ -98,6 +98,31 @@ Page({
     if (session && session.token) {
       this.loadDashboard();
     }
+    if (!session && !this.autoLoginTried && !wx.getStorageSync('agency_manual_logout')) this.tryWechatAutoLogin();
+  },
+
+  getWechatLoginCode() {
+    return new Promise((resolve, reject) => wx.login({
+      success: (res) => res.code ? resolve(res.code) : reject({ error: 'wechat_login_failed' }),
+      fail: () => reject({ error: 'wechat_login_failed' })
+    }));
+  },
+
+  tryWechatAutoLogin() {
+    this.autoLoginTried = true;
+    this.getWechatLoginCode()
+      .then((code) => api.loginWechat(code))
+      .then((payload) => {
+        const user = payload.user || {};
+        const next = Object.assign({}, payload, {
+          account: { id: user.agency_account_id, role: user.role, display_name: user.display_name, phone: user.phone, company_id: user.organization_id },
+          agency: { id: user.organization_id, name: user.company_name, company_code: user.company_code }
+        });
+        api.setSession(next);
+        this.applySession(next);
+        return this.loadAll();
+      })
+      .catch(() => {});
   },
 
   applySession(session) {
@@ -219,9 +244,10 @@ Page({
       return;
     }
     this.setData({ loginLoading: true, message: '' });
-    api.login(loginCode, password)
+    this.getWechatLoginCode().then((wxCode) => api.login(loginCode, password, wxCode))
       .then((session) => {
         api.setSession(session);
+        api.setManualLogout(false);
         wx.showToast({ title: '已登录' });
         this.applySession(session);
         this.setData({
@@ -237,6 +263,7 @@ Page({
   },
 
   logout() {
+    api.setManualLogout(true);
     api.clearSession();
     wx.showTabBar();
     this.setData({

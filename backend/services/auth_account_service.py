@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -119,11 +120,67 @@ def create_supabase_account(
         "password": password,
         "app_metadata": app_metadata or {},
     }
+    if normalized_phone:
+        body.update({"phone": normalized_phone, "phone_confirm": True})
     if email:
         body.update({"email": str(email).strip().lower(), "email_confirm": True})
-    else:
-        body.update({"phone": normalized_phone, "phone_confirm": True})
     return _request_json("POST", "/auth/v1/admin/users", body, admin=True)
+
+
+def get_supabase_account(auth_user_id: str) -> dict[str, Any]:
+    _require_admin_key()
+    if not auth_user_id:
+        raise SupabaseAuthError("supabase_identity_required")
+    return _request_json("GET", f"/auth/v1/admin/users/{auth_user_id}", None, admin=True)
+
+
+def is_supabase_account_enabled(account: dict[str, Any]) -> bool:
+    banned_until = str(account.get("banned_until") or "").strip()
+    if not banned_until:
+        return True
+    try:
+        value = datetime.fromisoformat(banned_until.replace("Z", "+00:00"))
+        return value <= datetime.now(timezone.utc)
+    except ValueError:
+        return False
+
+
+def issue_supabase_session(auth_user_id: str) -> dict[str, Any]:
+    """Create a real Supabase session for a server-verified local identity.
+
+    Supabase Admin generate_link supplies a one-time hashed token.  It is
+    consumed immediately by the backend through verifyOtp; neither the token
+    hash nor the action link is returned to the miniapp.
+    """
+    account = get_supabase_account(auth_user_id)
+    if not is_supabase_account_enabled(account):
+        raise SupabaseAuthError("account_disabled", 403)
+    email = str(account.get("email") or "").strip().lower()
+    if not email:
+        raise SupabaseAuthError("supabase_email_alias_required", 409)
+    generated = _request_json(
+        "POST",
+        "/auth/v1/admin/generate_link",
+        {"type": "magiclink", "email": email},
+        admin=True,
+    )
+    properties = generated.get("properties") if isinstance(generated.get("properties"), dict) else {}
+    token_hash = str(generated.get("hashed_token") or properties.get("hashed_token") or "")
+    if not token_hash:
+        raise SupabaseAuthError("supabase_session_issue_failed", 502)
+    payload = _request_json(
+        "POST",
+        "/auth/v1/verify",
+        {"type": "email", "token_hash": token_hash},
+        public=True,
+    )
+    returned_id = str((payload.get("user") or {}).get("id") or "")
+    if returned_id != auth_user_id:
+        raise SupabaseAuthError("supabase_identity_mismatch", 502)
+    principal = resolve_authenticated_principal(auth_user_id)
+    if not principal or not principal.get("is_active"):
+        raise SupabaseAuthError("account_disabled", 403)
+    return _session_payload(payload, principal)
 
 
 def update_supabase_phone(auth_user_id: str, phone: str) -> dict[str, Any]:

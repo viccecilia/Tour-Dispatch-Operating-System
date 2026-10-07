@@ -8,6 +8,7 @@ from backend.services.audit_service import record_audit
 from backend.services.auth_service import company_login_name, normalize_phone, phone_password_tail
 from backend.services.auth_account_service import (
     SupabaseAuthError,
+    account_login_email,
     create_supabase_account,
     delete_supabase_account,
     disable_supabase_account,
@@ -249,22 +250,6 @@ def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
         display_name = display_name or phone
         username = _unique_username(conn, tenant_id, company_login_name(normalized or phone, tenant_slug, tenant_name))
     auth_user_id = ""
-    if supabase_enabled():
-        try:
-            remote = create_supabase_account(
-                phone,
-                password,
-                app_metadata={
-                    "account_scope": "driver" if role == "driver" else "carrier",
-                    "role": role,
-                    "tenant_id": tenant_id,
-                },
-            )
-            auth_user_id = str(remote.get("id") or "")
-            if not auth_user_id:
-                raise ValueError("supabase_identity_create_failed")
-        except SupabaseAuthError as exc:
-            raise ValueError(str(exc)) from exc
     try:
         with get_connection() as conn:
             tenant_slug, tenant_name = _tenant_identity(conn, tenant_id)
@@ -277,13 +262,35 @@ def create_account(payload: dict[str, Any], actor: dict[str, Any] | str = "syste
                     tenant_id, username, password_hash, role, display_name, phone,
                     profile_type, profile_id, wx_bind_status, is_active,
                     password_changed_at, must_change_password, created_by_user_id, updated_at,
-                    supabase_user_id, account_scope, auth_linked_at
+                    account_scope
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, ?, CURRENT_TIMESTAMP, ?, ?, CASE WHEN ? <> '' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unbound', 1, CURRENT_TIMESTAMP, 1, ?, CURRENT_TIMESTAMP, ?)
                 """,
-                (tenant_id, username, hash_password(password), role, display_name, phone, profile_type, profile_id, created_by, auth_user_id or None, account_scope, auth_user_id),
+                (tenant_id, username, hash_password(password), role, display_name, phone, profile_type, profile_id, created_by, account_scope),
             )
             user_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+            if supabase_enabled():
+                try:
+                    remote = create_supabase_account(
+                        phone,
+                        password,
+                        email=account_login_email("users", int(user_id)),
+                        app_metadata={
+                            "account_scope": account_scope,
+                            "role": role,
+                            "tenant_id": tenant_id,
+                            "local_user_id": int(user_id),
+                        },
+                    )
+                except SupabaseAuthError as exc:
+                    raise ValueError(str(exc)) from exc
+                auth_user_id = str(remote.get("id") or "")
+                if not auth_user_id:
+                    raise ValueError("supabase_identity_create_failed")
+                conn.execute(
+                    "UPDATE users SET supabase_user_id = ?, auth_linked_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (auth_user_id, user_id),
+                )
             if role == "driver":
                 conn.execute("UPDATE drivers SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?", (user_id, tenant_id, profile_id))
             else:
@@ -483,6 +490,8 @@ def unbind_account_wechat(user_id: int | str, actor: dict[str, Any] | str = "sys
             UPDATE users
             SET wx_openid = NULL,
                 wx_unionid = NULL,
+                wx_appid = NULL,
+                wx_client_type = NULL,
                 wx_bound_at = NULL,
                 wx_bind_status = 'unbound',
                 updated_at = CURRENT_TIMESTAMP
