@@ -103,6 +103,26 @@ class Phase2C1MiniappContractTest(unittest.TestCase):
         self.assertIn("dispatchVehicles.length ? dispatchVehicles", self.page_js)
         self.assertIn("当日冲突状态需人工核对", self.page_js)
 
+    def test_route_picker_exposes_management_menu_without_select_bubbling(self):
+        self.assertIn('catchtap="openFixedTourPresetMenu"', self.page_wxml)
+        for handler in ("openFixedTourPresetMenu", "editFixedTourPreset", "copyFixedTourPreset", "deactivateFixedTourPreset"):
+            self.assertIn(handler, self.page_js)
+        for label in ("编辑预设", "另存副本", "停用预设"):
+            self.assertIn(label, self.page_js)
+        self.assertIn("没有匹配的线路，仍可在下方新增", self.page_wxml)
+
+    def test_shared_document_workbench_edits_nodes_and_document_fields(self):
+        self.assertIn("dailyPdfSourceMode: 'fixed'", self.page_js)
+        self.assertIn("dailyPdfSourceMode: 'daily'", self.page_js)
+        self.assertIn("expected_source_hash", self.page_js)
+        self.assertIn("updateRunDocumentField", self.api_js)
+        self.assertIn("/api/dispatch-mobile/run-documents/field", self.api_js)
+        self.assertIn("openDailyFieldEdit", self.page_wxml)
+        self.assertIn("saveDailyFieldEdit", self.page_wxml)
+        self.assertIn("字段已保存并生成新版", self.page_js)
+        self.assertIn("确认草稿", self.page_wxml)
+        self.assertNotIn("确认并发布", self.page_wxml)
+
     def test_pdf_generation_survives_older_trial_without_preview_route(self):
         self.assertIn("preview_unavailable", self.page_js)
         self.assertIn("dailyPdfPreviewUnavailable", self.page_js)

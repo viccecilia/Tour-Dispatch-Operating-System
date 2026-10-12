@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sample_group = runpy.run_path(str(ROOT / "scripts" / "generate_v014_hire_sample_pdf.py"))["sample_group"]
 
 
-def test_hire_sample_packet_uses_phase2a_snapshot_and_has_four_pages(tmp_path: Path) -> None:
+def test_hire_sample_packet_uses_phase2a_snapshot_and_has_two_airport_pages(tmp_path: Path) -> None:
     import fitz
     from pypdf import PdfReader
 
@@ -22,6 +22,8 @@ def test_hire_sample_packet_uses_phase2a_snapshot_and_has_four_pages(tmp_path: P
         jp_font_path=ROOT / "backend" / "assets" / "fonts" / "NotoSansJP-VF.ttf",
     )
     reader = PdfReader(str(output))
+    # Four transfer jobs share one 10-job acceptance page and one matching
+    # 10-job instruction page; the charter has its own two-page template.
     assert pages == 4
     assert len(reader.pages) == 4
     pdf = fitz.open(output)
@@ -54,8 +56,9 @@ def test_airport_acceptance_is_split_at_ten_orders(tmp_path: Path) -> None:
     )
     assert len(snapshot["airport_acceptance_pages"]) == 2
     assert [len(page) for page in snapshot["airport_acceptance_pages"]] == [10, 1]
-    assert pages == 5
-    assert len(PdfReader(str(output)).pages) == 5
+    # 11 jobs: two acceptance pages followed by the same two instruction pages.
+    assert pages == 4
+    assert len(PdfReader(str(output)).pages) == 4
 
 
 def test_real_operations_manager_name_uses_font_fallback_without_missing_glyph(tmp_path: Path) -> None:

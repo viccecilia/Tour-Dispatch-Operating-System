@@ -849,6 +849,9 @@ Page({
     dailyPdfReviewCanConfirm: false,
     dailyPdfPreviewUnavailable: false,
     dailyPdfDraftOnly: false,
+    dailyPdfSourceMode: '',
+    dailyPdfCurrentDraftId: '',
+    dailyPdfDocumentTab: 'acceptance',
     dailyPdfReviewIndex: 0,
     dailyPdfReviewTotal: 0,
     dailyPdfValidationIssues: [],
@@ -857,6 +860,12 @@ Page({
     dailyPdfIssuesExpanded: false,
     dailyPdfNodesExpanded: false,
     dailyPdfNodes: [],
+    dailyPdfFields: [],
+    dailyPdfSourceHash: '',
+    dailyPdfDocumentRevision: '',
+    dailyFieldEditOpen: false,
+    dailyFieldEditIndex: -1,
+    dailyFieldEditForm: null,
     dailyNodeEditOpen: false,
     dailyNodeEditIndex: -1,
     dailyNodeEditForm: null,
@@ -1194,6 +1203,20 @@ Page({
     });
   },
 
+  openFixedTourPresetMenu(e) {
+    const routeId = String(e.currentTarget.dataset.id || '');
+    if (!routeId || this.data.fixedTourSubmitting) return;
+    wx.showActionSheet({
+      itemList: ['编辑预设', '另存副本', '停用预设'],
+      success: (res) => {
+        const event = { currentTarget: { dataset: { id: routeId } } };
+        if (res.tapIndex === 0) this.editFixedTourPreset(event);
+        else if (res.tapIndex === 1) this.copyFixedTourPreset(event);
+        else this.deactivateFixedTourPreset(event);
+      }
+    });
+  },
+
   useFixedTourPreset(e) {
     const routeId = String(e.currentTarget.dataset.id || '');
     if (!routeId || this.data.fixedTourSubmitting) return;
@@ -1493,6 +1516,9 @@ Page({
           fixedTourMessage: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`,
           dailyPdfReviewOpen: true,
           dailyPdfDraftOnly: true,
+          dailyPdfSourceMode: 'fixed',
+          dailyPdfCurrentDraftId: String((result.draft || activeDraft || {}).id || ''),
+          dailyPdfDocumentTab: 'acceptance',
           dailyPdfReviewGroup: group,
           dailyPdfReviewDocument: document,
           dailyPdfReviewCanConfirm: false,
@@ -1501,20 +1527,18 @@ Page({
           dailyPdfReviewTotal: 1,
           dailyPdfValidationIssues: validation.issues,
           dailyPdfValidationRaw: validation.raw,
+          dailyPdfSourceHash: preview.source_sha256 || '',
+          dailyPdfDocumentRevision: preview.document_revision || '',
           dailyPdfIssueSummary: validation.summary,
           dailyPdfIssuesExpanded: false,
           dailyPdfNodes: nodes,
+          dailyPdfFields: preview.document_fields || [],
           dailyPdfNodesExpanded: false,
           dailyNodeEditOpen: false,
           dailyNodeEditIndex: -1,
           dailyNodeEditForm: null
         });
         wx.showToast({ title: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`, icon: 'success' });
-        api.downloadAndOpenDocument(document.file_url).catch((error) => {
-          console.warn('[fixed tour PDF open failed]', error);
-          this.setData({ fixedTourMessage: `PDF草稿已生成 · ${Number(document.page_count || 0)}页；打开失败，请重试。` });
-          wx.showToast({ title: '文书已生成，打开失败，请重试', icon: 'none' });
-        });
       })
       .catch((error) => {
         const unavailable = Number(error && error.statusCode || 0) === 404 || error && error.backendError === 'fixed_tour_service_unavailable';
@@ -1859,6 +1883,9 @@ Page({
           dailyReviewOrder: null,
           dailyPdfReviewOpen: true,
           dailyPdfDraftOnly: false,
+          dailyPdfSourceMode: 'daily',
+          dailyPdfCurrentDraftId: '',
+          dailyPdfDocumentTab: 'acceptance',
           dailyReviewGroupKey: regeneratedGroupKey,
           dailyPdfReviewGroup: updatedGroup,
           dailyPdfReviewDocument: document,
@@ -1871,7 +1898,6 @@ Page({
           dailyPdfNodesExpanded: false
         });
         wx.showToast({ title: '已保存并重生成', icon: 'success' });
-        if (document && document.file_url) api.downloadAndOpenDocument(document.file_url).catch(() => null);
         this.loadAll();
       })
       .catch((err) => {
@@ -1883,7 +1909,7 @@ Page({
   openDailyPdf(e) {
     const eventKey = String(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.key || '');
     const key = eventKey || (this.data.dailySelectedGroupKeys || [])[0];
-    this.openDailyPdfByKey(key, true);
+    this.openDailyPdfByKey(key, false);
   },
 
   openDailyPdfByKey(key, autoOpen) {
@@ -1929,8 +1955,11 @@ Page({
           dailyPdfValidationIssues: validation.issues,
           dailyPdfValidationRaw: validation.raw,
           dailyPdfIssueSummary: validation.summary,
+          dailyPdfSourceHash: preview.source_sha256 || '',
+          dailyPdfDocumentRevision: preview.document_revision || '',
           dailyPdfIssuesExpanded: false,
           dailyPdfNodes: nodes,
+          dailyPdfFields: preview.document_fields || [],
           dailyPdfNodesExpanded: false,
           dailyNodeEditOpen: false,
           dailyNodeEditIndex: -1,
@@ -1950,6 +1979,9 @@ Page({
     this.setData({
       dailyPdfReviewOpen: false,
       dailyPdfDraftOnly: false,
+      dailyPdfSourceMode: '',
+      dailyPdfCurrentDraftId: '',
+      dailyPdfDocumentTab: 'acceptance',
       dailyPdfReviewGroup: null,
       dailyPdfReviewDocument: null,
       dailyPdfReviewCanConfirm: false,
@@ -1959,10 +1991,16 @@ Page({
       dailyPdfIssueSummary: [],
       dailyPdfIssuesExpanded: false,
       dailyPdfNodes: [],
+      dailyPdfFields: [],
+      dailyPdfSourceHash: '',
+      dailyPdfDocumentRevision: '',
       dailyPdfNodesExpanded: false,
       dailyNodeEditOpen: false,
       dailyNodeEditIndex: -1,
-      dailyNodeEditForm: null
+      dailyNodeEditForm: null,
+      dailyFieldEditOpen: false,
+      dailyFieldEditIndex: -1,
+      dailyFieldEditForm: null
     });
   },
 
@@ -1972,6 +2010,80 @@ Page({
 
   toggleDailyPdfNodes() {
     this.setData({ dailyPdfNodesExpanded: !this.data.dailyPdfNodesExpanded });
+  },
+
+  switchDailyPdfDocumentTab(e) {
+    const tab = String(e.currentTarget.dataset.tab || 'acceptance');
+    if (tab === 'acceptance' || tab === 'dispatch') this.setData({ dailyPdfDocumentTab: tab });
+  },
+
+  openDailyFieldEdit(e) {
+    const index = Number(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.index);
+    const field = (this.data.dailyPdfFields || [])[index];
+    if (!field || !field.editable) return;
+    this.setData({
+      dailyFieldEditOpen: true,
+      dailyFieldEditIndex: index,
+      dailyFieldEditForm: { ...field, value: field.value == null ? '' : String(field.value) }
+    });
+  },
+
+  closeDailyFieldEdit() {
+    this.setData({ dailyFieldEditOpen: false, dailyFieldEditIndex: -1, dailyFieldEditForm: null });
+  },
+
+  onDailyFieldInput(e) {
+    this.setData({ 'dailyFieldEditForm.value': e.detail.value });
+  },
+
+  saveDailyFieldEdit() {
+    const group = this.data.dailyPdfReviewGroup || {};
+    const form = this.data.dailyFieldEditForm || {};
+    if (!group.key || !form.field_id) return;
+    this.setData({ loading: true });
+    api.updateRunDocumentField({
+      group_key: group.key,
+      field_id: form.field_id,
+      value: form.value,
+      expected_source_hash: this.data.dailyPdfSourceHash || ''
+    })
+      .then((result) => {
+        const preview = result && result.preview || {};
+        return Promise.all([api.generateRunDocument(group.key), Promise.resolve(preview)]);
+      })
+      .then(([documentResult, preview]) => {
+        const document = documentResult && documentResult.document;
+        const validation = buildValidationPresentation(preview.validation_issues || []);
+        const nodes = (preview.nodes || []).map((node) => ({
+          ...node,
+          type_label: nodeTypeLabel(node.node_type),
+          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
+        }));
+        this.setData({
+          loading: false,
+          dailyPdfReviewDocument: document,
+          fixedTourGeneratedDocument: this.data.dailyPdfDraftOnly ? document : this.data.fixedTourGeneratedDocument,
+          dailyPdfReviewCanConfirm: !!document && document.status !== 'published' && !validation.raw.length,
+          dailyPdfValidationIssues: validation.issues,
+          dailyPdfValidationRaw: validation.raw,
+          dailyPdfIssueSummary: validation.summary,
+          dailyPdfSourceHash: preview.source_sha256 || '',
+          dailyPdfDocumentRevision: preview.document_revision || '',
+          dailyPdfNodes: nodes,
+          dailyPdfFields: preview.document_fields || [],
+          dailyFieldEditOpen: false,
+          dailyFieldEditIndex: -1,
+          dailyFieldEditForm: null
+        });
+        wx.showToast({ title: '字段已保存并生成新版', icon: 'success' });
+        this.loadAll();
+      })
+      .catch((err) => {
+        console.warn('[run document field update failed]', err);
+        const conflict = String(err && (err.backendError || err.error) || '') === 'document_revision_conflict';
+        this.setData({ loading: false });
+        wx.showToast({ title: conflict ? '文书已被更新，请重新打开核对' : (api.errorMessage(err) || '字段保存失败，输入已保留'), icon: 'none' });
+      });
   },
 
   openDailyNodeEdit(e) {
@@ -2026,7 +2138,8 @@ Page({
     const payload = {
       group_key: group.key,
       route_node_id: form.route_node_id,
-      planned_location: String(form.planned_location || '').trim()
+      planned_location: String(form.planned_location || '').trim(),
+      expected_source_hash: this.data.dailyPdfSourceHash || ''
     };
     if (form.editable_arrival) payload.planned_arrival_at = composeNodeDateTime(form.arrival_date, form.arrival_time);
     if (form.editable_departure) payload.planned_departure_at = composeNodeDateTime(form.departure_date, form.departure_time);
@@ -2054,7 +2167,10 @@ Page({
           dailyPdfValidationIssues: validation.issues,
           dailyPdfValidationRaw: validation.raw,
           dailyPdfIssueSummary: validation.summary,
+          dailyPdfSourceHash: preview.source_sha256 || '',
+          dailyPdfDocumentRevision: preview.document_revision || '',
           dailyPdfNodes: nodes,
+          dailyPdfFields: preview.document_fields || [],
           dailyNodeEditOpen: false,
           dailyNodeEditIndex: -1,
           dailyNodeEditForm: null
@@ -2100,25 +2216,20 @@ Page({
     const group = this.data.dailyPdfReviewGroup;
     if (!group || !group.key) return;
     this.setData({ loading: true });
-    api.reviewAndPublishRunDocument(group.key)
+    api.reviewRunDocument(group.key)
       .then((res) => {
         this.setData({
           loading: false,
           dailyPdfReviewDocument: res.document || null,
           dailyPdfReviewCanConfirm: false
         });
-        wx.showToast({ title: '已发布', icon: 'success' });
+        wx.showToast({ title: '草稿已确认，未发布', icon: 'success' });
         this.loadAll();
-        if (res.next_group_key) {
-          this.openDailyPdfByKey(res.next_group_key, true);
-        } else {
-          this.closeDailyPdfReview();
-        }
       })
       .catch((err) => {
         this.setData({ loading: false });
         if (this.showRunDocumentAccountError(err)) return;
-        wx.showToast({ title: api.errorMessage(err) || 'PDF 确认失败', icon: 'none' });
+        wx.showToast({ title: api.errorMessage(err) || '草稿确认失败', icon: 'none' });
       });
   },
 

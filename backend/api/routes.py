@@ -220,6 +220,7 @@ from backend.services.run_document_service import (
     review_run_document,
     resolve_run_document,
     update_run_document_node,
+    update_run_document_field,
 )
 from backend.services.wechat_auth_service import WechatAuthError, login_with_wechat_code
 from backend.services.flight_info_service import build_flight_update, query_flight_info
@@ -2053,6 +2054,22 @@ class ApiHandler(BaseHTTPRequestHandler):
                 actor=self.actor_label(),
                 source_path=path,
                 summary=f"Updated route node {payload.get('route_node_id')}",
+            )
+            self.send_json({"preview": preview})
+            return
+        if path == "/api/dispatch-mobile/run-documents/field":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                preview = update_run_document_field(payload.get("group_key"), payload, user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            record_audit(
+                "run_document_field_update", "run_document_field", payload.get("field_id"),
+                after=preview, actor=self.actor_label(), source_path=path,
+                summary=f"Updated document field {payload.get('field_id')}",
             )
             self.send_json({"preview": preview})
             return

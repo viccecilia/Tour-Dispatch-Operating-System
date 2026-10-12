@@ -161,10 +161,10 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         second = service.generate_run_document(key, self.actor)
         self.assertEqual(first["id"], second["id"])
         self.assertEqual(first["document_version_id"], second["document_version_id"])
-        self.assertEqual(first["page_count"], 3)
+        self.assertEqual(first["page_count"], 2)
         path = service.RUNTIME_DIR / "uploads" / "run_documents" / "1" / "2026-10-09" / first["file_name"]
         self.assertTrue(path.is_file())
-        self.assertEqual(len(PdfReader(str(path)).pages), 3)
+        self.assertEqual(len(PdfReader(str(path)).pages), 2)
         text = pdf_text(path)
         self.assertIn("08:30", text)
         self.assertIn("20:00", text)
@@ -302,6 +302,46 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertGreaterEqual(snapshot_text.count("ホテル日航大阪 2F"), 2)
         self.assertIn("2026-07-24T08:30:00", snapshot_text)
 
+    def test_document_field_edit_is_whitelisted_and_checks_source_hash(self):
+        order_id = self.add_order(suffix="FIELD")
+        self.confirm(order_id)
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        generated = service.generate_run_document(key, self.actor)
+        service.review_run_document(key, self.actor)
+        preview = service.get_run_document_preview(key, self.actor)
+        edited = service.update_run_document_field(key, {
+            "field_id": f"order:{order_id}:contract_party_name",
+            "value": "新しい契約相手",
+            "expected_source_hash": preview["source_sha256"],
+        }, self.actor)
+        field = next(item for item in edited["document_fields"] if item["field_id"] == f"order:{order_id}:contract_party_name")
+        self.assertEqual(field["value"], "新しい契約相手")
+        with closing(database.get_connection()) as conn:
+            order = conn.execute("SELECT agency_name, run_revision, run_confirmation_status FROM orders WHERE id = ?", (order_id,)).fetchone()
+            old = conn.execute("SELECT status FROM driver_run_documents WHERE id = ?", (generated["id"],)).fetchone()
+        self.assertEqual(order["agency_name"], "新しい契約相手")
+        self.assertGreaterEqual(order["run_revision"], 2)
+        self.assertEqual(order["run_confirmation_status"], "pending")
+        self.assertEqual(old["status"], "stale")
+        with self.assertRaisesRegex(ValueError, "document_revision_conflict"):
+            service.update_run_document_field(key, {
+                "field_id": f"order:{order_id}:applicant_contact",
+                "value": "06-1234-5678",
+                "expected_source_hash": preview["source_sha256"],
+            }, self.actor)
+
+    def test_document_safety_field_override_persists_in_preview(self):
+        self.add_order(suffix="SAFETY")
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        preview = service.get_run_document_preview(key, self.actor)
+        edited = service.update_run_document_field(key, {
+            "field_id": "operation:safety:waiting_place",
+            "value": "第2ターミナル待機場",
+            "expected_source_hash": preview["source_sha256"],
+        }, self.actor)
+        field = next(item for item in edited["document_fields"] if item["field_id"] == "operation:safety:waiting_place")
+        self.assertEqual(field["value"], "第2ターミナル待機場")
+
     def test_manual_price_change_requires_price_confirmation_again(self):
         order_id = self.add_order(suffix="PRICE")
         with closing(database.get_connection()) as conn:
@@ -375,12 +415,12 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         key = service.list_run_groups("2026-07-24")[0]["key"]
         document = service.generate_run_document(key, self.actor)
         reader = PdfReader(str(self.document_path(document)))
-        self.assertEqual(document["page_count"], 9)
-        self.assertEqual(len(reader.pages), 9)
+        self.assertEqual(document["page_count"], 6)
+        self.assertEqual(len(reader.pages), 6)
         text = pdf_text(self.document_path(document))
         self.assertIn("運送引受書", text)
         self.assertIn("運行指示書", "".join(text.split()))
-        self.assertIn("1/6", "".join(text.split()))
+        self.assertIn("1/3", "".join(text.split()))
         self.assertNotIn("中文备注", text)
         for index in range(22):
             self.assertIn(f"08:{index * 5:02d}" if index < 12 else f"09:{(index - 12) * 5:02d}", text)
@@ -647,7 +687,7 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertEqual(service._area_review_from_route_note(order), (True, "KIX → 京都市域交通圏"))
 
     def test_v014_dispatch_pagination_matrix(self):
-        expected_pages = {1: 2, 4: 2, 7: 3, 8: 3, 10: 4, 11: 5, 16: 6}
+        expected_pages = {1: 2, 4: 2, 6: 2, 7: 2, 8: 2, 10: 2, 11: 4, 16: 4, 20: 4, 21: 6}
         for order_count, expected in expected_pages.items():
             with self.subTest(order_count=order_count):
                 orders = []

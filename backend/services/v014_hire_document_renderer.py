@@ -11,7 +11,9 @@ A4_HEIGHT = 841.89
 MARGIN = 28.0
 CONTENT_WIDTH = 539.0
 AIRPORT_ACCEPTANCE_LIMIT = 10
-AIRPORT_DISPATCH_LIMIT = 4
+# Airport acceptance and operation instructions deliberately share this page plan.
+# A "job" is an order, never an individual route node.
+AIRPORT_DISPATCH_LIMIT = AIRPORT_ACCEPTANCE_LIMIT
 APPLICANT_MARKS = {1: "①", 2: "②", 3: "③", 4: "④"}
 
 PROVIDER_ROWS = (
@@ -323,22 +325,22 @@ def _draw_dispatch_header(sheet: Sheet, snapshot: dict[str, Any], count_text: st
     vehicle = snapshot.get("vehicle") or {}
     meta = " / ".join(part for part in (_text(snapshot.get("business_date")), _text(driver.get("name")), _text(snapshot.get("route_code"))) if part)
     y = sheet.document_header("運 行 指 示 書", meta, count_text, table_top=87.0, company_label="株式会社大寅")
-    y = sheet.row(y, [Cell(79, "事業者名", "#f2f2ef", True), Cell(206, "株式会社大寅"), Cell(79, "営業所名", "#f2f2ef", True), Cell(175, _text(driver.get("office")))], 26)
-    y = sheet.row(y, [Cell(79, "運行管理者", "#f2f2ef", True), Cell(206, _text(snapshot.get("operations_manager"))), Cell(79, "作成年月日", "#f2f2ef", True), Cell(175, _text(snapshot.get("created_date") or snapshot.get("business_date")))], 26)
-    y = sheet.row(y, [Cell(79, "運転者の氏名", "#f2f2ef", True), Cell(206, _text(driver.get("name"))), Cell(79, "自動車登録番号", "#f2f2ef", True), Cell(175, _text(vehicle.get("plate_number")))], 26)
+    y = sheet.row(y, [Cell(79, "事業者名", "#f2f2ef", True), Cell(206, "株式会社大寅"), Cell(79, "営業所名", "#f2f2ef", True), Cell(175, _text(driver.get("office")))], 24, 8.5)
+    y = sheet.row(y, [Cell(79, "運行管理者", "#f2f2ef", True), Cell(206, _text(snapshot.get("operations_manager"))), Cell(79, "作成年月日", "#f2f2ef", True), Cell(175, _text(snapshot.get("created_date") or snapshot.get("business_date")))], 24, 8.5)
+    y = sheet.row(y, [Cell(79, "運転者の氏名", "#f2f2ef", True), Cell(206, _text(driver.get("name"))), Cell(79, "自動車登録番号", "#f2f2ef", True), Cell(175, _text(vehicle.get("plate_number")))], 24, 8.5)
     start, end = _operation_parts(snapshot)
-    return sheet.label(y, "全運行の開始／終了\n地点及び日時", f"【開始】{start}\n【終了】{end}", 66, 8.7)
+    return sheet.label(y, "全運行の開始／終了\n地点及び日時", f"【開始】{start}\n【終了】{end}", 50, 8.1)
 
 
 def _draw_safety_and_signatures(sheet: Sheet, snapshot: dict[str, Any], y: float, *, dates: bool) -> float:
     safety = snapshot.get("safety") or {}
-    y = sheet.label(y, "運行の安全確保\nに必要な事項", f"待機場所：{_text(safety.get('waiting_place'))}\n注意箇所：{_text(safety.get('attention_place'))}\nその他指示事項：{_text(safety.get('other_instruction'))}", 60, 8.7)
-    y += 10 if dates else 7
-    signature_height = 44 if dates else 40
+    y = sheet.label(y, "運行の安全確保\nに必要な事項", f"待機場所：{_text(safety.get('waiting_place'))}\n注意箇所：{_text(safety.get('attention_place'))}\nその他指示事項：{_text(safety.get('other_instruction'))}", 44 if dates else 60, 8.1 if dates else 8.7)
+    y += 5 if dates else 7
+    signature_height = 36 if dates else 40
     signature_widths = (86, 183, 86, 184) if dates else (107, 163, 107, 162)
     y = sheet.row(y, [Cell(signature_widths[0], "運行管理者\n指示（印）", "#f2f2ef", True, 8.7), Cell(signature_widths[1], ""), Cell(signature_widths[2], "運転者\n確認（印）", "#f2f2ef", True, 8.7), Cell(signature_widths[3], "")], signature_height, 8.7)
     if dates:
-        y = sheet.row(y, [Cell(86, "指示年月日", "#f2f2ef", True, 8.5), Cell(183, "　年　月　日　時　分", size=8.5), Cell(86, "確認年月日", "#f2f2ef", True, 8.5), Cell(184, "　年　月　日　時　分", size=8.5)], 26, 8.5)
+        y = sheet.row(y, [Cell(86, "指示年月日", "#f2f2ef", True, 8.0), Cell(183, "　年　月　日　時　分", size=8.0), Cell(86, "確認年月日", "#f2f2ef", True, 8.0), Cell(184, "　年　月　日　時　分", size=8.0)], 22, 8.0)
     return y
 
 
@@ -346,8 +348,8 @@ def _draw_airport_dispatch(canvas: Any, fonts: dict[str, str], snapshot: dict[st
     sheet = Sheet(canvas, fonts)
     airport_count = sum(len(items) for items in snapshot.get("airport_acceptance_pages") or [])
     y = _draw_dispatch_header(sheet, snapshot, f"全日 {airport_count} 件 / {dispatch_index}枚目")
-    y += 8
-    y = sheet.row(y, [Cell(25, "便", "#eeeeeb", True, 7.8), Cell(70, "乗降時刻", "#eeeeeb", True, 7.8), Cell(222, "乗車・降車・立寄り地", "#eeeeeb", True, 7.8), Cell(142, "契約の相手方・連絡先", "#eeeeeb", True, 7.8), Cell(80, "配車依頼方法", "#eeeeeb", True, 7.8)], 32, 7.8)
+    y += 6
+    y = sheet.row(y, [Cell(25, "便", "#eeeeeb", True, 7.5), Cell(70, "乗降時刻", "#eeeeeb", True, 7.5), Cell(222, "乗車・降車・立寄り地", "#eeeeeb", True, 7.5), Cell(142, "契約の相手方・連絡先", "#eeeeeb", True, 7.5), Cell(80, "配車依頼方法", "#eeeeeb", True, 7.5)], 24, 7.5)
     for index, order in enumerate(orders, 1 + (dispatch_index - 1) * AIRPORT_DISPATCH_LIMIT):
         _, pickup_time = _dt(order.get("pickup_at"))
         _, arrival_time = _dt(order.get("arrival_at"))
@@ -357,15 +359,15 @@ def _draw_airport_dispatch(canvas: Any, fonts: dict[str, str], snapshot: dict[st
         applicant = _applicant(snapshot, order.get("applicant_slot"))
         counterparty = _text(order.get("contract_party_name") or order.get("applicant_name") or applicant.get("name"))
         contact = _text(order.get("applicant_contact") or applicant.get("contact"))
-        y = sheet.row(y, [Cell(25, str(index), size=8.2), Cell(70, f"乗 {pickup_time}\n降 {arrival_time}", size=8.2), Cell(222, route, size=8.35), Cell(142, f"氏名：{counterparty}\n連絡：{contact}", size=8.15), Cell(80, "ウェブサイト", size=8.15)], 71, 8.15)
-    y += 8
+        y = sheet.row(y, [Cell(25, str(index), size=7.5), Cell(70, f"乗 {pickup_time}\n降 {arrival_time}", size=7.5), Cell(222, route, size=7.35), Cell(142, f"氏名：{counterparty}\n連絡：{contact}", size=7.2), Cell(80, "ウェブサイト", size=7.2)], 40, 7.2)
+    y += 5
     _draw_safety_and_signatures(sheet, snapshot, y, dates=True)
     driver = snapshot.get("driver") or {}
     vehicle = snapshot.get("vehicle") or {}
     footer = " / ".join(part for part in ("予定版", _text(snapshot.get("route_code") or "V0.14"), _text(snapshot.get("business_date")), _text(driver.get("name")), _text(vehicle.get("plate_number"))) if part)
     sheet.text(footer, MARGIN, 800, 470, 7.6)
     sheet.text("自動選定ホテルを含む計画案。実際の乗降地を要照合。・本機作成／押印・実際の交付は別途", MARGIN, 818, 500, 7.0, color="#555555")
-    sheet.text(f"{dispatch_index} / {dispatch_total}", 510, 800, 57, 7.6, align="right")
+    sheet.text(f"指示書 {dispatch_index}/{dispatch_total} · 全{page}/{total}", 450, 800, 117, 7.1, align="right")
 
 
 def _charter_order(snapshot: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
@@ -441,7 +443,9 @@ def _build_jobs(snapshot: dict[str, Any]) -> list[RenderJob]:
     for acceptance_index, orders in enumerate(airport_pages, 1):
         jobs.append(lambda canvas, fonts, page, total, orders=orders, acceptance_index=acceptance_index: _draw_airport_acceptance(canvas, fonts, snapshot, orders, acceptance_index, len(airport_pages), page, total))
     all_airport_orders = [order for page_orders in airport_pages for order in page_orders]
-    dispatch_pages = _chunks(all_airport_orders, AIRPORT_DISPATCH_LIMIT)
+    # Use the acceptance pages themselves as the sole pagination plan.  This
+    # makes both documents contain the identical order ids in identical order.
+    dispatch_pages = airport_pages
     for dispatch_index, orders in enumerate(dispatch_pages, 1):
         jobs.append(lambda canvas, fonts, page, total, orders=orders, dispatch_index=dispatch_index: _draw_airport_dispatch(canvas, fonts, snapshot, orders, dispatch_index, len(dispatch_pages), page, total))
     for contract in snapshot.get("charter_contracts") or []:

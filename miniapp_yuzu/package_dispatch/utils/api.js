@@ -452,6 +452,7 @@ module.exports = {
   generateRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/generate', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   runDocumentPreview: (groupKey) => request('/api/dispatch-mobile/run-documents/preview', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   updateRunDocumentNode: (data) => request('/api/dispatch-mobile/run-documents/node', { method: 'POST', data: withDispatcher(data) }),
+  updateRunDocumentField: (data) => request('/api/dispatch-mobile/run-documents/field', { method: 'POST', data: withDispatcher(data) }),
   reviewRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   reviewAndPublishRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review-publish', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   publishRunDocuments: (groupKeys) => request('/api/dispatch-mobile/run-documents/publish', { method: 'POST', data: withDispatcher({ group_keys: groupKeys }) }),

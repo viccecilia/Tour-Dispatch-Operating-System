@@ -621,6 +621,7 @@ def build_document_snapshot(group: dict[str, Any], document_version_id: str | No
     )
     first_node = route_nodes[0] if route_nodes else {}
     last_node = route_nodes[-1] if route_nodes else {}
+    field_overrides = group.get("document_field_overrides") or {}
     snapshot = {
         "schema_version": DOCUMENT_MODEL_VERSION,
         "document_id": document_id,
@@ -642,9 +643,9 @@ def build_document_snapshot(group: dict[str, Any], document_version_id: str | No
             "suggested": True,
         },
         "safety": {
-            "waiting_place": group.get("safe_wait") or SAFETY_DEFAULTS["waiting_place"],
-            "attention_place": group.get("safe_attention") or SAFETY_DEFAULTS["attention_place"],
-            "other_instruction": group.get("safe_other") or SAFETY_DEFAULTS["other_instruction"],
+            "waiting_place": field_overrides.get("operation:safety:waiting_place", group.get("safe_wait") or SAFETY_DEFAULTS["waiting_place"]),
+            "attention_place": field_overrides.get("operation:safety:attention_place", group.get("safe_attention") or SAFETY_DEFAULTS["attention_place"]),
+            "other_instruction": field_overrides.get("operation:safety:other_instruction", group.get("safe_other") or SAFETY_DEFAULTS["other_instruction"]),
         },
         "applicants": [{"slot": index + 1, "name": name, "contact": ""} for index, name in enumerate(AIRPORT_APPLICANTS)],
         "orders": orders,

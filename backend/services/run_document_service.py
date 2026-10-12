@@ -50,7 +50,7 @@ JP_FONT_PATH = FONT_DIR / "NotoSansJP-VF.ttf"
 SC_FONT_PATH = FONT_DIR / "NotoSansSC-VF.ttf"
 # Bump this whenever the formal PDF layout or fixed rendering rules change.
 # It prevents a previously generated file from being reused after a template fix.
-DOCUMENT_RENDERER_VERSION = "v014-hire-phase2c2-r2-fontfix-20261011-1"
+DOCUMENT_RENDERER_VERSION = "v014-hire-phase2c3-shared-10-job-pages-20261012-1"
 
 
 def _optional_coalesce_expr(
@@ -128,7 +128,7 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
                    o.oid, o.order_date, o.end_date, o.start_time, o.end_time,
                    o.daily_import_group_key,
                    o.operations_business_area, o.order_type, o.order_note_code, o.order_source,
-                   o.pickup_location, o.dropoff_location, o.price, o.fee_remark,
+                   o.pickup_location, o.dropoff_location, o.price, o.price_jpy, o.fee_remark,
                    o.agency_name, o.guest_name, o.guest_contact, o.flight_number, o.source_channel,
                    o.passenger_count, o.luggage_count, o.remark,
                    o.document_kind, o.applicant_slot, o.applicant_slot_confirmed,
@@ -169,6 +169,10 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             "SELECT * FROM dispatch_route_node_overrides WHERE tenant_id = ? ORDER BY id",
             (tenant,),
         ).fetchall()
+        field_override_rows = conn.execute(
+            "SELECT run_group_id, field_id, value_text FROM dispatch_document_field_overrides WHERE tenant_id = ? ORDER BY id",
+            (tenant,),
+        ).fetchall()
         company_row = conn.execute(
             """
             SELECT COALESCE(NULLIF(registered_name, ''), company_name) AS company_name,
@@ -196,6 +200,12 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             decoded = {}
         item["changed_fields"] = decoded.get("fields") if isinstance(decoded, dict) else []
         overrides_by_group.setdefault(str(item.get("run_group_id") or ""), []).append(item)
+    field_overrides_by_group: dict[str, dict[str, str]] = {}
+    for raw in field_override_rows:
+        item = dict(raw)
+        field_overrides_by_group.setdefault(str(item.get("run_group_id") or ""), {})[
+            str(item.get("field_id") or "")
+        ] = str(item.get("value_text") or "")
     grouped: dict[str, dict[str, Any]] = {}
     for raw in rows:
         item = dict(raw)
@@ -243,6 +253,7 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             group["tenant_id"], group["business_date"], group["driver_id"], group["vehicle_id"]
         )
         group["route_node_overrides"] = overrides_by_group.get(run_group_id, [])
+        group["document_field_overrides"] = field_overrides_by_group.get(run_group_id, {})
         total = len(group["orders"])
         confirmed = sum(1 for order in group["orders"] if order.get("run_confirmation_status") == "confirmed")
         state = "confirmed" if confirmed == total and total else ("confirming" if confirmed else "pending")
@@ -547,6 +558,7 @@ def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
         order_id = int(node.get("order_id") or 0)
         nodes.append(
             {
+                "field_id": f"route_node:{node.get('route_node_id')}:planned_location",
                 "route_node_id": node.get("route_node_id"),
                 "run_group_id": node.get("run_group_id"),
                 "document_version_id": node.get("document_version_id"),
@@ -568,6 +580,18 @@ def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
         "document_version_id": snapshot.get("document_version_id"),
         "run_group_id": snapshot.get("run_group_id"),
         "business_date": snapshot.get("business_date"),
+        "source_sha256": snapshot_source_sha256(snapshot),
+        "document_revision": snapshot.get("document_version_id"),
+        "document_fields": [
+            {"field_id": "operation:safety:waiting_place", "label": "待機場所", "value": (snapshot.get("safety") or {}).get("waiting_place") or "", "editable": True},
+            {"field_id": "operation:safety:attention_place", "label": "注意箇所", "value": (snapshot.get("safety") or {}).get("attention_place") or "", "editable": True},
+            {"field_id": "operation:safety:other_instruction", "label": "安全指示", "value": (snapshot.get("safety") or {}).get("other_instruction") or "", "editable": True},
+            {"field_id": "company:office", "label": "営業所", "value": (snapshot.get("driver") or {}).get("office") or "", "editable": False},
+        ] + [field for order in snapshot.get("orders") or [] for field in (
+            {"field_id": f"order:{order.get('order_id')}:contract_party_name", "order_id": order.get("order_id"), "label": "合同方", "value": order.get("contract_party_name") or order.get("applicant_name") or "", "editable": True},
+            {"field_id": f"order:{order.get('order_id')}:applicant_contact", "order_id": order.get("order_id"), "label": "联系方式", "value": order.get("applicant_contact") or "", "editable": True},
+            {"field_id": f"order:{order.get('order_id')}:price_jpy", "order_id": order.get("order_id"), "label": "费用（日元）", "value": order.get("money", {}).get("total_jpy"), "editable": True, "input_type": "number"},
+        )],
         "nodes": nodes,
         "validation_issues": list(snapshot.get("publish_validation_issues") or []),
     }
@@ -625,6 +649,10 @@ def update_run_document_node(group_value: Any, payload: dict[str, Any], actor: d
     if not group:
         raise ValueError("run_group_not_found")
     snapshot = build_document_snapshot(group, "draft-node-edit")
+    expected_source_hash = str(payload.get("expected_source_hash") or "").strip()
+    current_source_hash = snapshot_source_sha256(snapshot)
+    if expected_source_hash and expected_source_hash != current_source_hash:
+        raise ValueError("document_revision_conflict")
     route_node_id = str(payload.get("route_node_id") or "").strip()
     node = next((item for item in snapshot.get("route_nodes") or [] if item.get("route_node_id") == route_node_id), None)
     if not node:
@@ -701,6 +729,105 @@ def update_run_document_node(group_value: Any, payload: dict[str, Any], actor: d
             actor,
             {"route_node_id": route_node_id, "changed_fields": list(changes)},
         )
+        conn.commit()
+    return preview
+
+
+def update_run_document_field(group_value: Any, payload: dict[str, Any], actor: dict[str, Any]) -> dict[str, Any]:
+    """Persist one whitelisted non-route field in the canonical draft."""
+    _require_operations_actor(actor)
+    date_value, driver_id, vehicle_id = parse_group_key(group_value)
+    tenant = int(actor.get("tenant_id") or get_current_tenant_id())
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
+    snapshot = build_document_snapshot(group, "draft-field-edit")
+    expected_source_hash = str(payload.get("expected_source_hash") or "").strip()
+    if expected_source_hash and expected_source_hash != snapshot_source_sha256(snapshot):
+        raise ValueError("document_revision_conflict")
+    field_id = str(payload.get("field_id") or "").strip()
+    raw_value = payload.get("value")
+    value = "" if raw_value is None else str(raw_value).strip()
+    actor_id = int(actor.get("id") or 0) or None
+    actor_name = str(actor.get("display_name") or actor.get("username") or "运行管理")
+    safety_fields = {
+        "operation:safety:waiting_place",
+        "operation:safety:attention_place",
+        "operation:safety:other_instruction",
+    }
+    order_match = re.fullmatch(r"order:(\d+):(contract_party_name|applicant_contact|price_jpy)", field_id)
+    affected_order_ids: list[int]
+    with closing(get_connection()) as conn:
+        if field_id in safety_fields:
+            if len(value) > 1000:
+                raise ValueError("document_field_value_too_long")
+            conn.execute(
+                """
+                INSERT INTO dispatch_document_field_overrides (
+                    tenant_id, run_group_id, field_id, value_text, updated_by_user_id, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, run_group_id, field_id) DO UPDATE SET
+                    value_text = excluded.value_text,
+                    updated_by_user_id = excluded.updated_by_user_id,
+                    updated_by = excluded.updated_by,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (tenant, snapshot["run_group_id"], field_id, value, actor_id, actor_name),
+            )
+            affected_order_ids = [int(order["order_id"]) for order in snapshot.get("orders") or []]
+        elif order_match:
+            order_id = int(order_match.group(1))
+            field_name = order_match.group(2)
+            if not any(int(order.get("order_id") or 0) == order_id for order in snapshot.get("orders") or []):
+                raise ValueError("document_field_order_not_found")
+            if field_name == "price_jpy":
+                try:
+                    numeric_value = float(value)
+                except ValueError as exc:
+                    raise ValueError("document_field_invalid_price") from exc
+                if numeric_value < 0:
+                    raise ValueError("document_field_invalid_price")
+                conn.execute(
+                    """
+                    UPDATE orders SET price = ?, price_jpy = ?, price_confirmed = 0,
+                        price_confirmed_by_user_id = NULL, price_confirmed_by = NULL,
+                        price_confirmed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                    WHERE tenant_id = ? AND id = ?
+                    """,
+                    (numeric_value, numeric_value, tenant, order_id),
+                )
+            else:
+                if len(value) > 240:
+                    raise ValueError("document_field_value_too_long")
+                column = "agency_name" if field_name == "contract_party_name" else "guest_contact"
+                conn.execute(
+                    f"UPDATE orders SET {column} = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+                    (value, tenant, order_id),
+                )
+            affected_order_ids = [order_id]
+        else:
+            raise ValueError("document_field_not_editable")
+        for order_id in affected_order_ids:
+            conn.execute(
+                """
+                UPDATE orders SET run_confirmation_status = 'pending', run_confirmed_at = NULL,
+                    run_confirmed_by_user_id = NULL, run_confirmed_by = NULL,
+                    run_revision = COALESCE(run_revision, 1) + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """,
+                (tenant, order_id),
+            )
+        _mark_group_stale(conn, tenant, date_value, driver_id, vehicle_id)
+        conn.commit()
+    refreshed = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not refreshed:
+        raise ValueError("run_group_not_found")
+    updated_snapshot = build_document_snapshot(refreshed, make_document_version_id())
+    preview = _editable_node_preview(updated_snapshot)
+    preview["validation_issues"] = list(dict.fromkeys(preview["validation_issues"] + _route_timing_issues(updated_snapshot)))
+    with closing(get_connection()) as conn:
+        record_document_event(conn, updated_snapshot, "document_field_edited", actor, {"field_id": field_id})
         conn.commit()
     return preview
 
