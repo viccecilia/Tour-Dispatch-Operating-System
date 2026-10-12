@@ -43,8 +43,8 @@ def main() -> None:
         ("miniapp_dispatch_default_api", lambda: check_miniapp_api(ROOT_DIR / "miniapp_dispatch" / "utils" / "api.js")),
         ("miniapp_agency_default_api", lambda: check_miniapp_api(ROOT_DIR / "miniapp_agency" / "utils" / "api.js")),
         ("cloud_platform_login", lambda: check_platform_login(args.api_url)),
-        ("cloud_carrier_admin_login", lambda: check_dispatch_mobile_login(args.api_url, "08070010000", "010000")),
-        ("cloud_driver_login", lambda: check_dispatch_mobile_login(args.api_url, "08070010101", "010101")),
+        ("cloud_carrier_admin_login", lambda: check_phone_login(args.api_url, "08070010000", "010000", "admin")),
+        ("cloud_driver_login", lambda: check_phone_login(args.api_url, "08070010101", "010101", "driver")),
         ("cloud_agency_portal_login", lambda: check_agency_login(args.api_url, "AGA2026", "Test123456")),
         ("cloud_agency_guide_login", lambda: check_agency_login(args.api_url, "080-7101-0101", "Test123456")),
     ]
@@ -133,13 +133,15 @@ def check_platform_login(api_url: str) -> str:
     return "admin login ok"
 
 
-def check_dispatch_mobile_login(api_url: str, login: str, password: str) -> str:
+def check_phone_login(api_url: str, login: str, password: str, expected_role: str) -> str:
     payload = post_json(
-        f"{api_url.rstrip('/')}/api/dispatch-mobile/login",
-        {"login": login, "username": login, "password": password, "client_type": "miniapp"},
+        f"{api_url.rstrip('/')}/api/auth/login-phone",
+        {"phone": login, "password": password, "client_type": "web"},
     )
     if not payload.get("token"):
         raise RuntimeError("missing token")
+    if str((payload.get("user") or {}).get("role") or "") != expected_role:
+        raise RuntimeError("unexpected role")
     return f"{login} login ok"
 
 

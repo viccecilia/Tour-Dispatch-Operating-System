@@ -19,7 +19,9 @@ def list_available_drivers() -> list[dict[str, Any]]:
             dict(row)
             for row in conn.execute(
                 """
-                SELECT id, name, phone, status, driver_code, driver_language, office, created_at, updated_at
+                SELECT id, name, phone, status, driver_status, driver_code, driver_language, office,
+                       license_due_date, license_expires_at, health_check_due_date,
+                       created_at, updated_at
                 FROM drivers
                 WHERE COALESCE(status, 'available') NOT IN ('retired', 'removed', 'decommissioned', 'deleted')
                   AND COALESCE(driver_status, 'available') = 'available'
@@ -301,6 +303,52 @@ def import_daily_assignment_batch(
     groups = payload.get("groups") or []
     if not isinstance(groups, list) or not groups:
         raise ValueError("missing_daily_import_groups")
+    tenant_id = get_current_tenant_id()
+    client_batch_id = str(payload.get("client_batch_id") or "").strip()
+    request_id = client_batch_id or str(payload.get("request_id") or "").strip()
+    payload_hash = hashlib.sha256(
+        json.dumps(groups, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    service_dates = sorted({
+        str(group.get("service_date") or "")
+        for group in groups
+        if isinstance(group, dict) and str(group.get("service_date") or "")
+    })
+    if client_batch_id:
+        with get_connection() as batch_conn:
+            existing_batch = batch_conn.execute(
+                "SELECT * FROM daily_import_batches WHERE tenant_id = ? AND client_batch_id = ?",
+                (tenant_id, client_batch_id),
+            ).fetchone()
+            if existing_batch and str(existing_batch["payload_hash"] or "") != payload_hash:
+                raise ValueError("daily_import_batch_payload_mismatch")
+            if existing_batch and existing_batch["status"] == "succeeded" and existing_batch["result_json"]:
+                cached = json.loads(existing_batch["result_json"])
+                cached["reused"] = True
+                cached["idempotent_replay"] = True
+                cached["request_id"] = existing_batch["request_id"] or request_id
+                cached["client_batch_id"] = client_batch_id
+                return cached
+            batch_conn.execute(
+                """
+                INSERT INTO daily_import_batches (
+                    tenant_id, client_batch_id, request_id, payload_hash, status,
+                    service_dates_json, result_json, error_code, created_by_user_id
+                ) VALUES (?, ?, ?, ?, 'pending', ?, NULL, NULL, ?)
+                ON CONFLICT(tenant_id, client_batch_id) DO UPDATE SET
+                    request_id = excluded.request_id,
+                    status = 'pending',
+                    service_dates_json = excluded.service_dates_json,
+                    result_json = NULL,
+                    error_code = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    tenant_id, client_batch_id, request_id or client_batch_id, payload_hash,
+                    json.dumps(service_dates, ensure_ascii=False), _actor_user_id(actor),
+                ),
+            )
+            batch_conn.commit()
     with get_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -313,30 +361,122 @@ def import_daily_assignment_batch(
                 result["client_group_index"] = group.get("client_group_index", index)
                 result["driver_name"] = group.get("driver_name")
                 result["vehicle_code"] = group.get("vehicle_code")
+                result["driver_id"] = group.get("driver_id")
+                result["vehicle_id"] = group.get("vehicle_id")
+                result["service_date"] = group.get("service_date")
+                result["document_status"] = "pending"
                 if not result.get("success"):
                     conn.rollback()
-                    return {
+                    failed_result = {
                         "success": False,
                         "groups": [result],
                         "failed_group_index": index,
                         "conflicts": result.get("conflicts", []),
                         "order_ids": [],
                         "assignment_ids": [],
+                        "client_batch_id": client_batch_id or None,
+                        "request_id": request_id or None,
+                        "business_dates": service_dates,
+                        "rolled_back": True,
                     }
+                    _finish_daily_import_batch(client_batch_id, payload_hash, "failed", failed_result, "daily_import_conflict")
+                    return failed_result
                 results.append(result)
+            response = {
+                "success": True,
+                "groups": results,
+                "order_ids": [item for result in results for item in result.get("order_ids", [])],
+                "assignment_ids": [item for result in results for item in result.get("assignment_ids", [])],
+                "updated_order_ids": [item for result in results for item in result.get("updated_order_ids", [])],
+                "reused": bool(results) and all(result.get("reused") for result in results),
+                "updated_existing": any(result.get("updated_existing") for result in results),
+                "idempotent_replay": False,
+                "conflicts": [],
+                "client_batch_id": client_batch_id or None,
+                "request_id": request_id or None,
+                "business_dates": service_dates,
+                "imported_driver_count": len(results),
+                "imported_order_count": sum(len(result.get("order_ids", [])) for result in results),
+                "group_keys": [result.get("group_key") for result in results if result.get("group_key")],
+                "document_status": "pending",
+            }
+            if client_batch_id:
+                conn.execute(
+                    """
+                    UPDATE daily_import_batches
+                    SET status = 'succeeded', result_json = ?, error_code = NULL,
+                        service_dates_json = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE tenant_id = ? AND client_batch_id = ? AND payload_hash = ?
+                    """,
+                    (
+                        json.dumps(response, ensure_ascii=False, default=str),
+                        json.dumps(service_dates, ensure_ascii=False),
+                        tenant_id, client_batch_id, payload_hash,
+                    ),
+                )
             conn.commit()
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            _finish_daily_import_batch(
+                client_batch_id, payload_hash, "failed", None,
+                "daily_import_oid_conflict" if "orders.oid" in str(exc) else "daily_import_transaction_failed",
+            )
             raise
+    return response
+
+
+def _finish_daily_import_batch(
+    client_batch_id: str,
+    payload_hash: str,
+    status: str,
+    result: dict[str, Any] | None,
+    error_code: str | None,
+) -> None:
+    if not client_batch_id:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE daily_import_batches
+            SET status = ?, result_json = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND client_batch_id = ? AND payload_hash = ?
+            """,
+            (
+                status,
+                json.dumps(result, ensure_ascii=False, default=str) if result is not None else None,
+                error_code,
+                get_current_tenant_id(), client_batch_id, payload_hash,
+            ),
+        )
+        conn.commit()
+
+
+def get_daily_import_batch_status(client_batch_id: str) -> dict[str, Any] | None:
+    batch_id = str(client_batch_id or "").strip()
+    if not batch_id:
+        raise ValueError("daily_import_batch_id_required")
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT client_batch_id, request_id, status, service_dates_json,
+                   result_json, error_code, created_at, updated_at
+            FROM daily_import_batches
+            WHERE tenant_id = ? AND client_batch_id = ?
+            """,
+            (get_current_tenant_id(), batch_id),
+        ).fetchone()
+    if not row:
+        return None
+    result = json.loads(row["result_json"]) if row["result_json"] else None
     return {
-        "success": True,
-        "groups": results,
-        "order_ids": [item for result in results for item in result.get("order_ids", [])],
-        "assignment_ids": [item for result in results for item in result.get("assignment_ids", [])],
-        "updated_order_ids": [item for result in results for item in result.get("updated_order_ids", [])],
-        "reused": bool(results) and all(result.get("reused") for result in results),
-        "updated_existing": any(result.get("updated_existing") for result in results),
-        "conflicts": [],
+        "client_batch_id": row["client_batch_id"],
+        "request_id": row["request_id"],
+        "status": row["status"],
+        "business_dates": json.loads(row["service_dates_json"] or "[]"),
+        "result": result,
+        "error_code": row["error_code"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
     }
 
 
@@ -997,7 +1137,14 @@ def _mark_vehicle_available_if_idle(conn, vehicle_id: Any) -> None:
 
 def _build_assigned_oid(conn, order: dict[str, Any], vehicle: dict[str, Any], driver: dict[str, Any]) -> str:
     vehicle_code = vehicle.get("vehicle_type_code") or normalize_vehicle_type_code(order.get("vehicle_type_code"), order.get("vehicle_type"), vehicle.get("vehicle_type"))
-    base_oid = order.get("oid") or f"D000000A1-{_serial_for_order(conn, order):04d}"
+    date_code = str(order.get("order_date") or "").replace("-", "").replace("/", "")
+    if len(date_code) == 8 and date_code.isdigit():
+        date_code = date_code[2:]
+    else:
+        date_code = "000000"
+    # Order IDs are global and stable.  Using the per-tenant/per-date row count here
+    # made two different dates (or tenants) produce the same UNIQUE orders.oid.
+    base_oid = order.get("oid") or f"D{date_code}A1-{int(order.get('id') or _serial_for_order(conn, order)):04d}"
     return build_execution_order_oid(
         base_oid,
         plate_code=vehicle.get("plate_short_code") or plate_short_code(vehicle.get("plate_number")),

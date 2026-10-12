@@ -1,4 +1,4 @@
-﻿const api = require('../../utils/api');
+const api = require('../../utils/api');
 
 const SAMPLE_TEXT = [
   '5.29 08:00 KIX接机大阪市内 3代 绿450',
@@ -58,6 +58,79 @@ function pad2(value) {
   return String(value).padStart(2, '0');
 }
 
+function splitNodeDateTime(value, fallbackDate) {
+  const text = String(value || '').trim();
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/);
+  return {
+    date: match ? match[1] : String(fallbackDate || ''),
+    time: match ? match[2] : ''
+  };
+}
+
+function composeNodeDateTime(date, time) {
+  const cleanDate = String(date || '').trim();
+  const cleanTime = String(time || '').trim();
+  return cleanDate && cleanTime ? `${cleanDate}T${cleanTime}:00` : '';
+}
+
+function nodeTypeLabel(value) {
+  const labels = {
+    garage_out: '出库', pickup: '接客', waypoint: '途经', dropoff: '送达', garage_in: '归库'
+  };
+  return labels[String(value || '')] || '行程节点';
+}
+
+function nodeValidationLabel(value) {
+  const code = String(value || '');
+  if (code === 'invalid_datetime') return '日期或时间格式不正确';
+  if (code.indexOf('segment_time_order:') === 0) return '同一地点的离开时间不能早于到达时间';
+  if (code.indexOf('route_time_order:') === 0) return '行程时间顺序前后冲突';
+  if (code.indexOf('route_node_location_missing:') === 0) return '行程地点不能为空';
+  return code;
+}
+
+function documentValidationItem(value) {
+  const code = String(value || '');
+  const orderMatch = code.match(/^order_(\d+)_/);
+  const orderLabel = orderMatch ? `第${orderMatch[1]}单 · ` : '';
+  const confirmation = code.indexOf('_confirmation_required') >= 0 || code.indexOf('_validation_required') >= 0;
+  let category = '其他';
+  let field = '文书信息';
+  if (/pickup|arrival|dropoff|operation_|route_|segment_|datetime/.test(code)) { category = '行程'; field = /time|arrival|datetime/.test(code) ? '时间' : '地点'; }
+  else if (/applicant/.test(code)) { category = '申请者'; field = '申请者编号'; }
+  else if (/price|fare|fee|advance|tax/.test(code)) { category = '费用'; field = /tax/.test(code) ? '税费状态' : '金额明细'; }
+  else if (/area|office/.test(code)) { category = '营业区域'; field = /office/.test(code) ? '营业所' : '营业区域'; }
+  else if (/safe|operations_manager/.test(code)) { category = '安全与运行管理'; field = /manager/.test(code) ? '运行管理者' : '安全指示'; }
+  else if (/driver|vehicle|plate/.test(code)) { category = '司机与车辆'; field = /driver/.test(code) ? '司机' : '车辆'; }
+  else if (code === 'invalid_datetime') { category = '行程'; field = '日期或时间'; }
+  const message = code.indexOf(':') >= 0
+    ? nodeValidationLabel(code)
+    : `${orderLabel}${field}${confirmation ? '已有内容，尚未确认' : '缺少必要信息'}`;
+  return { code, category, message, kind: confirmation ? 'confirmation' : 'missing' };
+}
+
+function buildValidationPresentation(values) {
+  const raw = Array.from(new Set((values || []).map((item) => String(item || '')).filter(Boolean)));
+  const seen = new Set();
+  const issues = raw.map(documentValidationItem).filter((item) => {
+    const key = `${item.category}|${item.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const buckets = {};
+  issues.forEach((item) => {
+    if (!buckets[item.category]) buckets[item.category] = { label: item.category, count: 0, missing: 0, confirmation: 0 };
+    buckets[item.category].count += 1;
+    buckets[item.category][item.kind] += 1;
+  });
+  const summary = Object.values(buckets).map((item) => ({
+    ...item,
+    detail: [item.missing ? `${item.missing}项缺少值` : '', item.confirmation ? `${item.confirmation}项待确认` : ''].filter(Boolean).join(' · ')
+  }));
+  return { raw, issues, summary };
+}
+
 function stripDailyOrdinal(value) {
   return String(value || '')
     .replace(/^\s*(?:\d+\uFE0F?\u20E3|[①-⑳❶-❿])\s*/, '')
@@ -74,17 +147,21 @@ function buildDailyId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
 
+function dailyImportRequestId() {
+  return `daily-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+}
+
 function hasDailyOrderSignal(text) {
   return DAILY_ORDER_KEYWORDS.some((key) => text.indexOf(key) !== -1) ||
     /\d{1,2}[./-]\d{1,2}/.test(text) ||
     /\d{1,2}[:：]\d{2}/.test(text);
 }
 
-function normalizeDailyDate(raw) {
+function normalizeDailyDate(raw, baseYear = new Date().getFullYear()) {
   if (!raw) return '';
   const match = String(raw).match(/(\d{1,2})[./-](\d{1,2})/);
   if (!match) return '';
-  const year = new Date().getFullYear();
+  const year = Number(baseYear) || new Date().getFullYear();
   return `${year}-${pad2(match[1])}-${pad2(match[2])}`;
 }
 
@@ -577,6 +654,107 @@ function shiftIsoDate(value, delta) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
+const FIXED_TOUR_EDITOR_STORAGE_KEY = 'dispatch-fixed-tour-editor-v014';
+
+function fixedTourRequestId(prefix = 'charter') {
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+}
+
+function blankFixedTourNode(dayIndex = 1) {
+  return {
+    client_node_id: fixedTourRequestId('node'),
+    route_node_id: '',
+    preset_node_id: '',
+    day_index: dayIndex,
+    location_name: '',
+    default_arrival_time: '',
+    default_departure_time: '',
+    note: ''
+  };
+}
+
+function blankFixedTourEditor(mode = 'preset', businessStartDate = isoToday()) {
+  return {
+    mode,
+    route_id: '',
+    route_name: mode === 'custom' ? '私人订制行程' : '',
+    description: '',
+    trip_type: 'day',
+    duration_days: 1,
+    business_start_date: businessStartDate,
+    client_request_id: fixedTourRequestId(mode === 'custom' ? 'custom' : 'preset'),
+    days: [{ day_index: 1, nodes: [blankFixedTourNode(1), blankFixedTourNode(1)] }]
+  };
+}
+
+function fixedTourEditorFromRoute(route, mode = 'preset', businessStartDate = isoToday()) {
+  const stops = Array.isArray(route && route.stops) ? route.stops : [];
+  const dayIndexes = [...new Set(stops.map((item) => Number(item.day_index || 1)))].sort((a, b) => a - b);
+  const days = (dayIndexes.length ? dayIndexes : [1]).map((dayIndex) => ({
+    day_index: dayIndex,
+    nodes: stops.filter((item) => Number(item.day_index || 1) === dayIndex).map((item) => ({
+      client_node_id: fixedTourRequestId('node'),
+      route_node_id: item.route_node_id || '',
+      preset_node_id: item.preset_node_id || item.source_preset_node_id || '',
+      day_index: dayIndex,
+      location_name: item.location_name || item.location || '',
+      default_arrival_time: item.default_arrival_time || item.arrival_time || '',
+      default_departure_time: item.default_departure_time || item.departure_time || '',
+      note: item.note || ''
+    }))
+  }));
+  return {
+    mode,
+    route_id: mode === 'preset' ? String(route && route.id || '') : '',
+    route_name: route && (route.route_name || route.name) || '',
+    description: route && route.description || '',
+    trip_type: route && route.trip_type || (days.length > 1 ? 'multi_day' : 'day'),
+    duration_days: Math.max(Number(route && route.duration_days || 1), days.length),
+    business_start_date: businessStartDate,
+    client_request_id: fixedTourRequestId(mode === 'custom' ? 'custom' : 'preset'),
+    days
+  };
+}
+
+function fixedTourRoutePayload(editor) {
+  const days = Array.isArray(editor && editor.days) ? editor.days : [];
+  const stops = [];
+  days.forEach((day, dayOffset) => {
+    const dayIndex = Number(day.day_index || dayOffset + 1);
+    (day.nodes || []).forEach((node) => stops.push({
+      route_node_id: node.route_node_id || '',
+      preset_node_id: node.preset_node_id || '',
+      day_index: dayIndex,
+      location_name: String(node.location_name || ''),
+      default_arrival_time: String(node.default_arrival_time || ''),
+      default_departure_time: String(node.default_departure_time || ''),
+      note: String(node.note || '')
+    }));
+  });
+  return {
+    route_name: String(editor && editor.route_name || '').trim(),
+    description: String(editor && editor.description || '').trim(),
+    trip_type: editor && editor.trip_type || 'day',
+    duration_days: Math.max(1, days.length),
+    route_summary: stops.map((item) => item.location_name.trim()).filter(Boolean).join(' → '),
+    default_start_time: stops[0] && (stops[0].default_departure_time || stops[0].default_arrival_time) || '',
+    default_end_time: stops.length && (stops[stops.length - 1].default_arrival_time || stops[stops.length - 1].default_departure_time) || '',
+    stops
+  };
+}
+
+function fixedTourRouteCard(route) {
+  const stops = Array.isArray(route.stops) ? route.stops : [];
+  const preview = route.route_summary || stops.map((item) => item.location_name).filter(Boolean).join(' → ');
+  const durationDays = Math.max(Number(route.duration_days || 1), ...stops.map((item) => Number(item.day_index || 1)), 1);
+  return {
+    ...route,
+    route_preview: preview,
+    main_places: stops.slice(0, 4).map((item) => item.location_name).filter(Boolean).join(' · '),
+    duration_label: durationDays > 1 ? `${durationDays}天` : (route.standard_duration_minutes ? `约${Math.round(Number(route.standard_duration_minutes) / 60)}小时` : '日归')
+  };
+}
+
 function plateTail(value) {
   const text = String(value || '').trim();
   const digits = text.replace(/\D/g, '');
@@ -601,6 +779,58 @@ const DAILY_ORDER_TYPES = ['接机', '送机', '包车'];
 Page({
   data: {
     workbenchMode: 'daily',
+    fixedTourDate: isoToday(),
+    fixedTourView: 'quick',
+    fixedTourPickerOpen: '',
+    fixedTourReturnToQuick: false,
+    fixedTourVisibleRoutes: [],
+    fixedTourVisibleDrivers: [],
+    fixedTourVisibleVehicles: [],
+    fixedTourPickerNotice: '',
+    fixedTourSummary: '请选择线路、司机和车辆',
+    fixedTourEditor: null,
+    fixedTourEditorDirty: false,
+    fixedTourTripTypeIndex: 0,
+    fixedTourTripTypeLabels: ['日归', '多日'],
+    fixedTourCurrentDraft: null,
+    fixedTourGeneratedDocument: null,
+    fixedTourDraftAssociationText: '',
+    fixedTourPendingRequestId: '',
+    fixedTourQuery: '',
+    fixedTourRoutes: [],
+    fixedTourSelectedRoute: null,
+    fixedTourSelectedDriver: null,
+    fixedTourSelectedVehicle: null,
+    fixedTourRoutePreview: '',
+    fixedTourRouteQuery: '',
+    fixedTourDriverQuery: '',
+    fixedTourVehicleQuery: '',
+    fixedTourTimelineStops: [],
+    fixedTourPreSummary: '无',
+    fixedTourPostSummary: '无',
+    fixedTourRouteIndex: 0,
+    fixedTourDriverIndex: 0,
+    fixedTourVehicleIndex: 0,
+    fixedTourRouteWheel: [0],
+    fixedTourDriverWheel: [0],
+    fixedTourVehicleWheel: [0],
+    fixedTourDriverId: '',
+    fixedTourVehicleId: '',
+    fixedTourRouteId: '',
+    fixedTourMessage: '',
+    fixedTourSegments: [],
+    fixedTourSegmentTypes: ['airport_pickup', 'airport_dropoff', 'transfer', 'custom'],
+    fixedTourSegmentTypeLabels: ['机场接机', '机场送机', '普通接送', '自定义'],
+    fixedTourStep: 1,
+    fixedTourDraftReady: false,
+    fixedTourSubmitting: false,
+    fixedTourSuggestedPrice: '',
+    fixedTourEffectivePrice: '',
+    fixedTourPriceEdited: false,
+    fixedTourPriceHint: '',
+    fixedTourEditingSegmentIndex: -1,
+    fixedTourAcceptanceCount: 1,
+    fixedTourInstructionCount: 1,
     dailyDate: isoToday(),
     dailyStatusFilter: 'all',
     dailyStatusOptions: [
@@ -617,11 +847,29 @@ Page({
     dailyPdfReviewGroup: null,
     dailyPdfReviewDocument: null,
     dailyPdfReviewCanConfirm: false,
+    dailyPdfPreviewUnavailable: false,
+    dailyPdfDraftOnly: false,
     dailyPdfReviewIndex: 0,
     dailyPdfReviewTotal: 0,
     dailyPdfValidationIssues: [],
+    dailyPdfValidationRaw: [],
+    dailyPdfIssueSummary: [],
+    dailyPdfIssuesExpanded: false,
+    dailyPdfNodesExpanded: false,
+    dailyPdfNodes: [],
+    dailyNodeEditOpen: false,
+    dailyNodeEditIndex: -1,
+    dailyNodeEditForm: null,
     dailyImportOpen: false,
     dailyImportSubmitting: false,
+    dailyImportDefaultDate: isoToday(),
+    dailyImportBatchId: '',
+    dailyImportLastResult: null,
+    dailyImportedHighlightKey: '',
+    dailyImportDefaultDate: isoToday(),
+    dailyImportBatchId: '',
+    dailyImportLastResult: null,
+    dailyImportedHighlightKey: '',
     dailyReviewOpen: false,
     dailyReviewGroupKey: '',
     dailyReviewOrderIndex: 0,
@@ -635,6 +883,8 @@ Page({
     importOpen: true,
     importMode: 'daily',
     importText: SAMPLE_TEXT,
+    batchFullscreen: false,
+    batchFullscreenText: '',
     dailySourceText: '',
     dailyGroups: [],
     dailyStats: calcDailyStats([]),
@@ -727,8 +977,649 @@ Page({
   },
 
   switchWorkbenchMode(e) {
-    const mode = (e.currentTarget.dataset || {}).mode === 'batch' ? 'batch' : 'daily';
+    const asked = (e.currentTarget.dataset || {}).mode;
+    const mode = ['daily', 'fixed', 'batch'].includes(asked) ? asked : 'daily';
+    if (this.data.workbenchMode === 'fixed' && mode !== 'fixed' && this.data.fixedTourEditorDirty) {
+      wx.showModal({
+        title: '行程尚未保存',
+        content: '输入内容已暂存在本机。离开后再次进入“日游行程”仍可继续编辑。',
+        cancelText: '继续编辑',
+        confirmText: '离开',
+        success: (res) => { if (res.confirm) this.applyWorkbenchMode(mode); }
+      });
+      return;
+    }
+    this.applyWorkbenchMode(mode);
+  },
+
+  applyWorkbenchMode(mode) {
     this.setData({ workbenchMode: mode, importOpen: mode === 'batch' });
+    if (mode === 'fixed') {
+      this.restoreFixedTourEditor();
+      this.loadFixedTours();
+    }
+  },
+
+  loadFixedTours() {
+    api.mobileFixedTourRoutes()
+      .then((result) => {
+        const routes = (result.routes || []).map(fixedTourRouteCard);
+        this.setData({ fixedTourRoutes: routes, fixedTourMessage: '' }, () => this.applyFixedTourRouteFilter());
+      })
+      .catch((error) => this.setData({ fixedTourMessage: api.errorMessage(error) }));
+  },
+
+  applyFixedTourRouteFilter() {
+    const needle = String(this.data.fixedTourRouteQuery || '').trim().toLowerCase().replace(/[\s\-－_]+/g, '');
+    const routes = (this.data.fixedTourRoutes || []).filter((route) => {
+      if (!needle) return true;
+      const searchable = [
+        route.route_code, route.route_name, route.description, route.route_summary,
+        ...(route.stops || []).map((item) => item.location_name)
+      ].join(' ').toLowerCase().replace(/[\s\-－_]+/g, '');
+      return searchable.indexOf(needle) >= 0;
+    });
+    this.setData({ fixedTourVisibleRoutes: routes });
+  },
+
+  applyFixedTourDriverFilter() {
+    const needle = normalizeDailyMatchValue(this.data.fixedTourDriverQuery);
+    const dispatchDrivers = this.data.fixedTourDispatchDrivers || [];
+    const sourceDrivers = dispatchDrivers.length ? dispatchDrivers : (this.data.drivers || []);
+    const drivers = sourceDrivers.filter((driver) => {
+      if (!needle) return true;
+      return normalizeDailyMatchValue([driver.name, driver.display_name, driver.driver_code, driver.office].filter(Boolean).join(' ')).indexOf(needle) >= 0;
+    });
+    this.setData({ fixedTourVisibleDrivers: drivers });
+  },
+
+  applyFixedTourVehicleFilter() {
+    const needle = normalizeDailyMatchValue(this.data.fixedTourVehicleQuery);
+    const dispatchVehicles = this.data.fixedTourDispatchVehicles || [];
+    const sourceVehicles = dispatchVehicles.length ? dispatchVehicles : (this.data.vehicles || []);
+    const vehicles = sourceVehicles.map((vehicle) => ({
+      ...vehicle,
+      plate_tail: plateTail(vehicle.plate_number || vehicle.plate_no),
+      distinction: [vehicle.vehicle_type, vehicle.office].filter(Boolean).join(' · ') || '车型待核'
+    })).filter((vehicle) => {
+      if (!needle) return true;
+      return normalizeDailyMatchValue([vehicle.plate_number, vehicle.plate_no, vehicle.plate_tail, vehicle.vehicle_type, vehicle.office].filter(Boolean).join(' ')).indexOf(needle) >= 0;
+    });
+    this.setData({ fixedTourVisibleVehicles: vehicles });
+  },
+
+  refreshFixedTourSummary() {
+    const route = this.data.fixedTourSelectedRoute;
+    const driver = this.data.fixedTourSelectedDriver;
+    const vehicle = this.data.fixedTourSelectedVehicle;
+    const parts = [
+      route && route.route_name,
+      driver && (driver.name || driver.display_name),
+      vehicle && (vehicle.plate_number || vehicle.plate_no)
+    ].filter(Boolean);
+    this.setData({ fixedTourSummary: parts.length ? parts.join(' · ') : '请选择线路、司机和车辆' });
+  },
+
+  openFixedTourPicker(e) {
+    const type = String((e.currentTarget.dataset || {}).type || '');
+    if (!['route', 'driver', 'vehicle'].includes(type)) return;
+    const initial = { fixedTourPickerOpen: type, fixedTourMessage: '', fixedTourPickerNotice: '' };
+    if (type === 'driver') {
+      initial.fixedTourDriverQuery = '';
+      initial.fixedTourDispatchDrivers = this.data.drivers || [];
+    } else if (type === 'vehicle') {
+      initial.fixedTourVehicleQuery = '';
+      initial.fixedTourDispatchVehicles = this.data.vehicles || [];
+    }
+    this.setData(initial, () => {
+      if (type === 'driver') this.applyFixedTourDriverFilter();
+      if (type === 'vehicle') this.applyFixedTourVehicleFilter();
+    });
+    if (type === 'route') {
+      this.applyFixedTourRouteFilter();
+      return;
+    }
+    api.fixedTourDispatchOptions(
+      this.data.fixedTourDate,
+      this.data.fixedTourCurrentDraft && this.data.fixedTourCurrentDraft.id,
+      this.data.fixedTourRouteId
+    ).then((result) => {
+      this.setData({
+        fixedTourDispatchDrivers: result.drivers || [],
+        fixedTourDispatchVehicles: result.vehicles || []
+      }, () => {
+        if (type === 'driver') this.applyFixedTourDriverFilter();
+        else this.applyFixedTourVehicleFilter();
+      });
+    }).catch((error) => {
+      const unavailable = Number(error && error.statusCode || 0) === 404;
+      this.setData({
+        fixedTourPickerNotice: unavailable
+          ? '已显示当前可用列表；当日冲突状态需人工核对。'
+          : `冲突状态读取失败：${api.errorMessage(error)}`
+      });
+    });
+  },
+
+  closeFixedTourPicker() {
+    this.setData({ fixedTourPickerOpen: '', fixedTourPickerNotice: '' });
+  },
+
+  onFixedTourRouteSearch(e) {
+    this.setData({ fixedTourRouteQuery: e.detail.value }, () => this.applyFixedTourRouteFilter());
+  },
+
+  restoreFixedTourEditor() {
+    if (this.data.fixedTourEditor) return;
+    try {
+      const saved = wx.getStorageSync(FIXED_TOUR_EDITOR_STORAGE_KEY);
+      if (saved && saved.editor && saved.view === 'editor') {
+        this.setData({
+          fixedTourView: saved.view,
+          fixedTourEditor: saved.editor,
+          fixedTourEditorDirty: true,
+          fixedTourTripTypeIndex: saved.editor.trip_type === 'multi_day' ? 1 : 0
+        });
+        if (typeof wx.enableAlertBeforeUnload === 'function') wx.enableAlertBeforeUnload({ message: '日游行程尚未保存，确定离开吗？' });
+      }
+    } catch (error) {
+      console.warn('[fixed-tour editor restore failed]', error);
+    }
+  },
+
+  persistFixedTourEditor(editor, view = this.data.fixedTourView) {
+    try { wx.setStorageSync(FIXED_TOUR_EDITOR_STORAGE_KEY, { editor, view }); } catch (error) { console.warn('[fixed-tour editor persist failed]', error); }
+  },
+
+  markFixedTourEditor(editor, view = this.data.fixedTourView) {
+    this.setData({ fixedTourEditor: editor, fixedTourEditorDirty: true, fixedTourView: view, fixedTourMessage: '' });
+    this.persistFixedTourEditor(editor, view);
+    if (typeof wx.enableAlertBeforeUnload === 'function') wx.enableAlertBeforeUnload({ message: '日游行程尚未保存，确定离开吗？' });
+  },
+
+  clearFixedTourEditorPersistence() {
+    try { wx.removeStorageSync(FIXED_TOUR_EDITOR_STORAGE_KEY); } catch (error) { console.warn('[fixed-tour editor clear failed]', error); }
+    if (typeof wx.disableAlertBeforeUnload === 'function') wx.disableAlertBeforeUnload();
+  },
+
+  openNewFixedTourPreset() {
+    const editor = blankFixedTourEditor('preset', this.data.fixedTourDate);
+    this.setData({ fixedTourPickerOpen: '', fixedTourReturnToQuick: true, fixedTourTripTypeIndex: 0 }, () => {
+      this.markFixedTourEditor(editor, 'editor');
+    });
+  },
+
+  openCustomFixedTourDraft() {
+    const editor = blankFixedTourEditor('custom', this.data.fixedTourDate);
+    this.setData({ fixedTourPickerOpen: '', fixedTourReturnToQuick: true, fixedTourTripTypeIndex: 0 }, () => {
+      this.markFixedTourEditor(editor, 'editor');
+    });
+  },
+
+  editFixedTourPreset(e) {
+    const route = (this.data.fixedTourRoutes || []).find((item) => String(item.id) === String(e.currentTarget.dataset.id));
+    if (!route) return;
+    const editor = fixedTourEditorFromRoute(route, 'preset', this.data.fixedTourDate);
+    this.markFixedTourEditor(editor, 'editor');
+    this.setData({ fixedTourTripTypeIndex: editor.trip_type === 'multi_day' ? 1 : 0 });
+  },
+
+  copyFixedTourPreset(e) {
+    const route = (this.data.fixedTourRoutes || []).find((item) => String(item.id) === String(e.currentTarget.dataset.id));
+    if (!route) return;
+    const editor = fixedTourEditorFromRoute({ ...route, id: '', route_name: `${route.route_name}（副本）` }, 'preset', this.data.fixedTourDate);
+    editor.route_id = '';
+    editor.client_request_id = fixedTourRequestId('preset-copy');
+    editor.days.forEach((day) => day.nodes.forEach((node) => { node.preset_node_id = ''; node.route_node_id = ''; }));
+    this.markFixedTourEditor(editor, 'editor');
+    this.setData({ fixedTourTripTypeIndex: editor.trip_type === 'multi_day' ? 1 : 0 });
+  },
+
+  deactivateFixedTourPreset(e) {
+    const routeId = String(e.currentTarget.dataset.id || '');
+    if (!routeId || this.data.fixedTourSubmitting) return;
+    wx.showModal({
+      title: '停用预设路线',
+      content: '停用后不会影响已经创建的行程或历史PDF。',
+      cancelText: '取消',
+      confirmText: '停用',
+      success: (res) => {
+        if (!res.confirm) return;
+        this.setData({ fixedTourSubmitting: true });
+        api.setMobileFixedTourRouteStatus(routeId, 'inactive')
+          .then(() => this.loadFixedTours())
+          .catch((error) => this.setData({ fixedTourMessage: api.errorMessage(error) }))
+          .finally(() => this.setData({ fixedTourSubmitting: false }));
+      }
+    });
+  },
+
+  useFixedTourPreset(e) {
+    const routeId = String(e.currentTarget.dataset.id || '');
+    if (!routeId || this.data.fixedTourSubmitting) return;
+    const requestId = this.data.fixedTourPendingRequestId || fixedTourRequestId(`use-${routeId}`);
+    this.setData({ fixedTourSubmitting: true, fixedTourPendingRequestId: requestId, fixedTourMessage: '' });
+    api.createFixedTourCharterDraft({
+      source_preset_id: routeId,
+      business_start_date: this.data.fixedTourDate,
+      client_request_id: requestId
+    }).then((result) => this.openFixedTourDraft(result.draft))
+      .catch((error) => this.setData({ fixedTourMessage: api.errorMessage(error) }))
+      .finally(() => this.setData({ fixedTourSubmitting: false }));
+  },
+
+  openFixedTourDraft(draft) {
+    if (!draft || !draft.route_snapshot) return;
+    const route = { ...draft.route_snapshot, stops: draft.route_snapshot.stops || [] };
+    const editor = fixedTourEditorFromRoute(route, 'draft', draft.business_start_date || this.data.fixedTourDate);
+    editor.client_request_id = draft.client_request_id || editor.client_request_id;
+    this.clearFixedTourEditorPersistence();
+    this.setData({
+      fixedTourView: 'editor',
+      fixedTourEditor: editor,
+      fixedTourEditorDirty: false,
+      fixedTourCurrentDraft: draft,
+      fixedTourPendingRequestId: '',
+      fixedTourTripTypeIndex: editor.trip_type === 'multi_day' ? 1 : 0,
+      fixedTourDraftAssociationText: draft.source_preset_id
+        ? `已复制预设 #${draft.source_preset_id} V${draft.source_preset_version}；修改本次行程不会改变预设。`
+        : '一次性私人订制，不会加入公司预设路线库。',
+      fixedTourMessage: '包车文书草稿数据已建立；正式PDF审核将在 Phase 2C-2 接入。'
+    });
+  },
+
+  backFixedTourList() {
+    const leave = () => {
+      this.clearFixedTourEditorPersistence();
+      this.setData({ fixedTourView: 'quick', fixedTourPickerOpen: '', fixedTourEditor: null, fixedTourEditorDirty: false, fixedTourReturnToQuick: false, fixedTourMessage: '' });
+      this.loadFixedTours();
+    };
+    if (!this.data.fixedTourEditorDirty) { leave(); return; }
+    wx.showModal({ title: '放弃未保存修改？', content: '本机暂存内容将被清除。', cancelText: '继续编辑', confirmText: '放弃', success: (res) => { if (res.confirm) leave(); } });
+  },
+
+  onFixedTourEditorField(e) {
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    editor[e.currentTarget.dataset.key] = e.detail.value;
+    this.markFixedTourEditor(editor);
+  },
+
+  onFixedTourEditorDate(e) {
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    editor.business_start_date = e.detail.value;
+    this.setData({ fixedTourDate: e.detail.value });
+    this.markFixedTourEditor(editor);
+  },
+
+  onFixedTourEditorTripType(e) {
+    const nextType = Number(e.detail.value) === 1 ? 'multi_day' : 'day';
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    const apply = () => {
+      editor.trip_type = nextType;
+      if (nextType === 'day') editor.days = editor.days.slice(0, 1).map((day) => ({ ...day, day_index: 1, nodes: (day.nodes || []).map((node) => ({ ...node, day_index: 1 })) }));
+      editor.duration_days = editor.days.length;
+      this.setData({ fixedTourTripTypeIndex: nextType === 'multi_day' ? 1 : 0 });
+      this.markFixedTourEditor(editor);
+    };
+    if (nextType === 'day' && editor.days.length > 1) {
+      wx.showModal({ title: '切换为日归', content: '第2天及之后的地点将被移除。', cancelText: '取消', confirmText: '确认', success: (res) => { if (res.confirm) apply(); } });
+      return;
+    }
+    apply();
+  },
+
+  onFixedTourNodeInput(e) {
+    const dayIndex = Number(e.currentTarget.dataset.day);
+    const nodeIndex = Number(e.currentTarget.dataset.node);
+    const key = e.currentTarget.dataset.key;
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    if (!editor.days[dayIndex] || !editor.days[dayIndex].nodes[nodeIndex]) return;
+    editor.days[dayIndex].nodes[nodeIndex][key] = e.detail.value;
+    this.markFixedTourEditor(editor);
+  },
+
+  addFixedTourNode(e) {
+    const dayIndex = Number(e.currentTarget.dataset.day);
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    if (!editor.days[dayIndex]) return;
+    editor.days[dayIndex].nodes.push(blankFixedTourNode(Number(editor.days[dayIndex].day_index || dayIndex + 1)));
+    this.markFixedTourEditor(editor);
+  },
+
+  moveFixedTourNode(e) {
+    const dayIndex = Number(e.currentTarget.dataset.day);
+    const nodeIndex = Number(e.currentTarget.dataset.node);
+    const delta = Number(e.currentTarget.dataset.delta);
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    const nodes = editor.days[dayIndex] && editor.days[dayIndex].nodes;
+    const target = nodeIndex + delta;
+    if (!nodes || target < 0 || target >= nodes.length) return;
+    [nodes[nodeIndex], nodes[target]] = [nodes[target], nodes[nodeIndex]];
+    this.markFixedTourEditor(editor);
+  },
+
+  removeFixedTourNode(e) {
+    const dayIndex = Number(e.currentTarget.dataset.day);
+    const nodeIndex = Number(e.currentTarget.dataset.node);
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    if (!editor.days[dayIndex]) return;
+    editor.days[dayIndex].nodes.splice(nodeIndex, 1);
+    this.markFixedTourEditor(editor);
+  },
+
+  addFixedTourDay() {
+    const editor = JSON.parse(JSON.stringify(this.data.fixedTourEditor || {}));
+    const dayIndex = editor.days.length + 1;
+    editor.trip_type = 'multi_day';
+    editor.duration_days = dayIndex;
+    editor.days.push({ day_index: dayIndex, nodes: [blankFixedTourNode(dayIndex), blankFixedTourNode(dayIndex)] });
+    this.setData({ fixedTourTripTypeIndex: 1 });
+    this.markFixedTourEditor(editor);
+  },
+
+  fixedTourEditorError(editor) {
+    if (!String(editor && editor.route_name || '').trim()) return '请填写行程名称。';
+    const nodes = (editor.days || []).reduce((all, day) => all.concat(day.nodes || []), []);
+    if (nodes.length < 2) return '行程至少需要两个地点。';
+    if (nodes.some((node) => !String(node.location_name || '').trim())) return '请补全所有地点名称。';
+    const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+    for (const node of nodes) {
+      const arrival = String(node.default_arrival_time || '').trim();
+      const departure = String(node.default_departure_time || '').trim();
+      if ((arrival && !timePattern.test(arrival)) || (departure && !timePattern.test(departure))) return '时间必须使用24小时制 HH:mm，例如 09:30。';
+      if (arrival && departure && departure < arrival) return '同一地点的出发时间不能早于到达时间。';
+    }
+    return '';
+  },
+
+  saveAndUseFixedTourEditor() {
+    const editor = this.data.fixedTourEditor;
+    const validation = this.fixedTourEditorError(editor);
+    if (validation) { this.setData({ fixedTourMessage: validation }); return; }
+    if (this.data.fixedTourSubmitting) return;
+    const route = fixedTourRoutePayload(editor);
+    this.setData({ fixedTourSubmitting: true, fixedTourMessage: '' });
+    const request = editor.mode === 'custom'
+      ? api.createFixedTourCharterDraft({ route, business_start_date: editor.business_start_date, client_request_id: editor.client_request_id })
+      : api.saveAndUseMobileFixedTourRoute({ route_id: editor.route_id || undefined, route, business_start_date: editor.business_start_date, client_request_id: editor.client_request_id });
+    request.then((result) => {
+      if (!this.data.fixedTourReturnToQuick) {
+        this.openFixedTourDraft(result.draft);
+        return;
+      }
+      const routeCard = fixedTourRouteCard(result.route || (result.draft && result.draft.route_snapshot) || route);
+      this.clearFixedTourEditorPersistence();
+      this.setData({
+        fixedTourView: 'quick',
+        fixedTourPickerOpen: '',
+        fixedTourReturnToQuick: false,
+        fixedTourEditor: null,
+        fixedTourEditorDirty: false,
+        fixedTourCurrentDraft: result.draft || null,
+        fixedTourRouteId: String((result.route && result.route.id) || (result.draft && result.draft.source_preset_id) || ''),
+        fixedTourSelectedRoute: routeCard,
+        fixedTourMessage: editor.mode === 'custom'
+          ? '私人订制已保存为本次行程，不会加入预设库。'
+          : '路线已保存并自动选中；原有日期、司机和车辆选择已保留。'
+      }, () => {
+        this.refreshFixedTourSummary();
+        this.loadFixedTours();
+      });
+    })
+      .catch((error) => this.setData({ fixedTourMessage: api.errorMessage(error) }))
+      .finally(() => this.setData({ fixedTourSubmitting: false }));
+  },
+
+  saveFixedTourCurrentDraft() {
+    const editor = this.data.fixedTourEditor;
+    const draft = this.data.fixedTourCurrentDraft;
+    const validation = this.fixedTourEditorError(editor);
+    if (validation) { this.setData({ fixedTourMessage: validation }); return; }
+    if (!draft || this.data.fixedTourSubmitting) return;
+    this.setData({ fixedTourSubmitting: true, fixedTourMessage: '' });
+    api.updateFixedTourCharterDraft(draft.id, { business_start_date: editor.business_start_date, route: fixedTourRoutePayload(editor) })
+      .then((result) => {
+        this.clearFixedTourEditorPersistence();
+        this.setData({ fixedTourCurrentDraft: result.draft, fixedTourEditorDirty: false, fixedTourMessage: '本次行程草稿已保存；原预设和历史订单未改变。' });
+      })
+      .catch((error) => this.setData({ fixedTourMessage: api.errorMessage(error) }))
+      .finally(() => this.setData({ fixedTourSubmitting: false }));
+  },
+
+  onFixedTourQuery(e) { this.setData({ fixedTourQuery: e.detail.value }); },
+  onFixedTourRouteQuery(e) { this.setData({ fixedTourRouteQuery: e.detail.value }); },
+  onFixedTourDriverQuery(e) { this.setData({ fixedTourDriverQuery: e.detail.value }, () => this.applyFixedTourDriverFilter()); },
+  onFixedTourVehicleQuery(e) { this.setData({ fixedTourVehicleQuery: e.detail.value }, () => this.applyFixedTourVehicleFilter()); },
+  searchFixedTours() { this.loadFixedTours(); },
+  onFixedTourDateChange(e) {
+    this.setData({ fixedTourDate: e.detail.value, fixedTourGeneratedDocument: null }, () => this.loadFixedTours());
+  },
+  pickFixedTourRoute(e) {
+    const route = this.data.fixedTourRoutes.find((item) => String(item.id) === String(e.currentTarget.dataset.id)) || this.data.fixedTourRoutes[Number(e.detail?.value ?? 0)];
+    if (!route) return;
+    const index = this.data.fixedTourRoutes.indexOf(route);
+    this.setData({ fixedTourRouteIndex: index, fixedTourRouteWheel: [index], fixedTourRouteId: String(route.id), fixedTourSelectedRoute: route, fixedTourPickerOpen: '', fixedTourPriceHint: '', fixedTourGeneratedDocument: null }, () => {
+      this.refreshFixedTourPresentation();
+      this.refreshFixedTourPrice();
+      this.refreshFixedTourSummary();
+    });
+  },
+  pickFixedTourDriver(e) {
+    const dispatchDrivers = this.data.fixedTourDispatchDrivers || [];
+    const drivers = dispatchDrivers.length ? dispatchDrivers : (this.data.drivers || []);
+    const driver = drivers.find((item) => String(item.id) === String(e.currentTarget.dataset.id)) || drivers[Number(e.detail?.value ?? 0)]; const index = drivers.indexOf(driver);
+    if (driver) this.setData({ fixedTourDriverIndex: index, fixedTourDriverWheel: [index], fixedTourDriverId: String(driver.id), fixedTourSelectedDriver: driver, fixedTourPickerOpen: '', fixedTourGeneratedDocument: null }, () => this.refreshFixedTourSummary());
+  },
+  pickFixedTourVehicle(e) {
+    const dispatchVehicles = this.data.fixedTourDispatchVehicles || [];
+    const vehicles = dispatchVehicles.length ? dispatchVehicles : (this.data.vehicles || []);
+    const vehicle = vehicles.find((item) => String(item.id) === String(e.currentTarget.dataset.id)) || vehicles[Number(e.detail?.value ?? 0)]; const index = vehicles.indexOf(vehicle);
+    if (!vehicle) return;
+    this.setData({ fixedTourVehicleIndex: index, fixedTourVehicleWheel: [index], fixedTourVehicleId: String(vehicle.id), fixedTourSelectedVehicle: vehicle, fixedTourPickerOpen: '', fixedTourPriceHint: '', fixedTourGeneratedDocument: null }, () => { this.refreshFixedTourPrice(); this.refreshFixedTourSummary(); });
+  },
+
+  ensureFixedTourDraftForGeneration() {
+    const routeId = String(this.data.fixedTourRouteId || '');
+    const businessDate = String(this.data.fixedTourDate || '');
+    const current = this.data.fixedTourCurrentDraft;
+    const currentRouteId = String(current && current.source_preset_id || '');
+    const currentDate = String(current && (current.business_start_date || (current.order && current.order.order_date)) || '').slice(0, 10);
+    const currentMatches = !!current && currentDate === businessDate && (
+      (!routeId && !currentRouteId) || (routeId && currentRouteId === routeId)
+    );
+    if (currentMatches) return Promise.resolve(current);
+    if (!routeId) return Promise.reject({ error: 'fixed_tour_route_not_found' });
+    const requestId = this.data.fixedTourPendingRequestId || fixedTourRequestId(`dispatch-${routeId}`);
+    this.setData({ fixedTourPendingRequestId: requestId });
+    return api.createFixedTourCharterDraft({
+      source_preset_id: routeId,
+      business_start_date: businessDate,
+      client_request_id: requestId
+    }).then((result) => {
+      const draft = result && result.draft;
+      if (!draft || !draft.id) throw new Error('本次包车草稿创建结果无效');
+      this.setData({ fixedTourCurrentDraft: draft, fixedTourPendingRequestId: '' });
+      return draft;
+    });
+  },
+
+  generateFixedTourDocuments() {
+    if (this.data.fixedTourSubmitting) return;
+    const route = this.data.fixedTourSelectedRoute;
+    const driver = this.data.fixedTourSelectedDriver;
+    const vehicle = this.data.fixedTourSelectedVehicle;
+    if (!route) { wx.showToast({ title: '请选择线路', icon: 'none' }); return; }
+    if (!driver) { wx.showToast({ title: '请选择司机', icon: 'none' }); return; }
+    if (!vehicle) { wx.showToast({ title: '请选择车辆', icon: 'none' }); return; }
+    this.setData({ fixedTourSubmitting: true, fixedTourMessage: '' });
+    let activeDraft = null;
+    this.ensureFixedTourDraftForGeneration()
+      .then((draft) => {
+        activeDraft = draft;
+        return api.generateFixedTourDraftDocuments(draft.id, {
+          driver_id: Number(driver.id),
+          vehicle_id: Number(vehicle.id)
+        });
+      })
+      .then((result) => {
+        const document = result && result.document;
+        const preview = result && result.preview || {};
+        if (!document || !document.file_url) throw new Error('PDF 草稿生成结果无效');
+        const validation = buildValidationPresentation(preview.validation_issues || []);
+        const nodes = (preview.nodes || []).map((node) => ({
+          ...node,
+          type_label: nodeTypeLabel(node.node_type),
+          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
+        }));
+        const group = {
+          key: result.group_key || '',
+          driver_id: Number(driver.id),
+          vehicle_id: Number(vehicle.id),
+          driver: driver.name || driver.display_name || '司机',
+          driver_name: driver.name || driver.display_name || '司机',
+          vehicle: plateTail(vehicle.plate_number || vehicle.plate_no),
+          vehicleFull: vehicle.plate_number || vehicle.plate_no || '车辆',
+          plate_number: vehicle.plate_number || vehicle.plate_no || '',
+          business_date: this.data.fixedTourDate,
+          order_count: 1,
+          orders: [],
+          workflowStatus: 'draft',
+          validation_issues: validation.raw
+        };
+        this.setData({
+          fixedTourCurrentDraft: result.draft || activeDraft,
+          fixedTourGeneratedDocument: document,
+          fixedTourPendingRequestId: '',
+          fixedTourMessage: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`,
+          dailyPdfReviewOpen: true,
+          dailyPdfDraftOnly: true,
+          dailyPdfReviewGroup: group,
+          dailyPdfReviewDocument: document,
+          dailyPdfReviewCanConfirm: false,
+          dailyPdfPreviewUnavailable: false,
+          dailyPdfReviewIndex: 0,
+          dailyPdfReviewTotal: 1,
+          dailyPdfValidationIssues: validation.issues,
+          dailyPdfValidationRaw: validation.raw,
+          dailyPdfIssueSummary: validation.summary,
+          dailyPdfIssuesExpanded: false,
+          dailyPdfNodes: nodes,
+          dailyPdfNodesExpanded: false,
+          dailyNodeEditOpen: false,
+          dailyNodeEditIndex: -1,
+          dailyNodeEditForm: null
+        });
+        wx.showToast({ title: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`, icon: 'success' });
+        api.downloadAndOpenDocument(document.file_url).catch((error) => {
+          console.warn('[fixed tour PDF open failed]', error);
+          this.setData({ fixedTourMessage: `PDF草稿已生成 · ${Number(document.page_count || 0)}页；打开失败，请重试。` });
+          wx.showToast({ title: '文书已生成，打开失败，请重试', icon: 'none' });
+        });
+      })
+      .catch((error) => {
+        const unavailable = Number(error && error.statusCode || 0) === 404 || error && error.backendError === 'fixed_tour_service_unavailable';
+        const draftSaved = !!(activeDraft && activeDraft.id);
+        this.setData({
+          fixedTourCurrentDraft: activeDraft || this.data.fixedTourCurrentDraft,
+          fixedTourMessage: unavailable
+            ? `${draftSaved ? '本次行程草稿已保存；' : ''}当前 Trial 后端尚未部署 PDF 草稿生成接口，选择内容已保留。`
+            : `${api.errorMessage(error)}；选择内容和本次草稿已保留，可安全重试。`
+        });
+        wx.showToast({ title: unavailable ? 'Trial 后端待更新' : 'PDF 草稿生成失败', icon: 'none' });
+      })
+      .finally(() => this.setData({ fixedTourSubmitting: false }));
+  },
+
+  openFixedTourGeneratedPdf() {
+    const document = this.data.fixedTourGeneratedDocument;
+    if (!document || !document.file_url) return;
+    api.downloadAndOpenDocument(document.file_url).catch((error) => {
+      console.warn('[fixed tour PDF reopen failed]', error);
+      wx.showToast({ title: '文书已生成，打开失败，请重试', icon: 'none' });
+    });
+  },
+
+  refreshFixedTourPrice() {
+    const route = this.data.fixedTourRoutes.find((item) => String(item.id) === String(this.data.fixedTourRouteId));
+    const vehicle = this.data.vehicles.find((item) => String(item.id) === String(this.data.fixedTourVehicleId));
+    if (!route || !vehicle) return;
+    const normalized = (value) => String(value || '').toLowerCase().replace(/[\s_-]/g, '');
+    const priceRow = (route.prices || []).find((item) => normalized(item.vehicle_type) === normalized(vehicle.vehicle_type));
+    const suggested = priceRow && priceRow.price_jpy !== undefined && priceRow.price_jpy !== null ? String(Math.round(Number(priceRow.price_jpy))) : '';
+    const next = { fixedTourSuggestedPrice: suggested };
+    if (!suggested) {
+      if (!this.data.fixedTourPriceEdited) next.fixedTourEffectivePrice = '';
+      next.fixedTourPriceHint = this.data.fixedTourPriceEdited && this.data.fixedTourEffectivePrice
+        ? '该车型没有建议价；当前使用手动填写的实际金额。'
+        : '该车型没有建议价，请填写实际金额。';
+    } else if (!this.data.fixedTourPriceEdited) {
+      next.fixedTourEffectivePrice = suggested;
+      next.fixedTourPriceHint = '';
+    } else {
+      next.fixedTourPriceHint = '建议价已随路线或车型更新；当前保留手动实际金额。';
+    }
+    this.setData(next);
+  },
+  onFixedTourPrice(e) { this.setData({ fixedTourEffectivePrice: String(e.detail.value || '').replace(/\D/g, ''), fixedTourPriceEdited: true, fixedTourPriceHint: '' }); },
+  useFixedTourSuggestedPrice() { this.setData({ fixedTourEffectivePrice: this.data.fixedTourSuggestedPrice, fixedTourPriceEdited: false, fixedTourPriceHint: '' }); },
+  goFixedTourStep(e) { const step=Number(e.currentTarget.dataset.step); if (step < this.data.fixedTourStep) this.setData({ fixedTourStep: step }); },
+  buildFixedTourDraft() {
+    const { fixedTourRouteId, fixedTourDriverId, fixedTourVehicleId, fixedTourEffectivePrice } = this.data;
+    if (!fixedTourRouteId || !fixedTourDriverId || !fixedTourVehicleId) { this.setData({ fixedTourMessage:'请选择路线、司机和车辆。' }); return; }
+    if (!fixedTourEffectivePrice) { this.setData({ fixedTourMessage:'请填写实际金额后继续。' }); return; }
+    this.setData({ fixedTourDraftReady:true, fixedTourStep:2, fixedTourMessage:'' });
+  },
+  continueFixedTourConfirm() { this.setData({ fixedTourStep:3, fixedTourEditingSegmentIndex: -1 }, () => this.updateFixedTourDocumentCounts()); },
+  fixedTourSegmentLabel(type) {
+    const index = this.data.fixedTourSegmentTypes.indexOf(type);
+    return this.data.fixedTourSegmentTypeLabels[index] || '自定义';
+  },
+  refreshFixedTourPresentation(rows = this.data.fixedTourSegments) {
+    const route = this.data.fixedTourSelectedRoute;
+    const stops = (route && route.stops) || [];
+    const first = stops[0] && stops[0].location_name || '';
+    const last = stops.length && stops[stops.length - 1].location_name || '';
+    const routePreview = route ? `${route.default_start_time || '时间待定'}–${route.default_end_time || '时间待定'} · ${stops.map((item) => item.location_name).filter(Boolean).join(' → ')}` : '';
+    const timeline = stops.map((item, index) => ({ ...item, display_time: item.default_arrival_time || item.default_departure_time || (index === 0 ? route.default_start_time : index === stops.length - 1 ? route.default_end_time : '') }));
+    const segments = rows.map((item) => ({ ...item, typeLabel: this.fixedTourSegmentLabel(item.type), connection_warning: item.position === 'pre' && item.dropoff_location && first && item.dropoff_location !== first ? '行程连接需确认：前置终点与主路线首点不同。' : item.position === 'post' && item.pickup_location && last && item.pickup_location !== last ? '行程连接需确认：后置起点与主路线末点不同。' : '' }));
+    const segmentSummary = (position) => segments.filter((item) => item.position === position).map((item) => `${item.pickup_location || '未填起点'}→${item.dropoff_location || '未填终点'}`).join('；') || '无';
+    this.setData({ fixedTourSegments: segments, fixedTourRoutePreview: routePreview, fixedTourTimelineStops: timeline, fixedTourPreSummary: segmentSummary('pre'), fixedTourPostSummary: segmentSummary('post') });
+  },
+  addFixedTourSegment(e) {
+    const position = e.currentTarget.dataset.position || 'pre';
+    const stops = (this.data.fixedTourSelectedRoute && this.data.fixedTourSelectedRoute.stops) || [];
+    const mainEdge = position === 'pre' ? (stops[0] && stops[0].location_name || '') : (stops[stops.length - 1] && stops[stops.length - 1].location_name || '');
+    const type = position === 'pre' ? 'airport_pickup' : 'airport_dropoff';
+    const row = { position, type, typeLabel: this.fixedTourSegmentLabel(type), pickup_location: position === 'post' ? mainEdge : '', dropoff_location: position === 'pre' ? mainEdge : '', start_time: '', end_time: '', flight_number: '', terminal: '', note: '', same_passenger: true, connection_warning: '' };
+    const rows = [...this.data.fixedTourSegments, row];
+    this.setData({ fixedTourSegments: rows, fixedTourEditingSegmentIndex: rows.length - 1 }, () => { this.refreshFixedTourPresentation(rows); this.updateFixedTourDocumentCounts(); });
+  },
+  onFixedTourSegmentInput(e) { const i = Number(e.currentTarget.dataset.index); const key = e.currentTarget.dataset.key; const rows = [...this.data.fixedTourSegments]; rows[i] = { ...rows[i], [key]: e.detail.value }; this.refreshFixedTourPresentation(rows); },
+  onFixedTourSegmentType(e) { const i = Number(e.currentTarget.dataset.index); const type = this.data.fixedTourSegmentTypes[Number(e.detail.value)] || 'custom'; const rows = [...this.data.fixedTourSegments]; rows[i] = { ...rows[i], type, typeLabel: this.fixedTourSegmentLabel(type) }; this.refreshFixedTourPresentation(rows); },
+  toggleFixedTourSamePassenger(e) { const i = Number(e.currentTarget.dataset.index); const rows = [...this.data.fixedTourSegments]; rows[i] = { ...rows[i], same_passenger: e.detail ? !!e.detail.value : !rows[i].same_passenger }; this.setData({ fixedTourSegments: rows }, () => this.updateFixedTourDocumentCounts()); },
+  fillFixedTourAirport(e) { const i = Number(e.currentTarget.dataset.index); const place = e.currentTarget.dataset.place; const rows = [...this.data.fixedTourSegments]; const row = rows[i]; rows[i] = { ...row, [row.type === 'airport_dropoff' ? 'dropoff_location' : 'pickup_location']: place }; this.refreshFixedTourPresentation(rows); },
+  editFixedTourSegment(e) { this.setData({ fixedTourEditingSegmentIndex: Number(e.currentTarget.dataset.index) }); },
+  closeFixedTourSegmentEditor() { this.setData({ fixedTourEditingSegmentIndex: -1 }); },
+  removeFixedTourSegment(e) { const i = Number(e.currentTarget.dataset.index); this.setData({ fixedTourSegments: this.data.fixedTourSegments.filter((_, index) => index !== i), fixedTourEditingSegmentIndex: -1 }, () => this.updateFixedTourDocumentCounts()); },
+  updateFixedTourDocumentCounts() {
+    const acceptance = 1 + this.data.fixedTourSegments.filter((item) => !item.same_passenger).length;
+    this.setData({ fixedTourAcceptanceCount: acceptance, fixedTourInstructionCount: 1 });
+  },
+  createFixedTourRun() {
+    const { fixedTourRouteId, fixedTourDriverId, fixedTourVehicleId, fixedTourDate } = this.data;
+    if (!fixedTourRouteId || !fixedTourDriverId || !fixedTourVehicleId) { wx.showToast({ title: '请选择司机、车辆和路线', icon: 'none' }); return; }
+    if (this.data.fixedTourSubmitting) return; this.setData({ fixedTourSubmitting:true });
+    api.materializeFixedTour({ route_id: fixedTourRouteId, driver_id: fixedTourDriverId, vehicle_id: fixedTourVehicleId, date: fixedTourDate, segments: this.data.fixedTourSegments, effective_price_jpy: this.data.fixedTourEffectivePrice })
+      .then((result) => {
+        wx.showToast({ title: '已生成，进入PDF审核', icon: 'success' });
+        this.setData({ workbenchMode: 'daily', dailyDate: fixedTourDate }, () => {
+          const run = result && result.run;
+          this.loadAll().then(() => {
+            if (run && run.assignment_id) this.openDailyPdfByKey(`${fixedTourDate}:${fixedTourDriverId}:${fixedTourVehicleId}`, true);
+          });
+        });
+      })
+      .catch((error) => { const raw = api.errorMessage(error); const message = ({ fixed_tour_price_not_configured: '请填写实际金额后重试。', missing_route_vehicle_price: '该车型没有建议价，请填写实际金额后重试。', fixed_tour_effective_price_invalid: '实际金额必须是大于或等于 0 的整数日元。', fixed_tour_segment_locations_required: '前后置行程需要填写乘车地点和降车地点。', fixed_tour_segment_time_invalid: '前后置行程的结束时间不能早于开始时间。', segment_time_order: '前后置行程时间顺序不正确。', operations_business_area_confirmation: '营业区域需要确认后才能生成。', operations_business_area_validation: '营业区域校验未通过，请确认路线端点后重试。', fixed_tour_assignment_conflict: '司机或车辆已有任务，请更换后重试。', fixed_tour_segment_assignment_conflict: '司机或车辆已有任务，前后置行程无法加入。' })[raw] || raw || '校验失败，请检查必填字段。'; this.setData({ fixedTourMessage: message }); }).finally(() => this.setData({ fixedTourSubmitting:false }));
   },
 
   openDailyImport() {
@@ -736,6 +1627,7 @@ Page({
     if (tabBar) tabBar.setData({ visible: false });
     this.setData({
       dailyImportOpen: true,
+      dailyImportDefaultDate: this.data.dailyImportDefaultDate || this.data.dailyDate,
       importMode: 'daily',
       dailyMessage: '',
       conflictText: ''
@@ -966,11 +1858,17 @@ Page({
           dailyReviewGroup: null,
           dailyReviewOrder: null,
           dailyPdfReviewOpen: true,
+          dailyPdfDraftOnly: false,
           dailyReviewGroupKey: regeneratedGroupKey,
           dailyPdfReviewGroup: updatedGroup,
           dailyPdfReviewDocument: document,
           dailyPdfReviewCanConfirm: true,
-          dailyPdfValidationIssues: []
+          dailyPdfPreviewUnavailable: false,
+          dailyPdfValidationIssues: [],
+          dailyPdfValidationRaw: [],
+          dailyPdfIssueSummary: [],
+          dailyPdfIssuesExpanded: false,
+          dailyPdfNodesExpanded: false
         });
         wx.showToast({ title: '已保存并重生成', icon: 'success' });
         if (document && document.file_url) api.downloadAndOpenDocument(document.file_url).catch(() => null);
@@ -999,17 +1897,44 @@ Page({
     const groupIndex = groups.findIndex((item) => item.key === key);
     this.setData({ loading: true, dailyPdfLoadingKey: key });
     api.generateRunDocument(key)
-      .then((res) => {
+      .then((res) => api.runDocumentPreview(key)
+        .then((previewRes) => [res, previewRes])
+        .catch((error) => {
+          if (Number(error && error.statusCode || 0) === 404) {
+            console.warn('[run document preview unavailable]', error);
+            return [res, { preview: null, preview_unavailable: true }];
+          }
+          throw error;
+        }))
+      .then(([res, previewRes]) => {
         const document = res && res.document;
         if (!document || !document.file_url) throw new Error('PDF 生成结果无效');
+        const preview = previewRes && previewRes.preview || {};
+        const previewUnavailable = !!(previewRes && previewRes.preview_unavailable);
+        const validation = buildValidationPresentation([...(group.validation_issues || []), ...(preview.validation_issues || [])]);
+        const nodes = (preview.nodes || []).map((node) => ({
+          ...node,
+          type_label: nodeTypeLabel(node.node_type),
+          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
+        }));
         this.setData({
           dailyPdfReviewOpen: true,
+          dailyPdfDraftOnly: false,
           dailyPdfReviewGroup: group,
           dailyPdfReviewDocument: document,
-          dailyPdfReviewCanConfirm: document.status !== 'published' && !(group.validation_issues || []).length,
+          dailyPdfReviewCanConfirm: !previewUnavailable && document.status !== 'published' && !validation.raw.length,
+          dailyPdfPreviewUnavailable: previewUnavailable,
           dailyPdfReviewIndex: groupIndex,
           dailyPdfReviewTotal: groups.length,
-          dailyPdfValidationIssues: group.validation_issues || []
+          dailyPdfValidationIssues: validation.issues,
+          dailyPdfValidationRaw: validation.raw,
+          dailyPdfIssueSummary: validation.summary,
+          dailyPdfIssuesExpanded: false,
+          dailyPdfNodes: nodes,
+          dailyPdfNodesExpanded: false,
+          dailyNodeEditOpen: false,
+          dailyNodeEditIndex: -1,
+          dailyNodeEditForm: null
         });
         return autoOpen ? api.downloadAndOpenDocument(document.file_url) : null;
       })
@@ -1017,12 +1942,131 @@ Page({
       .catch((err) => {
         console.warn('[run document open failed]', err);
         this.setData({ loading: false, dailyPdfLoadingKey: '' });
-        wx.showToast({ title: (err && err.error) || 'PDF 打开失败', icon: 'none' });
+        wx.showToast({ title: api.errorMessage(err) || 'PDF 打开失败', icon: 'none' });
       });
   },
 
   closeDailyPdfReview() {
-    this.setData({ dailyPdfReviewOpen: false, dailyPdfReviewGroup: null, dailyPdfReviewDocument: null, dailyPdfReviewCanConfirm: false, dailyPdfValidationIssues: [] });
+    this.setData({
+      dailyPdfReviewOpen: false,
+      dailyPdfDraftOnly: false,
+      dailyPdfReviewGroup: null,
+      dailyPdfReviewDocument: null,
+      dailyPdfReviewCanConfirm: false,
+      dailyPdfPreviewUnavailable: false,
+      dailyPdfValidationIssues: [],
+      dailyPdfValidationRaw: [],
+      dailyPdfIssueSummary: [],
+      dailyPdfIssuesExpanded: false,
+      dailyPdfNodes: [],
+      dailyPdfNodesExpanded: false,
+      dailyNodeEditOpen: false,
+      dailyNodeEditIndex: -1,
+      dailyNodeEditForm: null
+    });
+  },
+
+  toggleDailyPdfIssues() {
+    this.setData({ dailyPdfIssuesExpanded: !this.data.dailyPdfIssuesExpanded });
+  },
+
+  toggleDailyPdfNodes() {
+    this.setData({ dailyPdfNodesExpanded: !this.data.dailyPdfNodesExpanded });
+  },
+
+  openDailyNodeEdit(e) {
+    const index = Number(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.index);
+    const node = (this.data.dailyPdfNodes || [])[index];
+    if (!node) return;
+    const fallbackDate = (this.data.dailyPdfReviewGroup || {}).business_date || this.data.dailyDate;
+    const arrival = splitNodeDateTime(node.planned_arrival_at, fallbackDate);
+    const departure = splitNodeDateTime(node.planned_departure_at, fallbackDate);
+    this.setData({
+      dailyNodeEditOpen: true,
+      dailyNodeEditIndex: index,
+      dailyNodeEditForm: {
+        route_node_id: node.route_node_id,
+        type_label: node.type_label,
+        planned_location: node.planned_location || '',
+        arrival_date: arrival.date,
+        arrival_time: arrival.time,
+        departure_date: departure.date,
+        departure_time: departure.time,
+        editable_arrival: !!node.editable_arrival,
+        editable_departure: !!node.editable_departure
+      }
+    });
+  },
+
+  closeDailyNodeEdit() {
+    this.setData({ dailyNodeEditOpen: false, dailyNodeEditIndex: -1, dailyNodeEditForm: null });
+  },
+
+  onDailyNodeLocation(e) {
+    this.setData({ 'dailyNodeEditForm.planned_location': e.detail.value });
+  },
+
+  onDailyNodeDate(e) {
+    const field = String(e.currentTarget.dataset.field || '');
+    if (field) this.setData({ [`dailyNodeEditForm.${field}`]: e.detail.value });
+  },
+
+  onDailyNodeTime(e) {
+    const field = String(e.currentTarget.dataset.field || '');
+    if (field) this.setData({ [`dailyNodeEditForm.${field}`]: e.detail.value });
+  },
+
+  saveDailyNodeEdit() {
+    const group = this.data.dailyPdfReviewGroup || {};
+    const form = this.data.dailyNodeEditForm || {};
+    if (!group.key || !form.route_node_id || !String(form.planned_location || '').trim()) {
+      wx.showToast({ title: '请填写行程地点', icon: 'none' });
+      return;
+    }
+    const payload = {
+      group_key: group.key,
+      route_node_id: form.route_node_id,
+      planned_location: String(form.planned_location || '').trim()
+    };
+    if (form.editable_arrival) payload.planned_arrival_at = composeNodeDateTime(form.arrival_date, form.arrival_time);
+    if (form.editable_departure) payload.planned_departure_at = composeNodeDateTime(form.departure_date, form.departure_time);
+    this.setData({ loading: true });
+    api.updateRunDocumentNode(payload)
+      .then((result) => {
+        const preview = result && result.preview || {};
+        return Promise.all([api.generateRunDocument(group.key), Promise.resolve(preview)]);
+      })
+      .then(([documentResult, preview]) => {
+        const document = documentResult && documentResult.document;
+        const validation = buildValidationPresentation(preview.validation_issues || []);
+        const nodes = (preview.nodes || []).map((node) => ({
+          ...node,
+          type_label: nodeTypeLabel(node.node_type),
+          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
+        }));
+        this.setData({
+          loading: false,
+          dailyPdfReviewDocument: document,
+          fixedTourGeneratedDocument: this.data.dailyPdfDraftOnly ? document : this.data.fixedTourGeneratedDocument,
+          fixedTourMessage: this.data.dailyPdfDraftOnly && document ? `PDF草稿已生成 · ${Number(document.page_count || 0)}页` : this.data.fixedTourMessage,
+          dailyPdfReviewCanConfirm: !!document && document.status !== 'published' && !validation.raw.length,
+          dailyPdfPreviewUnavailable: false,
+          dailyPdfValidationIssues: validation.issues,
+          dailyPdfValidationRaw: validation.raw,
+          dailyPdfIssueSummary: validation.summary,
+          dailyPdfNodes: nodes,
+          dailyNodeEditOpen: false,
+          dailyNodeEditIndex: -1,
+          dailyNodeEditForm: null
+        });
+        wx.showToast({ title: '已保存并生成新版', icon: 'success' });
+        this.loadAll();
+      })
+      .catch((err) => {
+        console.warn('[run document node update failed]', err);
+        this.setData({ loading: false });
+        wx.showToast({ title: api.errorMessage(err) || '节点保存失败', icon: 'none' });
+      });
   },
 
   editDailyPdf() {
@@ -1073,8 +2117,38 @@ Page({
       })
       .catch((err) => {
         this.setData({ loading: false });
-        wx.showToast({ title: (err && err.error) || 'PDF 确认失败', icon: 'none' });
+        if (this.showRunDocumentAccountError(err)) return;
+        wx.showToast({ title: api.errorMessage(err) || 'PDF 确认失败', icon: 'none' });
       });
+  },
+
+  showRunDocumentAccountError(err) {
+    const code = String(err && (err.backendError || err.error) || '');
+    if (code !== 'driver_account_preflight_failed') return false;
+    const blocked = Array.isArray(err && err.blocked_drivers) ? err.blocked_drivers : [];
+    const reasonLabels = {
+      driver_not_found: '司机资料不存在',
+      driver_account_missing: '未创建或未关联司机账号',
+      driver_account_inactive: '司机账号已停用',
+      driver_account_role_mismatch: '账号角色不是司机',
+      driver_account_profile_mismatch: '账号关联的司机资料不一致',
+      driver_supabase_identity_missing: '登录身份尚未建立'
+    };
+    const lines = blocked.slice(0, 5).map((item) => {
+      const name = item.driver_name || `司机 #${item.driver_id || '-'}`;
+      return `${name}：${reasonLabels[item.reason] || '账号资料不完整'}`;
+    });
+    if (blocked.length > 5) lines.push(`另有 ${blocked.length - 5} 名司机未就绪`);
+    wx.showModal({
+      title: '司机账号未就绪',
+      content: [
+        lines.join('\n') || '所选司机没有可接收文件的登录账号。',
+        '请先在后台账号管理中创建或正确关联司机账号，再重新发布。开发阶段无需先绑定微信。'
+      ].join('\n\n'),
+      showCancel: false,
+      confirmText: '知道了'
+    });
+    return true;
   },
 
   publishDailyGroup(e) {
@@ -1116,7 +2190,8 @@ Page({
           .catch((err) => {
             console.warn('[run document publish failed]', err);
             this.setData({ loading: false });
-            wx.showToast({ title: (err && err.error) || '发布失败', icon: 'none' });
+            if (this.showRunDocumentAccountError(err)) return;
+            wx.showToast({ title: api.errorMessage(err) || '发布失败', icon: 'none' });
           });
       }
     });
@@ -1145,6 +2220,10 @@ Page({
   onImportText(e) {
     this.setData({ importText: e.detail.value });
   },
+  openBatchFullscreen() { this.setData({ batchFullscreen: true, batchFullscreenText: this.data.importText || '' }); },
+  onBatchFullscreenText(e) { this.setData({ batchFullscreenText: e.detail.value }); },
+  closeBatchFullscreen() { this.setData({ batchFullscreen: false }); },
+  finishBatchFullscreen() { this.setData({ importText: this.data.batchFullscreenText, batchFullscreen: false }); },
 
   updateDailyGroups(groups, dailyMessage) {
     const next = normalizeDailyGroups(groups);
@@ -1231,12 +2310,35 @@ Page({
   restoreDailyDraft() {
     const draft = wx.getStorageSync(DAILY_STORAGE_KEY);
     if (!draft || (!draft.sourceText && !draft.groups)) return;
-    this.setData({ dailySourceText: draft.sourceText || '' });
+    this.setData({
+      dailySourceText: draft.sourceText || '',
+      dailyImportDefaultDate: draft.defaultDate || this.data.dailyDate,
+      dailyImportBatchId: draft.clientBatchId || ''
+    });
     this.updateDailyGroups(draft.groups || [], '已恢复上次保存的日配草稿。');
   },
 
   onDailySourceInput(e) {
-    this.setData({ dailySourceText: e.detail.value });
+    this.setData({ dailySourceText: e.detail.value, dailyImportBatchId: '', dailyImportLastResult: null });
+  },
+
+  onDailyImportDefaultDateChange(e) {
+    this.setData({ dailyImportDefaultDate: e.detail.value, dailyImportBatchId: '', dailyImportLastResult: null });
+  },
+
+  onDailyGroupDateChange(e) {
+    const index = Number(e.currentTarget.dataset.groupIndex);
+    const nextDate = String(e.detail.value || '');
+    const groups = normalizeDailyGroups(this.data.dailyGroups);
+    if (!groups[index] || !isIsoDate(nextDate)) return;
+    groups[index].serviceDate = nextDate;
+    groups[index].orders = (groups[index].orders || []).map((order) => ({
+      ...order,
+      date: nextDate,
+      parsed: order.parsed ? { ...order.parsed, order_date: nextDate, end_date: nextDate } : order.parsed
+    }));
+    this.setData({ dailyImportBatchId: '', dailyImportLastResult: null });
+    this.updateDailyGroups(groups, '业务日期已修改，请确认后再导入。');
   },
 
   fillDailyExample() {
@@ -1250,6 +2352,8 @@ Page({
       dailyStats: calcDailyStats([]),
       dailyOverview: blankDailyOverview(),
       dailyMessage: '已清空。',
+      dailyImportBatchId: '',
+      dailyImportLastResult: null,
       dailySwipeGroupIndex: -1,
       dailySwipeOrderIndex: -1
     });
@@ -1272,13 +2376,17 @@ Page({
       return;
     }
     this.setData({ loading: true, dailyMessage: '正在解析日配文本...' });
-    api.parseDailyText(text)
+    const defaultDate = this.data.dailyImportDefaultDate || this.data.dailyDate;
+    api.parseDailyText(text, {
+      default_date: defaultDate,
+      default_year: Number(String(defaultDate || '').slice(0, 4)) || new Date().getFullYear()
+    })
       .then((res) => {
         const groups = normalizeDailyGroups((res && res.groups) || []);
         const ignored = (res && res.ignored_lines) || [];
         if (ignored.length) console.info('[daily parser ignored lines]', ignored);
-        this.updateDailyGroups(groups, `已解析 ${groups.length} 名司机、${calcDailyStats(groups).orders} 单。`);
-        this.setData({ loading: false });
+        this.updateDailyGroups(groups, `已解析 ${groups.length} 名司机、${calcDailyStats(groups).orders} 单。请核对每组业务日期。`);
+        this.setData({ loading: false, dailyImportBatchId: dailyImportRequestId(), dailyImportLastResult: null });
       })
       .catch((err) => {
         this.setData({ loading: false, dailyMessage: this.formatDailyPublishError(err) });
@@ -1384,6 +2492,8 @@ Page({
     const draft = {
       sourceText: this.data.dailySourceText,
       groups: normalizeDailyGroups(this.data.dailyGroups),
+      defaultDate: this.data.dailyImportDefaultDate,
+      clientBatchId: this.data.dailyImportBatchId,
       savedAt: new Date().toISOString()
     };
     wx.setStorageSync(DAILY_STORAGE_KEY, draft);
@@ -1437,8 +2547,9 @@ Page({
     return { plan, errors };
   },
 
-  publishDailyBatchToBackend(plan) {
+  publishDailyBatchToBackend(plan, clientBatchId) {
     const payload = {
+      client_batch_id: clientBatchId,
       groups: plan.map((item) => ({
         client_group_index: item.groupIndex,
         service_date: item.group.serviceDate,
@@ -1459,24 +2570,138 @@ Page({
         const vehicleCode = failed.vehicle_code || '';
         throw new Error(`${driverName} · ${vehicleCode}\n${at} 与现有订单 ${target} 时间冲突`);
       }
-      return (res.groups || []).map((record, planIndex) => ({
+      const records = (res.groups || []).map((record, planIndex) => ({
         groupIndex: Number(record.client_group_index != null ? record.client_group_index : plan[planIndex].groupIndex),
         orderIds: (record.order_ids || record.updated_order_ids || []).map(Number),
-        driverId: Number(plan[planIndex].driver.id),
-        vehicleId: Number(plan[planIndex].vehicle.id),
+        driverId: Number(record.driver_id || plan[planIndex].driver.id),
+        vehicleId: Number(record.vehicle_id || plan[planIndex].vehicle.id),
         reused: Boolean(record.reused),
         updatedExisting: Boolean(record.updated_existing)
       }));
+      return { response: res || {}, records };
     });
   },
 
   formatDailyPublishError(err) {
     if (!err) return '导入失败，请检查后端连接。';
-    if (err.message) return err.message;
-    if (err.error === 'network_timeout') return '后端请求超时，请稍后重试。';
+    if (err.error === 'daily_import_oid_conflict') return `订单编号冲突，事务已回滚，未写入。请求号：${err.request_id || this.data.dailyImportBatchId || '-'}`;
+    if (err.rolled_back) return `导入失败，事务已回滚，未写入，可安全重试。请求号：${err.request_id || this.data.dailyImportBatchId || '-'}`;
+    if (err.error === 'network_timeout') return '后端请求超时，正在按批次号核对实际提交结果。';
     if (err.error === 'network_failed') return '连接后端失败，请确认 API 已启动。';
+    if (err.userMessage) return err.userMessage;
+    if (err.message) return err.message;
     if (typeof err === 'string') return err;
     return '导入失败，请检查后端连接。';
+  },
+
+  finishDailyImportSuccess(groups, orderCount, importResult) {
+    const response = importResult.response || importResult;
+    const publishedRecords = importResult.records || (response.groups || []).map((record) => ({
+      groupIndex: Number(record.client_group_index != null ? record.client_group_index : record.group_index || 0),
+      orderIds: (record.order_ids || record.updated_order_ids || []).map(Number),
+      driverId: Number(record.driver_id || 0),
+      vehicleId: Number(record.vehicle_id || 0),
+      reused: Boolean(record.reused),
+      updatedExisting: Boolean(record.updated_existing)
+    }));
+    const publishedByGroup = {};
+    publishedRecords.forEach((item) => { publishedByGroup[item.groupIndex] = (item.orderIds || []).slice(); });
+    const publishedGroups = groups.map((group, index) => ({
+      ...group,
+      orders: group.orders.map((order) => {
+        if (order.status === '作废' || order.backendOrderId) return order;
+        const backendOrderId = (publishedByGroup[index] || []).shift();
+        return backendOrderId ? { ...order, status: '待确认', backendOrderId } : order;
+      })
+    }));
+    const businessDates = (response.business_dates || publishedGroups.map((group) => group.serviceDate)).filter(Boolean);
+    const uniqueDates = businessDates.filter((value, index, list) => list.indexOf(value) === index).sort();
+    const targetDate = uniqueDates[0] || this.data.dailyDate;
+    const firstRecord = publishedRecords[0] || {};
+    const highlightKey = firstRecord.driverId && firstRecord.vehicleId ? `${targetDate}:${firstRecord.driverId}:${firstRecord.vehicleId}` : '';
+    const payload = {
+      sourceText: this.data.dailySourceText,
+      groups: normalizeDailyGroups(publishedGroups),
+      backendPublished: publishedRecords,
+      backendResult: response,
+      clientBatchId: response.client_batch_id || this.data.dailyImportBatchId,
+      defaultDate: this.data.dailyImportDefaultDate,
+      publishedAt: new Date().toISOString(),
+      overview: this.buildDailyOverview(publishedGroups)
+    };
+    wx.setStorageSync(DAILY_PUBLISHED_KEY, payload);
+    wx.setStorageSync(DAILY_STORAGE_KEY, payload);
+    wx.setStorageSync(DAILY_CONFIRM_QUEUE_KEY, payload);
+    const extraDates = uniqueDates.slice(1);
+    const message = `已导入 ${publishedRecords.length} 名司机、${orderCount} 单；订单待核对，文书待生成。${extraDates.length ? ` 另有日期：${extraDates.join('、')}` : ''}`;
+    this.updateDailyGroups(payload.groups, message);
+    this.setData({
+      loading: false,
+      dailyImportSubmitting: false,
+      dailyImportOpen: false,
+      dailyDate: targetDate,
+      dailyImportLastResult: response,
+      dailyImportedHighlightKey: highlightKey,
+      dailySelectedGroupKeys: highlightKey ? [highlightKey] : []
+    }, () => this.refreshTabBar());
+    const reused = Boolean(response.idempotent_replay) || publishedRecords.some((item) => item.reused || item.updatedExisting);
+    wx.showToast({ title: reused ? '已定位原日配草稿' : '导入成功', icon: 'success' });
+    return this.loadAll().then(() => {
+      const found = !highlightKey || (this.data.dailyRunGroups || []).some((item) => item.key === highlightKey);
+      if (!found) this.setData({ dailyMessage: '导入成功，列表刷新失败。请点击重新加载；不要重复导入。' });
+    });
+  },
+
+  resolveDailyImportUncertain(err, groups, orderCount) {
+    const batchId = this.data.dailyImportBatchId;
+    const uncertain = !!err && (
+      ['network_timeout', 'network_failed', 'internal_server_error', 'daily_import_oid_conflict', 'daily_import_transaction_failed'].includes(err.error) ||
+      Number(err.statusCode || 0) >= 500
+    );
+    if (!batchId || !uncertain) return Promise.reject(err);
+    return api.dailyImportStatus(batchId).then((statusResult) => {
+      const batch = statusResult && statusResult.batch;
+      if (batch && batch.status === 'succeeded' && batch.result) {
+        return this.finishDailyImportSuccess(groups, orderCount, batch.result);
+      }
+      if (batch && batch.status === 'failed') {
+        return Promise.reject({
+          error: batch.error_code || err.error || 'daily_import_transaction_failed',
+          request_id: batchId,
+          rolled_back: true,
+          message: `请求 ${batchId} 已确认回滚，原文、解析结果和选择均已保留。`
+        });
+      }
+      return Promise.reject({
+        error: batch && batch.error_code || 'daily_import_result_unknown',
+        request_id: batchId,
+        rolled_back: Boolean(batch && batch.status === 'failed'),
+        message: batch && batch.status === 'pending'
+          ? `请求 ${batchId} 仍在处理中，请稍后重新加载状态，不要重复创建新批次。`
+          : `请求 ${batchId} 的提交结果尚未确认，已保留原批次号和全部输入。`
+      });
+    }, (statusError) => Promise.reject({
+      error: 'daily_import_result_unknown',
+      request_id: batchId,
+      message: Number(statusError && statusError.statusCode || 0) === 404
+        ? `当前 Trial 后端缺少批次状态接口。请求 ${batchId} 可能已经写入；已保留全部输入，请先返回日配日期刷新检查，不要重复确认。`
+        : `请求 ${batchId} 的提交结果尚未确认，已保留原批次号和全部输入。请先重新加载状态，不要创建新批次。`
+    }));
+  },
+
+  reloadDailyAfterImport() {
+    this.loadAll().then(() => this.setData({ dailyMessage: this.data.dailyImportLastResult ? '日配列表已重新加载。' : this.data.dailyMessage }));
+  },
+
+  showDailyImportFailure(err) {
+    const message = this.formatDailyPublishError(err);
+    this.setData({
+      loading: false,
+      dailyImportSubmitting: false,
+      dailyMessage: message,
+      conflictText: message
+    });
+    wx.showModal({ title: '导入未完成', content: message, showCancel: false });
   },
 
   publishDailyAssignments() {
@@ -1490,11 +2715,18 @@ Page({
       wx.showToast({ title: '没有待导入订单', icon: 'none' });
       return;
     }
+    const missingDate = groups.find((group) => !isIsoDate(group.serviceDate) || (group.orders || []).some((order) => !isIsoDate(order.date)));
+    if (missingDate) {
+      wx.showToast({ title: '请补全业务日期', icon: 'none' });
+      return;
+    }
+    const clientBatchId = this.data.dailyImportBatchId || dailyImportRequestId();
     this.setData({
       loading: true,
       dailyImportSubmitting: true,
       dailyMessage: '正在导入订单，导入后进入待运行确认...',
-      conflictText: ''
+      conflictText: '',
+      dailyImportBatchId: clientBatchId
     });
     this.loadDailyPublishResources()
       .then((resources) => {
@@ -1504,46 +2736,18 @@ Page({
           const diagnostic = result.errors[result.errors.length - 1];
           throw new Error(mainErrors.concat(diagnostic).join('；'));
         }
-        return this.publishDailyBatchToBackend(result.plan);
+        return this.publishDailyBatchToBackend(result.plan, clientBatchId);
       })
-      .then((publishedRecords) => {
-        const publishedByGroup = {};
-        publishedRecords.forEach((item) => {
-          publishedByGroup[item.groupIndex] = (item.orderIds || []).slice();
-        });
-        const publishedGroups = groups.map((group, index) => ({
-          ...group,
-          orders: group.orders.map((order) => {
-            if (order.status === '作废' || order.backendOrderId) return order;
-            const backendOrderId = (publishedByGroup[index] || []).shift();
-            return backendOrderId ? { ...order, status: '待确认', backendOrderId } : order;
-          })
-        }));
-        const payload = {
-          sourceText: this.data.dailySourceText,
-          groups: normalizeDailyGroups(publishedGroups),
-          backendPublished: publishedRecords,
-          publishedAt: new Date().toISOString(),
-          overview: this.buildDailyOverview(publishedGroups)
-        };
-        wx.setStorageSync(DAILY_PUBLISHED_KEY, payload);
-        wx.setStorageSync(DAILY_STORAGE_KEY, payload);
-        wx.setStorageSync(DAILY_CONFIRM_QUEUE_KEY, payload);
-        this.updateDailyGroups(payload.groups, `已导入 ${publishedRecords.length} 名司机、${orderCount} 单，等待运行管理确认。`);
-        const reused = publishedRecords.some((item) => item.reused || item.updatedExisting);
-        this.setData({ loading: false, dailyImportSubmitting: false, dailyImportOpen: false }, () => this.refreshTabBar());
-        wx.showToast({ title: reused ? '已更新日配草稿' : '导入成功', icon: 'success' });
-        this.loadAll();
-      })
+      .then((result) => this.finishDailyImportSuccess(groups, orderCount, result))
       .catch((err) => {
-        const message = this.formatDailyPublishError(err);
-        this.setData({
-          loading: false,
-          dailyImportSubmitting: false,
-          dailyMessage: message,
-          conflictText: message
-        });
-        wx.showModal({ title: '导入未完成', content: message, showCancel: false });
+        if (err && (
+          ['network_timeout', 'network_failed', 'internal_server_error', 'daily_import_oid_conflict', 'daily_import_transaction_failed'].includes(err.error) ||
+          Number(err.statusCode || 0) >= 500
+        )) {
+          this.resolveDailyImportUncertain(err, groups, orderCount).catch((resolvedError) => this.showDailyImportFailure(resolvedError));
+          return;
+        }
+        this.showDailyImportFailure(err);
       });
   },
 
@@ -1801,6 +3005,7 @@ Page({
         const activePdfKey = this.data.dailyPdfReviewGroup && this.data.dailyPdfReviewGroup.key;
         const activePdfGroup = activePdfKey && (dailyRun.allGroups || []).find((item) => item.key === activePdfKey);
         const activePdfIndex = activePdfGroup ? (dailyRun.allGroups || []).findIndex((item) => item.key === activePdfKey) : this.data.dailyPdfReviewIndex;
+        const activePdfValidation = buildValidationPresentation(activePdfGroup && activePdfGroup.validation_issues || []);
         const decoratedDrivers = this.decorateDrivers(driversRes.drivers || [], assignments);
         const decoratedVehicles = this.decorateVehicles(vehiclesRes.vehicles || [], assignments);
         console.log('[dispatch resources loaded]', {
@@ -1823,8 +3028,10 @@ Page({
             dailyPdfReviewGroup: activePdfGroup,
             dailyPdfReviewIndex: activePdfIndex,
             dailyPdfReviewTotal: (dailyRun.allGroups || []).length,
-            dailyPdfValidationIssues: activePdfGroup.validation_issues || [],
-            dailyPdfReviewCanConfirm: !!this.data.dailyPdfReviewDocument && this.data.dailyPdfReviewDocument.status !== 'published' && !(activePdfGroup.validation_issues || []).length
+            dailyPdfValidationIssues: activePdfValidation.issues,
+            dailyPdfValidationRaw: activePdfValidation.raw,
+            dailyPdfIssueSummary: activePdfValidation.summary,
+            dailyPdfReviewCanConfirm: !this.data.dailyPdfPreviewUnavailable && !!this.data.dailyPdfReviewDocument && this.data.dailyPdfReviewDocument.status !== 'published' && !activePdfValidation.raw.length
           } : {}),
           dailyOverview: this.buildDailyOverview(this.data.dailyGroups, {
             drivers: decoratedDrivers,

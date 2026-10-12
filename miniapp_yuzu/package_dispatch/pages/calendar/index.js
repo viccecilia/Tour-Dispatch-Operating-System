@@ -3,6 +3,36 @@ const api = require('../../utils/api');
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 const MAX_GENERATED_CALENDAR_DAYS = 10000;
 
+function formatYen(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '';
+  const formatted = String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `¥${formatted}`;
+}
+
+function fixedTourPresentation(rawRemark) {
+  const text = String(rawRemark || '').trim();
+  if (!text || text[0] !== '{') return null;
+  try {
+    const payload = JSON.parse(text);
+    const snapshot = payload && payload.fixed_tour;
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
+    const stops = Array.isArray(snapshot.stops)
+      ? snapshot.stops
+        .map((stop) => String((stop && stop.location_name) || '').trim())
+        .filter(Boolean)
+      : [];
+    return {
+      name: String(snapshot.route_name || '固定日游').trim(),
+      summary: String(snapshot.route_summary || '').trim() || stops.join(' → '),
+      price: formatYen(snapshot.effective_price_jpy)
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 const JAPAN_HOLIDAYS_2026 = {
   '2026-01-01': '元日',
   '2026-01-12': '成人日',
@@ -811,6 +841,7 @@ Page({
     const status = String(item.execution_status || item.status || '');
     const orderStatus = String(item.order_status || '');
     const incident = ['incident', 'exception', 'delayed'].includes(orderStatus || status);
+    const fixedTour = fixedTourPresentation(item.remark);
     const guestLine = [
       item.guest_name || '',
       item.guest_contact ? this.formatGuestContact(item.guest_contact) : '',
@@ -829,7 +860,10 @@ Page({
       rawStatus: status,
       guestLine,
       agency: item.agency_name || '',
-      remark: item.remark || '',
+      fixedTourName: fixedTour ? fixedTour.name : '',
+      fixedTourSummary: fixedTour ? fixedTour.summary : '',
+      fixedTourPrice: fixedTour ? fixedTour.price : '',
+      remark: fixedTour ? '' : (item.remark || ''),
       sleep: item.sleep_hours || item.sleep_time || '-',
       departCall: item.depart_call_time || '-',
       departTime: item.departure_time || item.vehicle_out_time || '-',

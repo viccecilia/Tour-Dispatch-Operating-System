@@ -20,7 +20,8 @@
         "pages/finance/index",
         "pages/task/index",
         "pages/expense/index",
-        "pages/profile/index"
+        "pages/profile/index",
+        "pages/flow-demo/index"
       ]
     },
     {

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import sys
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,19 @@ from backend.services.order_number_service import driver_short_code, normalize_s
 from backend.services.tariff_service import recommend_route_fare
 from backend.services.tenant_context import get_current_tenant_id
 from backend.services.auth_account_service import supabase_enabled
+from backend.services.document_model_service import (
+    build_document_snapshot,
+    canonical_json,
+    make_run_group_id,
+    make_document_version_id,
+    persist_route_nodes,
+    prepare_order_document_fields,
+    record_document_event,
+    sha256_file,
+    shift_date_time,
+    snapshot_source_sha256,
+    upsert_document_batch,
+)
 
 
 class DriverAccountPreflightError(ValueError):
@@ -37,7 +50,7 @@ JP_FONT_PATH = FONT_DIR / "NotoSansJP-VF.ttf"
 SC_FONT_PATH = FONT_DIR / "NotoSansSC-VF.ttf"
 # Bump this whenever the formal PDF layout or fixed rendering rules change.
 # It prevents a previously generated file from being reused after a template fix.
-DOCUMENT_RENDERER_VERSION = "v014-server-20261005-garage-1"
+DOCUMENT_RENDERER_VERSION = "v014-hire-phase2c2-r2-fontfix-20261011-1"
 
 
 def _optional_coalesce_expr(
@@ -113,10 +126,21 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             f"""
             SELECT a.id AS assignment_id, a.order_id, a.driver_id, a.vehicle_id,
                    o.oid, o.order_date, o.end_date, o.start_time, o.end_time,
+                   o.daily_import_group_key,
                    o.operations_business_area, o.order_type, o.order_note_code, o.order_source,
                    o.pickup_location, o.dropoff_location, o.price, o.fee_remark,
                    o.agency_name, o.guest_name, o.guest_contact, o.flight_number, o.source_channel,
                    o.passenger_count, o.luggage_count, o.remark,
+                   o.document_kind, o.applicant_slot, o.applicant_slot_confirmed,
+                   o.pickup_source_text, o.dropoff_source_text,
+                   o.pickup_parsed_location, o.dropoff_parsed_location,
+                   o.pickup_suggested_location, o.dropoff_suggested_location,
+                   o.pickup_location_confirmed, o.dropoff_location_confirmed,
+                   o.fare_jpy, o.service_fee_jpy, o.document_advance_jpy,
+                   o.toll_fee_jpy, o.parking_fee_jpy, o.price_confirmed,
+                   o.tax_included_confirmed, o.price_snapshot_json,
+                   o.area_validation_status,
+                   o.end_time_source, o.end_time_confirmed,
                    o.run_confirmation_status, o.run_confirmed_at,
                    o.run_confirmed_by_user_id, o.run_confirmed_by, o.run_revision,
                    d.name AS driver_name, d.driver_code, d.office AS driver_office,
@@ -141,6 +165,10 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             """,
             (tenant,),
         ).fetchall()
+        override_rows = conn.execute(
+            "SELECT * FROM dispatch_route_node_overrides WHERE tenant_id = ? ORDER BY id",
+            (tenant,),
+        ).fetchall()
         company_row = conn.execute(
             """
             SELECT COALESCE(NULLIF(registered_name, ''), company_name) AS company_name,
@@ -159,6 +187,15 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
         doc = dict(raw)
         key = group_key(doc["business_date"], doc["driver_id"], doc["vehicle_id"])
         latest.setdefault(key, doc)
+    overrides_by_group: dict[str, list[dict[str, Any]]] = {}
+    for raw in override_rows:
+        item = dict(raw)
+        try:
+            decoded = json.loads(item.get("changed_fields_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            decoded = {}
+        item["changed_fields"] = decoded.get("fields") if isinstance(decoded, dict) else []
+        overrides_by_group.setdefault(str(item.get("run_group_id") or ""), []).append(item)
     grouped: dict[str, dict[str, Any]] = {}
     for raw in rows:
         item = dict(raw)
@@ -179,6 +216,7 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             key,
             {
                 "key": key,
+                "tenant_id": tenant,
                 "business_date": item["order_date"],
                 "driver_id": item["driver_id"],
                 "vehicle_id": item["vehicle_id"],
@@ -201,6 +239,10 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
         group["orders"].append(item)
     result = []
     for key, group in grouped.items():
+        run_group_id = make_run_group_id(
+            group["tenant_id"], group["business_date"], group["driver_id"], group["vehicle_id"]
+        )
+        group["route_node_overrides"] = overrides_by_group.get(run_group_id, [])
         total = len(group["orders"])
         confirmed = sum(1 for order in group["orders"] if order.get("run_confirmation_status") == "confirmed")
         state = "confirmed" if confirmed == total and total else ("confirming" if confirmed else "pending")
@@ -269,6 +311,27 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
         if updates:
             clauses = [f"{key} = ?" for key in updates]
             values = [_db_value(key, updates[key]) for key in updates]
+            if "pickup_location" in updates:
+                clauses.append("pickup_location_confirmed = 1")
+            if "dropoff_location" in updates:
+                clauses.append("dropoff_location_confirmed = 1")
+            if "price" in updates and _normalized(before["price"]) != _normalized(updates["price"]):
+                clauses.extend(
+                    [
+                        "price_confirmed = 0",
+                        "price_confirmed_by_user_id = NULL",
+                        "price_confirmed_by = NULL",
+                        "price_confirmed_at = NULL",
+                    ]
+                )
+            if (
+                "start_time" in updates
+                and str(before["end_time_source"] or "") == "suggested_60m"
+                and not int(before["end_time_confirmed"] or 0)
+            ):
+                shifted = shift_date_time(updates.get("order_date") or before["order_date"], updates["start_time"], 60)
+                clauses.extend(["end_date = ?", "end_time = ?"])
+                values.extend([shifted["date"], shifted["time"]])
             if changed:
                 clauses.append("run_revision = COALESCE(run_revision, 1) + 1")
             conn.execute(
@@ -362,6 +425,30 @@ def generate_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, 
     group = _find_group(date_value, driver_id, vehicle_id, tenant)
     if not group:
         raise ValueError("run_group_not_found")
+    with closing(get_connection()) as conn:
+        locked = conn.execute(
+            """
+            SELECT 1
+            WHERE EXISTS (
+                SELECT 1 FROM driver_run_documents
+                WHERE tenant_id = ? AND business_date = ? AND driver_id = ? AND vehicle_id = ?
+                  AND status = 'published'
+            ) OR EXISTS (
+                SELECT 1 FROM assignments a
+                JOIN orders o ON o.id = a.order_id AND o.tenant_id = a.tenant_id
+                WHERE a.tenant_id = ? AND o.order_date = ? AND a.driver_id = ? AND a.vehicle_id = ?
+                  AND a.status = 'active'
+                  AND (a.published_at IS NOT NULL OR a.execution_status <> 'draft')
+            )
+            LIMIT 1
+            """,
+            (tenant, date_value, driver_id, vehicle_id, tenant, date_value, driver_id, vehicle_id),
+        ).fetchone()
+        prepare_order_document_fields(conn, group, repair_legacy_daily_defaults=not bool(locked))
+        conn.commit()
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
     errors = _validate_group(group, require_complete=False)
     if errors:
         raise ValueError("PDFを生成できません：" + "、".join(errors))
@@ -385,19 +472,34 @@ def generate_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, 
                 (tenant, date_value, driver_id, vehicle_id),
             ).fetchone()[0]
         )
+        previous = conn.execute(
+            """
+            SELECT document_version_id FROM driver_run_documents
+            WHERE tenant_id = ? AND business_date = ? AND driver_id = ? AND vehicle_id = ?
+            ORDER BY version DESC LIMIT 1
+            """,
+            (tenant, date_value, driver_id, vehicle_id),
+        ).fetchone()
+    document_version_id = make_document_version_id()
+    snapshot = build_document_snapshot(group, document_version_id)
+    snapshot["renderer_version"] = DOCUMENT_RENDERER_VERSION
+    source_hash = snapshot_source_sha256(snapshot)
     output_dir = RUNTIME_DIR / "uploads" / "run_documents" / str(tenant) / date_value
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = _document_stem(group)
     file_name = f"{stem}-V{version}.pdf"
     output_path = (output_dir / file_name).resolve()
-    page_count = _render_pdf(group, output_path)
+    page_count = _render_pdf(snapshot, output_path)
+    pdf_sha256 = sha256_file(output_path)
     actor_id = int(actor.get("id") or 0) or None
     actor_name = str(actor.get("display_name") or actor.get("username") or "运行管理")
     url = f"/api/run-documents/file?document_id="
     with closing(get_connection()) as conn:
         conn.execute(
             """
-            UPDATE driver_run_documents SET status = 'stale', stale_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            UPDATE driver_run_documents
+            SET status = 'stale', lifecycle_status = 'superseded',
+                stale_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = ? AND business_date = ? AND driver_id = ? AND vehicle_id = ? AND status IN ('generated', 'reviewed')
             """,
             (tenant, date_value, driver_id, vehicle_id),
@@ -406,17 +508,201 @@ def generate_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, 
             """
             INSERT INTO driver_run_documents (
                 tenant_id, business_date, driver_id, vehicle_id, version, status, source_hash,
-                file_name, file_path, file_url, page_count, created_by_user_id, created_by
-            ) VALUES (?, ?, ?, ?, ?, 'generated', ?, ?, ?, '', ?, ?, ?)
+                file_name, file_path, file_url, page_count, created_by_user_id, created_by,
+                document_id, document_version_id, run_group_id, lifecycle_status, document_kind,
+                snapshot_json, source_sha256, pdf_sha256, supersedes_document_version_id
+            ) VALUES (?, ?, ?, ?, ?, 'generated', ?, ?, ?, '', ?, ?, ?, ?, ?, ?, 'generated',
+                      'run_packet', ?, ?, ?, ?)
             """,
-            (tenant, date_value, driver_id, vehicle_id, version, source_hash, file_name, str(output_path), page_count, actor_id, actor_name),
+            (
+                tenant, date_value, driver_id, vehicle_id, version, source_hash,
+                file_name, str(output_path), page_count, actor_id, actor_name,
+                snapshot["document_id"], snapshot["document_version_id"], snapshot["run_group_id"],
+                canonical_json(snapshot), source_hash, pdf_sha256,
+                previous["document_version_id"] if previous else None,
+            ),
         )
         doc_id = cursor.lastrowid
         url = f"/api/run-documents/file?document_id={doc_id}"
         conn.execute("UPDATE driver_run_documents SET file_url = ? WHERE id = ?", (url, doc_id))
+        upsert_document_batch(conn, snapshot, "generated")
+        persist_route_nodes(conn, snapshot)
+        record_document_event(
+            conn, snapshot, "generated", actor,
+            {"version_number": version, "source_sha256": source_hash, "pdf_sha256": pdf_sha256},
+        )
         conn.commit()
         row = conn.execute("SELECT * FROM driver_run_documents WHERE id = ?", (doc_id,)).fetchone()
     return _public_document(dict(row))
+
+
+def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
+    order_kind = {
+        int(order.get("order_id") or 0): str(order.get("document_kind") or "")
+        for order in snapshot.get("orders") or []
+    }
+    nodes = []
+    for node in snapshot.get("route_nodes") or []:
+        node_type = str(node.get("node_type") or "")
+        order_id = int(node.get("order_id") or 0)
+        nodes.append(
+            {
+                "route_node_id": node.get("route_node_id"),
+                "run_group_id": node.get("run_group_id"),
+                "document_version_id": node.get("document_version_id"),
+                "sequence_number": node.get("sequence_number"),
+                "order_id": order_id or None,
+                "document_kind": order_kind.get(order_id, "operation"),
+                "node_type": node_type,
+                "planned_location": node.get("planned_location") or "",
+                "planned_arrival_at": node.get("planned_arrival_at") or "",
+                "planned_departure_at": node.get("planned_departure_at") or "",
+                "load_status": node.get("load_status") or "",
+                "editable_arrival": node_type not in {"garage_out", "pickup"},
+                "editable_departure": node_type not in {"garage_in", "dropoff"},
+                "document_references": ["acceptance", "dispatch"],
+            }
+        )
+    return {
+        "document_id": snapshot.get("document_id"),
+        "document_version_id": snapshot.get("document_version_id"),
+        "run_group_id": snapshot.get("run_group_id"),
+        "business_date": snapshot.get("business_date"),
+        "nodes": nodes,
+        "validation_issues": list(snapshot.get("publish_validation_issues") or []),
+    }
+
+
+def _route_timing_issues(snapshot: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+
+    def parsed(value: Any) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            issues.append("invalid_datetime")
+            return None
+
+    previous: datetime | None = None
+    for node in sorted(snapshot.get("route_nodes") or [], key=lambda item: int(item.get("sequence_number") or 0)):
+        if not str(node.get("planned_location") or "").strip():
+            issues.append(f"route_node_location_missing:{node.get('route_node_id')}")
+        arrival = parsed(node.get("planned_arrival_at"))
+        departure = parsed(node.get("planned_departure_at"))
+        if arrival and departure and departure < arrival:
+            issues.append(f"segment_time_order:{node.get('route_node_id')}")
+        event_start = arrival or departure
+        event_end = departure or arrival
+        if previous and event_start and event_start < previous:
+            issues.append(f"route_time_order:{node.get('route_node_id')}")
+        if event_end:
+            previous = event_end
+    return list(dict.fromkeys(issues))
+
+
+def get_run_document_preview(group_value: Any, actor: dict[str, Any]) -> dict[str, Any]:
+    _require_operations_actor(actor)
+    date_value, driver_id, vehicle_id = parse_group_key(group_value)
+    tenant = int(actor.get("tenant_id") or get_current_tenant_id())
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
+    snapshot = build_document_snapshot(group, "draft-preview")
+    preview = _editable_node_preview(snapshot)
+    preview["validation_issues"] = list(dict.fromkeys(preview["validation_issues"] + _route_timing_issues(snapshot)))
+    return preview
+
+
+def update_run_document_node(group_value: Any, payload: dict[str, Any], actor: dict[str, Any]) -> dict[str, Any]:
+    """Persist one editable node layer without mutating a published snapshot."""
+    _require_operations_actor(actor)
+    date_value, driver_id, vehicle_id = parse_group_key(group_value)
+    tenant = int(actor.get("tenant_id") or get_current_tenant_id())
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
+    snapshot = build_document_snapshot(group, "draft-node-edit")
+    route_node_id = str(payload.get("route_node_id") or "").strip()
+    node = next((item for item in snapshot.get("route_nodes") or [] if item.get("route_node_id") == route_node_id), None)
+    if not node:
+        raise ValueError("route_node_not_found")
+    allowed = ("planned_location", "planned_arrival_at", "planned_departure_at")
+    changes = {field: str(payload.get(field) or "").strip() for field in allowed if field in payload}
+    if not changes:
+        raise ValueError("route_node_no_changes")
+    for field in ("planned_arrival_at", "planned_departure_at"):
+        if changes.get(field):
+            try:
+                datetime.fromisoformat(changes[field].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError(f"invalid_datetime:{field}") from exc
+    actor_id = int(actor.get("id") or 0) or None
+    actor_name = str(actor.get("display_name") or actor.get("username") or "运行管理")
+    existing_override = next(
+        (item for item in group.get("route_node_overrides") or [] if item.get("route_node_id") == route_node_id),
+        {},
+    )
+    changed_fields = list(dict.fromkeys([*(existing_override.get("changed_fields") or []), *changes.keys()]))
+    changed_fields_json = canonical_json({"fields": changed_fields})
+    values = {field: changes.get(field, node.get(field) or "") for field in allowed}
+    location_confirmed = 1 if "planned_location" in changes and bool(changes["planned_location"]) else int(node.get("location_confirmed") or 0)
+    with closing(get_connection()) as conn:
+        conn.execute(
+            """
+            INSERT INTO dispatch_route_node_overrides (
+                tenant_id, run_group_id, route_node_id, planned_location,
+                planned_arrival_at, planned_departure_at, location_confirmed,
+                changed_fields_json, updated_by_user_id, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(tenant_id, run_group_id, route_node_id) DO UPDATE SET
+                planned_location = excluded.planned_location,
+                planned_arrival_at = excluded.planned_arrival_at,
+                planned_departure_at = excluded.planned_departure_at,
+                location_confirmed = excluded.location_confirmed,
+                changed_fields_json = excluded.changed_fields_json,
+                updated_by_user_id = excluded.updated_by_user_id,
+                updated_by = excluded.updated_by,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                tenant, snapshot["run_group_id"], route_node_id,
+                values["planned_location"], values["planned_arrival_at"], values["planned_departure_at"],
+                location_confirmed, changed_fields_json, actor_id, actor_name,
+            ),
+        )
+        if node.get("order_id"):
+            conn.execute(
+                """
+                UPDATE orders
+                SET run_confirmation_status = 'pending', run_confirmed_at = NULL,
+                    run_confirmed_by_user_id = NULL, run_confirmed_by = NULL,
+                    run_revision = COALESCE(run_revision, 1) + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """,
+                (tenant, int(node["order_id"])),
+            )
+        _mark_group_stale(conn, tenant, date_value, driver_id, vehicle_id)
+        conn.commit()
+    refreshed = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not refreshed:
+        raise ValueError("run_group_not_found")
+    updated_snapshot = build_document_snapshot(refreshed, make_document_version_id())
+    preview = _editable_node_preview(updated_snapshot)
+    preview["validation_issues"] = list(dict.fromkeys(preview["validation_issues"] + _route_timing_issues(updated_snapshot)))
+    with closing(get_connection()) as conn:
+        record_document_event(
+            conn,
+            updated_snapshot,
+            "route_node_edited",
+            actor,
+            {"route_node_id": route_node_id, "changed_fields": list(changes)},
+        )
+        conn.commit()
+    return preview
 
 
 def review_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, Any]:
@@ -705,7 +991,9 @@ def _validate_group(group: dict[str, Any], require_complete: bool = True) -> lis
 def _mark_group_stale(conn: Any, tenant: int, date_value: str, driver_id: int, vehicle_id: int) -> None:
     conn.execute(
         """
-        UPDATE driver_run_documents SET status = 'stale', stale_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        UPDATE driver_run_documents
+        SET status = 'stale', lifecycle_status = 'superseded',
+            stale_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
         WHERE tenant_id = ? AND business_date = ? AND driver_id = ? AND vehicle_id = ?
           AND status IN ('generated', 'reviewed')
         """,
@@ -713,7 +1001,9 @@ def _mark_group_stale(conn: Any, tenant: int, date_value: str, driver_id: int, v
     )
     conn.execute(
         """
-        UPDATE driver_run_documents SET stale_at = COALESCE(stale_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+        UPDATE driver_run_documents
+        SET lifecycle_status = 'superseded', stale_at = COALESCE(stale_at, CURRENT_TIMESTAMP),
+            updated_at = CURRENT_TIMESTAMP
         WHERE tenant_id = ? AND business_date = ? AND driver_id = ? AND vehicle_id = ?
           AND status = 'published'
         """,
@@ -722,27 +1012,9 @@ def _mark_group_stale(conn: Any, tenant: int, date_value: str, driver_id: int, v
 
 
 def _source_hash(group: dict[str, Any]) -> str:
-    render_fields = EDITABLE_FIELDS | {
-        "order_id", "oid", "end_date", "end_time", "agency_name", "guest_name",
-        "guest_contact", "flight_number", "source_channel", "order_source", "remark",
-        "run_revision", "application_method", "operation_scope", "operation_start_location",
-        "operation_start_date", "operation_start_time", "operation_end_location",
-        "operation_end_date", "operation_end_time", "document_fee", "document_fee_detail",
-        "waiting_place", "attention_place", "safety_instruction",
-        "printable_operational_instruction", "printable_stopovers",
-    }
-    payload = {
-        "renderer_version": DOCUMENT_RENDERER_VERSION,
-        "business_date": group["business_date"], "driver_id": group["driver_id"], "vehicle_id": group["vehicle_id"],
-        "driver_name": group["driver_name"], "driver_print_name": group.get("driver_print_name"),
-        "plate_number": group["plate_number"], "driver_office": group.get("driver_office"),
-        "vehicle_office": group.get("vehicle_office"), "operations_manager": group.get("operations_manager"),
-        "garage_location": group.get("garage_location"), "garage_out_time": group.get("garage_out_time"),
-        "garage_in_time": group.get("garage_in_time"),
-        "company": group.get("company") or {},
-        "orders": [{key: item.get(key) for key in sorted(render_fields)} for item in group["orders"]],
-    }
-    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    snapshot = build_document_snapshot(group, "source-hash")
+    snapshot["renderer_version"] = DOCUMENT_RENDERER_VERSION
+    return snapshot_source_sha256(snapshot)
 
 
 def _document_stem(group: dict[str, Any]) -> str:
@@ -757,16 +1029,16 @@ def _document_stem(group: dict[str, Any]) -> str:
     return f"{source}{date_code}{serial}-{plate}{driver}"
 
 
-def _render_pdf(group: dict[str, Any], path: Path) -> int:
-    from backend.services.v014_document_renderer import render_driver_packet
+def _render_pdf(group_or_snapshot: dict[str, Any], path: Path) -> int:
+    from backend.services.v014_hire_document_renderer import render_hire_packet
 
-    return render_driver_packet(
-        group,
-        path,
-        runtime_dir=RUNTIME_DIR,
-        jp_font_path=JP_FONT_PATH,
-        sc_font_path=SC_FONT_PATH,
+    snapshot = (
+        group_or_snapshot
+        if group_or_snapshot.get("schema_version")
+        else build_document_snapshot(group_or_snapshot, group_or_snapshot.get("document_version_id"))
     )
+    snapshot["renderer_version"] = DOCUMENT_RENDERER_VERSION
+    return render_hire_packet(snapshot, path, jp_font_path=JP_FONT_PATH)
 
 
 def _render_pdf_legacy(group: dict[str, Any], path: Path) -> int:
@@ -919,7 +1191,13 @@ def _field_table(items: list[tuple[str, Any]], label_style: Any, value_style: An
 def _public_document(row: dict[str, Any] | None) -> dict[str, Any] | None:
     if not row: return None
     safe = dict(row)
+    try:
+        snapshot = json.loads(str(safe.get("snapshot_json") or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        snapshot = {}
+    safe["renderer_version"] = snapshot.get("renderer_version") or DOCUMENT_RENDERER_VERSION
     safe.pop("file_path", None)
+    safe.pop("snapshot_json", None)
     return safe
 
 

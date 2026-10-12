@@ -32,6 +32,24 @@ function setSession(session) {
   wx.setStorageSync(SESSION_KEY, session || null);
 }
 
+function sessionExpiresAtMs(session) {
+  if (!session || typeof session !== 'object') return 0;
+  const expiresAt = Number(session.expires_at || session.expiresAt || 0);
+  if (Number.isFinite(expiresAt) && expiresAt > 0) {
+    return expiresAt > 1000000000000 ? expiresAt : expiresAt * 1000;
+  }
+  return 0;
+}
+
+function isSessionActive(session, nowMs = Date.now()) {
+  if (!session || !session.token || !session.port) return false;
+  const expiresAtMs = sessionExpiresAtMs(session);
+  // Older session payloads did not include an expiry. Preserve compatibility
+  // and let their API request perform the authoritative server-side check.
+  if (!expiresAtMs) return true;
+  return expiresAtMs > Number(nowMs || Date.now()) + 15000;
+}
+
 function clearSession() {
   wx.removeStorageSync(SESSION_KEY);
 }
@@ -51,6 +69,7 @@ module.exports = {
   setSelectedPort,
   getSession,
   setSession,
+  isSessionActive,
   clearSession,
   getRole
 };

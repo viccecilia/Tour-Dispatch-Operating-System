@@ -130,6 +130,11 @@
           <view class="ledger-title">{{item.time}} · {{item.route}}</view>
           <view wx:if="{{item.guestLine}}" class="ledger-guest">{{item.guestLine}}</view>
           <view wx:if="{{item.agency}}" class="ledger-guest">旅行社：{{item.agency}}</view>
+          <view wx:if="{{item.fixedTourName}}" class="ledger-tour">
+            <view class="ledger-tour-name">日游：{{item.fixedTourName}}</view>
+            <view wx:if="{{item.fixedTourSummary}}" class="ledger-tour-summary">{{item.fixedTourSummary}}</view>
+            <view wx:if="{{item.fixedTourPrice}}" class="ledger-tour-price">实际金额：{{item.fixedTourPrice}}</view>
+          </view>
           <view wx:if="{{item.remark}}" class="ledger-remark">{{item.remark}}</view>
         </view>
         <view class="ledger-fields">

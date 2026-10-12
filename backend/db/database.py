@@ -709,13 +709,25 @@ def ensure_driver_vehicle_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         UPDATE drivers
-        SET driver_status = COALESCE(NULLIF(driver_status, ''), status),
-            license_due_date = COALESCE(NULLIF(license_due_date, ''), license_expires_at),
-            health_check_due_date = COALESCE(NULLIF(health_check_due_date, ''), medical_check_expires_at),
-            license_expires_at = COALESCE(NULLIF(license_expires_at, ''), license_due_date),
-            medical_check_expires_at = COALESCE(NULLIF(medical_check_expires_at, ''), health_check_due_date)
+        SET driver_status = status
+        WHERE (driver_status IS NULL OR driver_status = '')
+          AND status IS NOT NULL AND status <> ''
         """
     )
+    for target, source in (
+        ("license_due_date", "license_expires_at"),
+        ("license_expires_at", "license_due_date"),
+        ("health_check_due_date", "medical_check_expires_at"),
+        ("medical_check_expires_at", "health_check_due_date"),
+    ):
+        conn.execute(
+            f"""
+            UPDATE drivers
+            SET {target} = {source}
+            WHERE ({target} IS NULL OR {target} = '')
+              AND {source} IS NOT NULL AND {source} <> ''
+            """
+        )
     conn.execute(
         """
         UPDATE vehicles
@@ -737,15 +749,20 @@ def ensure_driver_vehicle_schema(conn: sqlite3.Connection) -> None:
         WHERE updated_at IS NULL OR updated_at = ''
         """
     )
-    conn.execute(
-        """
-        UPDATE vehicles
-        SET next_inspection_due_date = COALESCE(NULLIF(next_inspection_due_date, ''), inspection_expires_at),
-            inspection_expires_at = COALESCE(NULLIF(inspection_expires_at, ''), next_inspection_due_date),
-            insurance_due_date = COALESCE(NULLIF(insurance_due_date, ''), insurance_expires_at),
-            insurance_expires_at = COALESCE(NULLIF(insurance_expires_at, ''), insurance_due_date)
-        """
-    )
+    for target, source in (
+        ("next_inspection_due_date", "inspection_expires_at"),
+        ("inspection_expires_at", "next_inspection_due_date"),
+        ("insurance_due_date", "insurance_expires_at"),
+        ("insurance_expires_at", "insurance_due_date"),
+    ):
+        conn.execute(
+            f"""
+            UPDATE vehicles
+            SET {target} = {source}
+            WHERE ({target} IS NULL OR {target} = '')
+              AND {source} IS NOT NULL AND {source} <> ''
+            """
+        )
 
 
 def ensure_assignment_schema(conn: sqlite3.Connection) -> None:

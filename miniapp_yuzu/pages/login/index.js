@@ -82,10 +82,11 @@ Page({
   onShow() {
     api.syncEnvironmentBaseUrl();
     const currentSession = session.getSession();
-    if (currentSession && currentSession.token && currentSession.port) {
+    if (session.isSessionActive(currentSession)) {
       const homeUrl = router.homeForSession(currentSession);
       if (homeUrl && homeUrl !== '/pages/entry/index') {
         forceRoute(homeUrl, this, 'login-onshow');
+        return;
       }
     }
     if (!this.autoLoginTried && !wx.getStorageSync(this.data.port === 'agency' ? 'agency_manual_logout' : 'dispatch_manual_logout')) {
@@ -100,6 +101,22 @@ Page({
         fail: () => reject({ error: 'wechat_login_failed' })
       });
     });
+  },
+
+  isDispatchDevtools() {
+    if (this.data.port !== 'dispatch') return false;
+    try {
+      return wx.getSystemInfoSync().platform === 'devtools';
+    } catch (_) {
+      return false;
+    }
+  },
+
+  isWechatCodeUnavailable(error) {
+    const code = String((error && (error.error || error.message)) || '').trim();
+    return code === 'wechat_login_failed'
+      || code === 'wechat_code_exchange_unavailable'
+      || code === 'wechat_code_exchange_failed';
   },
 
   normalizeWechatSession(payload) {
@@ -139,7 +156,11 @@ Page({
       })
       .catch((err) => {
         const code = err && err.error;
-        this.setData({ message: code && code !== 'wechat_not_bound' ? `微信自动登录失败：${code}` : '' });
+        this.setData({
+          message: this.isDispatchDevtools()
+            ? '开发工具模式：请使用账号密码登录'
+            : (code && code !== 'wechat_not_bound' ? `微信自动登录失败：${code}` : '')
+        });
       })
       .finally(() => this.setData({ loading: false }));
   },
@@ -182,10 +203,20 @@ Page({
     this.setData({ loading: true, message: '' });
     try {
       console.info('[yozi login submit]', { port: this.data.port, baseUrl: api.getBaseUrl(), loginCode });
-      const wxCode = await this.getWechatLoginCode();
-      const payload = this.data.port === 'agency'
-        ? await api.loginAgency(loginCode, password, wxCode)
-        : await api.loginDispatch(loginCode, password, wxCode);
+      let payload;
+      try {
+        const wxCode = await this.getWechatLoginCode();
+        payload = this.data.port === 'agency'
+          ? await api.loginAgency(loginCode, password, wxCode)
+          : await api.loginDispatch(loginCode, password, wxCode);
+      } catch (wechatError) {
+        if (!this.isDispatchDevtools() || !this.isWechatCodeUnavailable(wechatError)) {
+          throw wechatError;
+        }
+        // Development Tools cannot always exchange a real Mini Program code.
+        // This is intentionally a one-time password-only retry for dispatch only.
+        payload = await api.loginDispatch(loginCode, password);
+      }
       console.info('[yozi login success]', {
         port: this.data.port,
         role: payload && payload.user ? payload.user.role : payload.role,

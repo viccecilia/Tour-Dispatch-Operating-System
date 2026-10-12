@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from backend.db import database
-from backend.services import auth_account_service, auth_service, dispatcher_mobile_service, wechat_auth_service
+from backend.services import account_service, audit_service, auth_account_service, auth_service, dispatcher_mobile_service, operation_log_service, wechat_auth_service
 from backend.services.travel_agency_service import ensure_travel_agency_schema
 from backend.services.account_policy import (
     AGENCY_OWNER_GRANTS,
@@ -338,6 +338,55 @@ class SupabaseIdentityTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "invalid_old_password"):
                 auth_service.change_user_password(11, "wrong-old", "new-secret", access_token="token")
         remote_update.assert_not_called()
+
+    def test_platform_admin_can_set_specific_password_with_supabase_first(self):
+        actor = {"role": "admin", "account_scope": "platform", "tenant_id": 1, "username": "platform-admin"}
+        with (
+            patch.object(account_service, "reset_supabase_password") as remote_reset,
+        ):
+            account = account_service.set_account_password(11, "TestOnly-Pass-01", actor, tenant_id=1)
+        remote_reset.assert_called_once_with("auth-driver-a", "TestOnly-Pass-01")
+        self.assertTrue(account["supabase_linked"])
+        self.assertTrue(account["must_change_password"])
+        self.assertIsNotNone(account["password_changed_at"])
+
+    def test_weak_admin_password_is_rejected_without_remote_write(self):
+        actor = {"role": "admin", "account_scope": "platform", "tenant_id": 1}
+        with patch.object(account_service, "reset_supabase_password") as remote_reset:
+            with self.assertRaisesRegex(ValueError, "password_policy_invalid"):
+                account_service.set_account_password(11, "short", actor, tenant_id=1)
+        remote_reset.assert_not_called()
+
+    def test_supabase_failure_leaves_local_password_unchanged(self):
+        actor = {"role": "admin", "account_scope": "platform", "tenant_id": 1}
+        with closing(database.get_connection()) as conn:
+            before = conn.execute("SELECT password_hash, password_changed_at FROM users WHERE id = 11").fetchone()
+        with patch.object(account_service, "reset_supabase_password", side_effect=auth_account_service.SupabaseAuthError("upstream_failed")):
+            with self.assertRaisesRegex(ValueError, "upstream_failed"):
+                account_service.set_account_password(11, "TestOnly-Pass-02", actor, tenant_id=1)
+        with closing(database.get_connection()) as conn:
+            after = conn.execute("SELECT password_hash, password_changed_at FROM users WHERE id = 11").fetchone()
+        self.assertEqual(tuple(before), tuple(after))
+
+    def test_carrier_admin_cannot_set_another_tenants_password(self):
+        with closing(database.get_connection()) as conn:
+            conn.execute("INSERT INTO tenants (id, name, slug) VALUES (2, 'Carrier B', 'carrier-b')")
+            conn.execute(
+                """INSERT INTO users (id, tenant_id, username, password_hash, role, display_name, account_scope, is_active)
+                   VALUES (31, 2, 'dispatcher-b', 'legacy', 'dispatcher', 'Dispatcher B', 'carrier', 1)"""
+            )
+            conn.commit()
+        actor = {"role": "admin", "account_scope": "carrier", "tenant_id": 1}
+        with self.assertRaises(PermissionError):
+            account_service.set_account_password(31, "TestOnly-Pass-03", actor, tenant_id=2)
+
+    def test_password_payload_is_redacted_from_operation_and_audit_serialization(self):
+        test_password = "TestOnly-Pass-04"
+        path = Path(self.temp.name) / "operations.log"
+        with patch.object(operation_log_service, "OPERATION_LOG", path):
+            operation_log_service.log_operation("POST", "/api/auth/admin/set-password", {"user_id": 11, "new_password": test_password})
+        self.assertNotIn(test_password, path.read_text(encoding="utf-8"))
+        self.assertNotIn(test_password, audit_service._json({"new_password": test_password}))
 
     def test_dispatcher_payload_cannot_impersonate_another_user(self):
         principal = auth_account_service.resolve_authenticated_principal("auth-dispatcher-a")

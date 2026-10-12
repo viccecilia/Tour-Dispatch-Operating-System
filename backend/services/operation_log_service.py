@@ -23,7 +23,7 @@ def log_operation(action: str, path: str, payload: dict[str, Any] | None = None,
 
 
 def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
-    hidden = {"password", "token", "authorization"}
+    hidden = {"password", "new_password", "password_confirmation", "password_hash", "token", "authorization", "secret"}
     result: dict[str, Any] = {}
     for key, value in payload.items():
         if key.lower() in hidden:

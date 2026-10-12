@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "instances": [
+    {
+      "source": "NotoSansJP-VF.ttf",
+      "source_sha256": "5113756f8a3b5d01b2211025e267c50121e3b36f465b7bbaf3cdaf4c3430bfd0",
+      "file": "NotoSansJP-Regular.ttf",
+      "sha256": "aff5b23fefc6da561c250d99ac43fc7c91b7a5b4937691ad24ef7be73c1281cb",
+      "weight": 400,
+      "size": 5767340
+    },
+    {
+      "source": "NotoSansJP-VF.ttf",
+      "source_sha256": "5113756f8a3b5d01b2211025e267c50121e3b36f465b7bbaf3cdaf4c3430bfd0",
+      "file": "NotoSansJP-Bold.ttf",
+      "sha256": "c555fa874a0e5ed56f86a957bcf0ac77c3e3773b6bdc993ff2263f71825c6710",
+      "weight": 700,
+      "size": 5762128
+    },
+    {
+      "source": "NotoSansSC-VF.ttf",
+      "source_sha256": "763146584cf0710223441356b4395e279021b0806c196614377a7a0174ae074a",
+      "file": "NotoSansSC-Regular.ttf",
+      "sha256": "90ea2765cf5c7293cfd8a203643a31788f5acf221e1d8918f057d1bdc30247e4",
+      "weight": 400,
+      "size": 10596388
+    },
+    {
+      "source": "NotoSansSC-VF.ttf",
+      "source_sha256": "763146584cf0710223441356b4395e279021b0806c196614377a7a0174ae074a",
+      "file": "NotoSansSC-Bold.ttf",
+      "sha256": "bbbfdf7668bed8d052e0e30ecbcd5f8a4707ee360d8291bc933391b2d6deebeb",
+      "weight": 700,
+      "size": 10585904
+    }
+  ]
+}

@@ -671,6 +671,22 @@ export const api = {
     const search = searchFrom(params, ["tenant_id", "status"]);
     return listFrom<Assignment>(await request<unknown>(`/api/dispatch/assignments${search.toString() ? `?${search}` : ""}`), ["assignments", "items", "data"]);
   },
+  fixedTourRoutes: (params?: { q?: string; tenant_id?: number; include_inactive?: boolean }) => {
+    const search = new URLSearchParams();
+    if (params?.q) search.set("q", params.q);
+    if (params?.tenant_id) search.set("tenant_id", String(params.tenant_id));
+    if (params?.include_inactive) search.set("include_inactive", "1");
+    return request<{ routes: Array<any> }>(`/api/fixed-tour/routes${search.toString() ? `?${search}` : ""}`);
+  },
+  createFixedTourRoute: (payload: Record<string, unknown>) => request<{ route: any }>("/api/fixed-tour/routes", { method: "POST", body: JSON.stringify(payload) }),
+  updateFixedTourRoute: (id: number, payload: Record<string, unknown>) => request<{ route: any }>(`/api/fixed-tour/routes/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteFixedTourRoute: (id: number, tenant_id?: number) => {
+    const search = new URLSearchParams();
+    if (tenant_id) search.set("tenant_id", String(tenant_id));
+    return request<{ deleted: boolean }>(`/api/fixed-tour/routes/${id}${search.toString() ? `?${search}` : ""}`, { method: "DELETE" });
+  },
+  copyFixedTourRoute: (id: number, tenant_id?: number) => request<{ route: any }>(`/api/fixed-tour/routes/${id}/copy`, { method: "POST", body: JSON.stringify({ tenant_id }) }),
+  setFixedTourRouteStatus: (id: number, status: string, tenant_id?: number) => request<{ route: any }>(`/api/fixed-tour/routes/${id}/status`, { method: "POST", body: JSON.stringify({ status, tenant_id }) }),
   assignmentEvidence: async (assignmentId: number) =>
     request<{ evidence_chain: AssignmentEvidenceChain }>(`/api/assignments/${assignmentId}/evidence`),
   orderEvidence: async (orderId: number) =>

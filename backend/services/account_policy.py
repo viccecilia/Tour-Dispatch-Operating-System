@@ -51,6 +51,11 @@ def assert_can_grant_role(
 
 def assert_can_manage_target(actor: dict[str, Any], target: dict[str, Any]) -> None:
     target_scope = str(target.get("account_scope") or "")
+    # Driver profiles belong to the carrier tenant for account administration.
+    # They are stored with a distinct login scope, but must be managed through
+    # the same carrier-admin policy as other carrier roles.
+    if target_scope == "driver":
+        target_scope = "carrier"
     target_org = target.get("organization_id") or target.get("company_id") or target.get("tenant_id")
     target_role = str(target.get("role") or "")
     assert_can_grant_role(actor, target_scope, int(target_org or 0), target_role)

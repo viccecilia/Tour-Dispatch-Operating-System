@@ -35,6 +35,29 @@ class DailyAssignmentParserTest(unittest.TestCase):
     def parsed(self):
         return parser_service.parse_daily_assignment_text(SAMPLE)
 
+    def test_airport_default_arrival_is_plus_60_minutes_and_crosses_midnight(self):
+        text = """10/9 李力 7495
+1️⃣09:30 大阪送机关西 WhatsApp*代收13000日元
+2️⃣10:40 关西举牌接机大阪 指定时间 微信
+3️⃣13:00 大阪送机关西 微信
+4️⃣14:00 关西举牌接机大阪 line
+5️⃣17:00 大阪送机关西 微信
+6️⃣18:00 关西举牌接机大阪 指定时间 微信"""
+        orders = parser_service.parse_daily_assignment_text(text, base_year=2026)["groups"][0]["orders"]
+        self.assertEqual([order["parsed"]["end_time"] for order in orders], ["10:30", "11:40", "14:00", "15:00", "18:00", "19:00"])
+        self.assertTrue(all(order["parsed"]["end_time_source"] == "suggested_60m" for order in orders))
+        self.assertTrue(all(order["parsed"]["end_time_confirmed"] == 0 for order in orders))
+        for order, side in zip(orders, ("pickup", "dropoff", "pickup", "dropoff", "pickup", "dropoff")):
+            parsed = order["parsed"]
+            self.assertEqual(parsed[f"{side}_source_text"], "大阪")
+            self.assertEqual(parsed[f"{side}_parsed_location"], "大阪")
+            self.assertEqual(parsed[f"{side}_suggested_location"], parsed[f"{side}_location"])
+            self.assertEqual(parsed[f"{side}_location_confirmed"], 0)
+            self.assertIn(parsed[f"{side}_location"], {item["name"] for item in hotel_pool("大阪")})
+
+        late = parser_service.parse_daily_assignment_text("10/9 李力 7495\n23:30 大阪送机关西", base_year=2026)["groups"][0]["orders"][0]["parsed"]
+        self.assertEqual((late["end_date"], late["end_time"]), ("2026-10-10", "00:30"))
+
     def test_1_parses_driver_vehicle_and_two_orders(self):
         result = self.parsed()
         self.assertEqual((result["group_count"], result["order_count"]), (1, 2))
@@ -85,6 +108,8 @@ class DailyAssignmentParserTest(unittest.TestCase):
         self.assertIn(first["parsed"]["pickup_location"], osaka_names)
         self.assertIn(first["parsed"]["dropoff_location"], kyoto_names)
         self.assertEqual(first["route"], second["route"])
+        self.assertEqual(first["parsed"]["pickup_source_text"], "大阪")
+        self.assertEqual(first["parsed"]["pickup_suggested_location"], first["parsed"]["pickup_location"])
         self.assertNotIn("微信", first["route"])
         self.assertNotIn("*", first["route"])
 

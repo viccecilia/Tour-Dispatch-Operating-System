@@ -14,7 +14,7 @@
     <view class="port-switch">
       <view class="port-pill {{port === 'agency' ? 'active agency-active' : ''}}" data-port="agency" bindtap="switchPort">旅行社</view>
       <view class="port-pill {{port === 'dispatch' ? 'active dispatch-active' : ''}}" data-port="dispatch" bindtap="switchPort">车公司</view>
-    </view>
+    </view><!--  -->
 
     <view class="field">
       <text class="label">{{meta.accountLabel}}</text>
@@ -22,7 +22,7 @@
     </view>
     <view class="field">
       <text class="label">密码</text>
-      <input class="input" password value="{{password}}" placeholder="请输入密码" bindinput="onPasswordInput" />
+      <input style="width: 647rpx; height: 79rpx; display: block; box-sizing: border-box" class="input" password value="{{password}}" placeholder="请输入密码" bindinput="onPasswordInput" />
     </view>
 
     <button class="button button-green login-button" loading="{{loading}}" disabled="{{loading}}" bindtap="submit">

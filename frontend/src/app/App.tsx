@@ -13,6 +13,7 @@ import { AttendancePage } from "@/pages/AttendancePage";
 import { CompanyRegistrationPage } from "@/pages/CompanyRegistrationPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DispatchPage } from "@/pages/DispatchPage";
+import { FixedToursPage } from "@/pages/FixedToursPage";
 import { DriverAppPreviewPage } from "@/pages/DriverAppPreviewPage";
 import { DriverMonitorPage } from "@/pages/DriverMonitorPage";
 import { FinancePage } from "@/pages/FinancePage";
@@ -99,6 +100,7 @@ export function App() {
     parser: <ParserPage />,
     orders: <OrdersPage />,
     dispatch: <DispatchPage />,
+    "fixed-tours": <FixedToursPage currentUser={user} />,
     auction: <AuctionHallPage />,
     calendar: <CalendarPage currentUser={user} />,
     "driver-monitor": <DriverMonitorPage />,

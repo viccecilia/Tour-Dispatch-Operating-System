@@ -1,11 +1,12 @@
 import tempfile
 import unittest
+from copy import deepcopy
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 from backend.db import database
-from backend.services import dispatch_service
+from backend.services import dispatch_service, parser_service
 from backend.services.tenant_context import set_current_tenant_id
 
 
@@ -70,6 +71,38 @@ class DailyImportTransactionTest(unittest.TestCase):
         self.assertTrue(second["reused"])
         self.assertEqual(first["order_ids"], second["order_ids"])
         self.assertEqual(self.counts(), (2, 2))
+
+    def test_arrival_provenance_survives_daily_import(self):
+        payload = self.payload()
+        payload["orders"][0].update({
+            "end_time": "08:45",
+            "end_time_source": "suggested_60m",
+            "end_time_confirmed": 0,
+        })
+        result = dispatch_service.import_daily_assignment_group(payload, self.actor)
+        with closing(database.get_connection()) as conn:
+            row = conn.execute(
+                "SELECT end_time, end_time_source, end_time_confirmed FROM orders WHERE id = ?",
+                (result["order_ids"][0],),
+            ).fetchone()
+        self.assertEqual((row["end_time"], row["end_time_source"], row["end_time_confirmed"]), ("08:45", "suggested_60m", 0))
+
+    def test_city_hotel_candidate_provenance_survives_raw_parse_and_import(self):
+        raw = "10/9 姚博 7007\n09:30 大阪送机关西 微信"
+        parsed = parser_service.parse_daily_assignment_text(raw, base_year=2026)["groups"][0]["orders"][0]["parsed"]
+        payload = {
+            "driver_id": 10,
+            "vehicle_id": 20,
+            "orders": [parsed],
+        }
+        result = dispatch_service.import_daily_assignment_group(payload, self.actor)
+        with closing(database.get_connection()) as conn:
+            row = dict(conn.execute("SELECT * FROM orders WHERE id = ?", (result["order_ids"][0],)).fetchone())
+        self.assertEqual(row["pickup_source_text"], "大阪")
+        self.assertEqual(row["pickup_parsed_location"], "大阪")
+        self.assertEqual(row["pickup_suggested_location"], parsed["pickup_location"])
+        self.assertEqual(row["pickup_location"], parsed["pickup_location"])
+        self.assertEqual(row["pickup_location_confirmed"], 0)
 
     def test_mid_transaction_failure_rolls_back_everything(self):
         original = dispatch_service._insert_daily_import_order
@@ -146,6 +179,57 @@ class DailyImportTransactionTest(unittest.TestCase):
                     {"groups": [self.payload(), second_group]},
                     self.actor,
                 )
+        self.assertEqual(self.counts(), (0, 0))
+
+    def test_same_resources_on_different_dates_have_unique_oids(self):
+        first = self.payload()
+        first["orders"] = [deepcopy(first["orders"][0])]
+        first["orders"][0]["order_date"] = "2026-10-09"
+        first["orders"][0]["end_date"] = "2026-10-09"
+        second = deepcopy(first)
+        second["orders"][0]["order_date"] = "2026-10-12"
+        second["orders"][0]["end_date"] = "2026-10-12"
+        one = dispatch_service.import_daily_assignment_group(first, self.actor)
+        two = dispatch_service.import_daily_assignment_group(second, self.actor)
+        self.assertTrue(one["success"])
+        self.assertTrue(two["success"])
+        with closing(database.get_connection()) as conn:
+            rows = conn.execute("SELECT oid, order_date FROM orders ORDER BY id").fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len({row["oid"] for row in rows}), 2)
+        self.assertIn("261009", rows[0]["oid"])
+        self.assertIn("261012", rows[1]["oid"])
+
+    def test_client_batch_id_replay_returns_same_business_result(self):
+        request = {"client_batch_id": "daily-r1-idempotent", "groups": [self.payload()]}
+        first = dispatch_service.import_daily_assignment_batch(request, self.actor)
+        second = dispatch_service.import_daily_assignment_batch(request, self.actor)
+        status = dispatch_service.get_daily_import_batch_status("daily-r1-idempotent")
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+        self.assertTrue(second["idempotent_replay"])
+        self.assertEqual(first["order_ids"], second["order_ids"])
+        self.assertEqual(status["status"], "succeeded")
+        self.assertEqual(status["result"]["order_ids"], first["order_ids"])
+        self.assertEqual(self.counts(), (2, 2))
+
+    def test_failed_client_batch_records_rollback_status(self):
+        original = dispatch_service._insert_daily_import_order
+        calls = {"count": 0}
+
+        def fail_on_second(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("injected batch failure")
+            return original(*args, **kwargs)
+
+        request = {"client_batch_id": "daily-r1-failed", "groups": [self.payload()]}
+        with patch.object(dispatch_service, "_insert_daily_import_order", side_effect=fail_on_second):
+            with self.assertRaisesRegex(RuntimeError, "injected batch failure"):
+                dispatch_service.import_daily_assignment_batch(request, self.actor)
+        status = dispatch_service.get_daily_import_batch_status("daily-r1-failed")
+        self.assertEqual(status["status"], "failed")
+        self.assertEqual(status["error_code"], "daily_import_transaction_failed")
         self.assertEqual(self.counts(), (0, 0))
 
 

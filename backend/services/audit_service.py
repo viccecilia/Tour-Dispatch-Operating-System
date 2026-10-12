@@ -5,7 +5,7 @@ from backend.db.database import get_connection
 from backend.services.tenant_context import get_current_tenant_id
 
 
-SENSITIVE_KEYS = {"password", "password_hash", "token", "authorization", "secret"}
+SENSITIVE_KEYS = {"password", "new_password", "password_confirmation", "password_hash", "token", "authorization", "secret"}
 
 
 def ensure_audit_schema() -> None:

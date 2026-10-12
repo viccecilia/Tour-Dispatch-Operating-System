@@ -2037,3 +2037,17 @@
 .ops-resource-links text {
   margin-left: 5rpx;
 }
+
+.ops-v5-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12rpx; margin: 18rpx 0; }
+.ops-v5-card { min-height: 116rpx; padding: 18rpx 14rpx; border: 1rpx solid #dce5ef; border-radius: 16rpx; background: #fff; color: #64748b; }
+.ops-v5-card.active { border-color: #2f6fed; background: #eaf2ff; color: #1d4ed8; }
+.ops-v5-card text { display: block; font-size: 20rpx; }
+.ops-v5-card strong { display: block; margin-top: 12rpx; color: #172b4d; font-size: 34rpx; }
+.ops-v5-search { margin-bottom: 14rpx; padding: 0 18rpx; border: 1rpx solid #dce5ef; border-radius: 16rpx; background: #fff; }
+.ops-v5-search input { height: 72rpx; font-size: 24rpx; }
+.ops-v5-chips { display: flex; flex-wrap: wrap; gap: 10rpx; margin-bottom: 14rpx; }
+.ops-v5-chips view { padding: 10rpx 14rpx; border-radius: 999rpx; background: #edf2f7; color: #475569; font-size: 21rpx; }
+.ops-v5-chips view.active { background: #dbeafe; color: #1d4ed8; font-weight: 700; }
+.ops-v5-results { margin-bottom: 20rpx; }
+.ops-search-actions { display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 12rpx; }
+.ops-search-action { padding: 8rpx 12rpx; border: 1rpx solid #bfdbfe; border-radius: 999rpx; background: #eff6ff; color: #1d4ed8; font-size: 20rpx; }

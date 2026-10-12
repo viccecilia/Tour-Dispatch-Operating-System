@@ -68,6 +68,10 @@ Page({
     operationsDetailHint: '查看今日全部司机任务、执行状态和车辆分配。',
     operationsDetailRows: [],
     operationsDetailUnit: '条',
+    opsV5Mode: 'outbound',
+    opsSearchQuery: '',
+    opsSearchRows: [],
+    opsNotificationRows: [],
     dashboard: { counts: {}, latest_orders: [], fleet_status: {} },
     driverAssignments: [],
     panelMode: 'orders',
@@ -266,7 +270,6 @@ Page({
     const codeTask = loginWithCode ? this.getWechatLoginCode().catch(() => '') : Promise.resolve('');
     codeTask
       .then((wxCode) => (isPhone ? api.loginPhone(account, password, wxCode) : api.login(account, password, wxCode)))
-      .catch(() => (isPhone ? api.loginPhone(account.replace(/[^\d]/g, ''), password, '') : Promise.reject({ error: 'login_failed' })))
       .then((res) => {
         api.setSession(res);
         this.setSessionState(res);
@@ -339,6 +342,12 @@ Page({
           return { vehicles: [], drivers: [], summary: {}, resourceError: err && (err.error || err.detail || err.errMsg) || 'resource_failed' };
         })
       : Promise.resolve({ vehicles: [], drivers: [], summary: {} });
+    const resourceReminderTask = canViewResources
+      ? api.resourceReminders().catch((err) => {
+        console.warn('[dispatch resource reminders failed]', err);
+        return { alerts: [] };
+      })
+      : Promise.resolve({ alerts: [] });
 
     return Promise.all([
       api.dashboard().catch((err) => {
@@ -354,7 +363,8 @@ Page({
       vehicleTask,
       unassignedTask,
       dispatchDraftTask,
-      resourceTask
+      resourceTask,
+      resourceReminderTask
     ])
       .then((results) => {
         const dashboard = results && results[0];
@@ -368,6 +378,7 @@ Page({
         const unassigned = results && results[8];
         const dispatchDrafts = results && results[9];
         const resourceLibrary = results && results[10];
+        const resourceReminders = results && results[11];
         const safeDashboard = dashboard || emptyDashboard;
         const allAssignments = Array.isArray(assignments && assignments.assignments) ? assignments.assignments : [];
         const allDrivers = Array.isArray(drivers && drivers.drivers) ? drivers.drivers : [];
@@ -394,7 +405,7 @@ Page({
         const pendingRows = driverRows.filter((item) => item.rawStatus === 'assigned');
         const todayRows = driverRows.filter((item) => this.isAssignmentOnDate(item, today));
         const exceptionRows = driverRows.filter((item) => ['incident', 'exception', 'delayed'].indexOf(String(item.order_status || item.status || '')) >= 0);
-        const resourceOverview = this.buildResourceOverview(resourceLibrary || {}, allDrivers, allVehicles);
+        const resourceOverview = this.buildResourceOverview(resourceLibrary || {}, allDrivers, allVehicles, resourceReminders || {});
         const visibleResourceAlertRows = this.filterResourceAlertRows(
           resourceOverview.alertRows,
           this.data.resourceAlertFilter
@@ -465,6 +476,7 @@ Page({
           allOrderChipCount: this.data.canDispatch ? dispatchAllRows.length : driverRows.length,
           driverOrderChipAlert: false,
           notifications: notificationRows,
+          opsNotificationRows: unreadRows,
           statusLabel: status.label,
           statusHint: status.hint,
           operationsStatus: operations.status,
@@ -500,11 +512,16 @@ Page({
           resourcePdfRows: resourceOverview.pdfRows,
           resourceError: resourceOverview.error,
           vehicleIdleTypeRows: dispatchOverview.vehicleTypeRows || [],
-          dispatchTaskRows: todayDispatchRows.slice(0, 8),
+          dispatchTaskRows: (() => {
+            const outbound = todayDispatchRows.filter((item) => ['departed', 'arrived', 'in_service', 'completed'].includes(String(item.rawStatus || item.execution_status || item.status || '')));
+            const byVehicle = new Map();
+            outbound.forEach((item) => { const key = String(item.vehicle_id || item.vehicleId || item.plate_number || item.id); if (!byVehicle.has(key)) byVehicle.set(key, item); });
+            return Array.from(byVehicle.values()).map((item) => ({ ...item, title: `${item.driver_name || item.driver || '司机暂无数据'} / ${item.plate_number || item.vehicle || '车辆暂无数据'}`, meta: `${item.route || item.pickup_location || '今日路线暂无数据'} · ${this.statusText(item.rawStatus || item.execution_status || item.status)} · 点呼/PDF/位置以运行数据为准`, body: item.updated_at || item.reported_at || '最后更新时间暂无数据' }));
+          })(),
           idleDriverRows: idleResources.idleDriverRows,
           idleVehicleRows: idleResources.idleVehicleRows,
           loading: false
-        });
+        }, () => this.refreshOpsV5Search());
         if (role !== 'driver') this.refreshResourceOverview();
         this.promptPendingAssignments(role, pendingRows);
       })
@@ -512,6 +529,79 @@ Page({
         console.error('[dispatch home load failed]', err);
         this.setData({ loading: false, error: '无法加载移动首页。' });
       });
+  },
+
+  switchOpsV5Mode(e) { this.setData({ opsV5Mode: e.currentTarget.dataset.mode || 'outbound', opsSearchQuery: '' }, () => this.refreshOpsV5Search()); },
+  onOpsV5Search(e) { this.setData({ opsSearchQuery: e.detail.value }, () => this.refreshOpsV5Search()); },
+  refreshOpsV5Search() {
+    const q = String(this.data.opsSearchQuery || '').trim().toLowerCase();
+    if (!q) return this.setData({ opsSearchRows: [] });
+    const taskRows = [].concat(this.data.operationsTaskRows || [], this.data.dispatchTaskRows || []);
+    const vehicleRows = (this.data.resourceAllVehicleRows || []).map((item) => ({
+      ...item,
+      resultKind: 'vehicle',
+      meta: [item.plate, item.vehicleType, item.officeLabel].filter(Boolean).join(' · ') || item.meta || '车辆基本信息',
+      body: [
+        item.nextRequiredText ? `${item.nextRequiredLabel || '下次检查'} ${item.nextRequiredText}` : '',
+        item.docCount ? `${item.docCount} 份车辆资料` : '证件资料暂无数据'
+      ].filter(Boolean).join(' · '),
+      actions: [
+        { key: 'vehicle_docs', label: '车检证' },
+        { key: 'vehicle_docs', label: '保险证' },
+        { key: 'vehicle_docs', label: '3个月点检' },
+        { key: 'vehicle_docs', label: '维修资料' },
+        { key: 'today_task', label: '今日任务' }
+      ]
+    }));
+    const driverRows = (this.data.resourceAllDriverRows || []).map((item) => {
+      const driverName = String(item.title || item.name || '');
+      const currentTask = taskRows.find((task) => JSON.stringify(task).indexOf(driverName) >= 0);
+      return {
+        ...item,
+        resultKind: 'driver',
+        meta: [item.driverCode, item.phone, item.statusLabel].filter(Boolean).join(' · ') || item.meta || '司机基本信息',
+        body: currentTask
+          ? [currentTask.meta, currentTask.body].filter(Boolean).join(' · ')
+          : '当前车辆、出库状态、点呼、今日订单和最后位置暂无运行数据',
+        actions: [
+          { key: 'today_task', label: '今日订单' },
+          { key: 'driver_docs', label: '司机证件' },
+          { key: 'run_docs', label: '運送引受書' },
+          { key: 'run_docs', label: '運行指示書' }
+        ]
+      };
+    });
+    const source = []
+      .concat(taskRows)
+      .concat(this.data.resourceAlertRows || [])
+      .concat(vehicleRows)
+      .concat(driverRows)
+      .concat(this.data.resourcePdfRows || []);
+    const rows = source
+      .filter((item) => JSON.stringify(item).toLowerCase().includes(q))
+      .slice(0, 30)
+      .map((item) => ({
+        title: item.title || item.name || item.plate_number || '资料',
+        meta: item.meta || item.status || item.file_name || '',
+        body: item.body || item.route || '',
+        resultKind: item.resultKind || '',
+        resultKey: item.vehicleKey || item.driverCode || item.resourceId || item.id || '',
+        actions: item.actions || []
+      }));
+    this.setData({ opsSearchRows: rows });
+  },
+
+  openOpsSearchQuick(e) {
+    const dataset = (e.currentTarget && e.currentTarget.dataset) || {};
+    const action = dataset.action || '';
+    const kind = dataset.kind || '';
+    const resultKey = dataset.key || '';
+    if (resultKey) wx.setStorageSync('operations_info_query', resultKey);
+    if (action === 'today_task' || action === 'run_docs') {
+      this.goTask();
+      return;
+    }
+    this.goInfo({ currentTarget: { dataset: { section: kind === 'driver' ? 'drivers' : 'vehicles' } } });
   },
 
   promptPendingAssignments(role, pendingRows) {
@@ -896,12 +986,24 @@ Page({
     }));
   },
 
-  buildResourceOverview(library, apiDrivers, apiVehicles) {
+  buildResourceOverview(library, apiDrivers, apiVehicles, reminders) {
     const librarySummary = (library && library.summary) || {};
     const libVehicles = Array.isArray(library && library.vehicles) ? library.vehicles : [];
     const libDrivers = Array.isArray(library && library.drivers) ? library.drivers : [];
-    const vehicles = libVehicles.length ? libVehicles : (apiVehicles || []);
-    const drivers = libDrivers.length ? libDrivers : (apiDrivers || []);
+    // The resource-library CSV is a legacy document index.  Operational
+    // reminders must always use tenant-scoped resource records when available.
+    const libraryDocsBySuffix = {};
+    libVehicles.forEach((item) => {
+      const key = this.lastDigits(item.suffix || item.plate_number || item.plate || item.title || '');
+      if (key) libraryDocsBySuffix[key] = item.docs || item.files || [];
+    });
+    const vehicles = (Array.isArray(apiVehicles) ? apiVehicles : []).map((item) => {
+      const key = this.lastDigits(item.plate_number || item.plate || item.id || '');
+      const ownDocs = Array.isArray(item.docs || item.files) ? (item.docs || item.files) : [];
+      const libraryDocs = libraryDocsBySuffix[key] || [];
+      return { ...item, docs: ownDocs.concat(libraryDocs) };
+    });
+    const drivers = Array.isArray(apiDrivers) ? apiDrivers : [];
     const vehicleRows = vehicles
       .map((item, index) => this.decorateResourceVehicle(item, index))
       .filter((item) => !this.isHiddenHomeResourceVehicle(item))
@@ -910,14 +1012,27 @@ Page({
       .filter((item) => !this.isHiddenDriver(item))
       .map((item, index) => this.decorateResourceDriver(item, index))
       .sort((a, b) => this.resourceDriverRowSort(a, b));
-    const vehicleInspectionAlerts = this.resourceVehicleAlerts(vehicleRows, 'vehicleInspectionAlertIso', 'vehicleInspectionAlertText', '车检');
-    const threeMonthAlerts = this.resourceVehicleAlerts(vehicleRows, 'threeMonthIso', 'threeMonthText', '3个月点检');
-    const healthAlerts = this.resourceDriverAlerts(driverRows, 'healthIso', 'healthText', 'healthExamDate', '人员体检');
-    const licenseAlerts = this.resourceDriverAlerts(driverRows, 'licenseIso', 'licenseText', '', '驾照');
+    const reminderAlerts = this.resourceReminderAlerts(reminders && reminders.alerts);
+    const vehicleInspectionAlerts = this.mergeResourceAlerts(
+      this.resourceVehicleAlerts(vehicleRows, 'vehicleInspectionAlertIso', 'vehicleInspectionAlertText', '车检'),
+      reminderAlerts.filter((item) => item.alertType === 'vehicle')
+    );
+    const threeMonthAlerts = this.mergeResourceAlerts(
+      this.resourceVehicleAlerts(vehicleRows, 'threeMonthIso', 'threeMonthText', '3个月点检'),
+      reminderAlerts.filter((item) => item.alertType === 'inspection')
+    );
+    const healthAlerts = this.mergeResourceAlerts(
+      this.resourceDriverAlerts(driverRows, 'healthIso', 'healthText', 'healthExamDate', '人员体检'),
+      reminderAlerts.filter((item) => item.alertType === 'health')
+    );
+    const licenseAlerts = this.mergeResourceAlerts(
+      this.resourceDriverAlerts(driverRows, 'licenseIso', 'licenseText', '', '驾照'),
+      reminderAlerts.filter((item) => item.alertType === 'license')
+    );
     const residenceAlerts = this.resourceDriverAlerts(driverRows, 'residenceIso', 'residenceText', '', '签证');
     const pdfTotal = vehicleRows.reduce((sum, item) => sum + Number(item.docCount || 0), 0);
-    const rawVehicleTotal = Number(librarySummary.vehicles || librarySummary.vehicleTotal || 0) || vehicles.length;
-    const rawDriverTotal = Number(librarySummary.drivers || librarySummary.driverTotal || 0) || drivers.length;
+    const rawVehicleTotal = vehicles.length;
+    const rawDriverTotal = drivers.length;
     const rawPdfTotal = Number(librarySummary.pdf_files || librarySummary.pdfTotal || 0) || pdfTotal;
     const rawCategoryTotal = Number(librarySummary.categories || librarySummary.categoryTotal || 0);
     const categorySet = {};
@@ -965,6 +1080,75 @@ Page({
     };
   },
 
+  resourceReminderAlerts(alerts) {
+    return (Array.isArray(alerts) ? alerts : [])
+      .map((item) => {
+        const resourceType = String(item.type || '');
+        const field = String(item.field || '');
+        const label = String(item.label || '');
+        let alertType = '';
+        let displayLabel = label;
+        if (resourceType === 'vehicle') {
+          alertType = field === 'shaken_due_date' || label.indexOf('一年车检') >= 0 ? 'vehicle' : 'inspection';
+          displayLabel = alertType === 'vehicle' ? '车检' : '3个月点检';
+        } else if (field === 'health_check_due_date' || label.indexOf('体检') >= 0) {
+          alertType = 'health';
+          displayLabel = '人员体检';
+        } else if (field === 'license_due_date' || label.indexOf('驾照') >= 0) {
+          alertType = 'license';
+          displayLabel = '驾照';
+        }
+        if (!alertType) return null;
+        const days = item.days_left === null || item.days_left === undefined ? null : Number(item.days_left);
+        const dateText = String(item.date || '');
+        const title = String(item.name || (resourceType === 'vehicle' ? '车辆' : '人员'));
+        return {
+          id: `reminder-${alertType}-${item.id || title}-${field || label}`,
+          title,
+          resourceId: item.id || '',
+          vehicleKey: resourceType === 'vehicle' ? title : '',
+          driverId: resourceType === 'driver' ? item.id : '',
+          alertType,
+          alertLabel: displayLabel,
+          vehicleInspectionIso: alertType === 'vehicle' ? dateText : '',
+          vehicleInspectionText: alertType === 'vehicle' ? dateText : '',
+          latestVehicleInspectionIso: '',
+          latestVehicleInspectionText: '',
+          threeMonthIso: alertType === 'inspection' ? dateText : '',
+          threeMonthText: alertType === 'inspection' ? dateText : '',
+          latestThreeMonthIso: '',
+          latestThreeMonthText: '',
+          healthExamDate: '',
+          healthText: alertType === 'health' ? dateText : '',
+          licenseIso: alertType === 'license' ? dateText : '',
+          licenseText: alertType === 'license' ? dateText : '',
+          meta: `${dateText || '-'} · ${displayLabel}`,
+          status: item.message || (days === null || !Number.isFinite(days) ? '日期需确认' : this.resourceDueText(days)),
+          sortDays: days === null || !Number.isFinite(days) ? 9998 : days,
+          tone: item.status === 'expired' || item.status === 'invalid' || (days !== null && days < 0)
+            ? 'danger'
+            : (days !== null && days <= 7 ? 'warning' : 'normal'),
+          editDate: dateText
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.sortDays - b.sortDays);
+  },
+
+  mergeResourceAlerts(primary, secondary) {
+    const merged = [];
+    const seen = {};
+    (primary || []).concat(secondary || []).forEach((item) => {
+      const compactTitle = String(item.title || '').replace(/[\s\u3000]/g, '');
+      const suffix = this.lastDigits(compactTitle);
+      const key = `${item.alertType || ''}:${suffix || compactTitle}`;
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      merged.push(item);
+    });
+    return merged.sort((a, b) => Number(a.sortDays || 0) - Number(b.sortDays || 0));
+  },
+
   lastDigits(value) {
     const matches = String(value || '').match(/\d+/g);
     if (!matches || !matches.length) return '';
@@ -974,11 +1158,14 @@ Page({
 
   decorateResourceVehicle(vehicle, index) {
     const docs = Array.isArray(vehicle.docs || vehicle.files) ? (vehicle.docs || vehicle.files) : [];
+    const inspectionRecords = Array.isArray(vehicle.inspection_records) ? vehicle.inspection_records : [];
     const categories = docs.map((doc) => doc.category || '其他').filter(Boolean);
     const vehicleInspection = this.normalizeResourceDate(vehicle.vehicle_inspection_due_date || vehicle.shaken_due_date || vehicle['车检到期'] || vehicle['車検満了日']);
-    const latestThreeMonth = this.latestResourceDocDate(docs, '3ヶ月点検')
+    const latestThreeMonth = this.latestVehicleRecordDate(inspectionRecords, 'inspection')
+      || this.latestResourceDocDate(docs, '3ヶ月点検')
       || this.normalizeResourceDate(vehicle.three_month_inspection_date || vehicle.latest_inspection_date || vehicle['3ヶ月点検日期']);
-    const latestVehicleInspection = this.latestResourceDocDate(docs, '車検')
+    const latestVehicleInspection = this.latestVehicleRecordDate(inspectionRecords, 'shaken')
+      || this.latestResourceDocDate(docs, '車検')
       || this.latestResourceDocDate(docs, '车检')
       || this.latestResourceDocDate(docs, '自動車檢查証記録事項')
       || this.latestResourceDocDate(docs, '自動車検査証記録事項')
@@ -1151,6 +1338,7 @@ Page({
         if (days === null || days > RESOURCE_VEHICLE_REMINDER_DAYS) return null;
         return {
           id: `${label}-${item.id}`,
+          resourceId: item.resourceId || item.id || '',
           title: item.title,
           vehicleKey: item.vehicleKey || item.suffix || item.title,
           vehicleInspectionIso: item.vehicleInspectionIso || '',
@@ -1165,7 +1353,10 @@ Page({
           meta: `${item[textKey] || '-'} · ${label}`,
           status: this.resourceDueText(days),
           sortDays: days,
-          tone: days < 0 ? 'danger' : days <= 7 ? 'warning' : 'normal'
+          tone: days < 0 ? 'danger' : days <= 7 ? 'warning' : 'normal',
+          editDate: label === '车检'
+            ? (item.latestVehicleInspectionIso || '')
+            : (item.latestThreeMonthIso || item.latestVehicleInspectionIso || '')
         };
       })
       .filter(Boolean)
@@ -1180,6 +1371,7 @@ Page({
         return {
           id: `${label}-${item.id}`,
           driverId: item.id,
+          resourceId: item.resourceId || item.id || '',
           title: item.title,
           driverCode: item.driverCode || '',
           healthExamDate: examDateKey ? (item[examDateKey] || '') : (item.healthExamDate || ''),
@@ -1193,7 +1385,10 @@ Page({
           meta: `${item[textKey] || '-'} · ${label}`,
           status: this.resourceDueText(days),
           sortDays: days,
-          tone: days < 0 ? 'danger' : days <= 7 ? 'warning' : 'normal'
+          tone: days < 0 ? 'danger' : days <= 7 ? 'warning' : 'normal',
+          editDate: label === '人员体检'
+            ? (item.healthExamDate || '')
+            : (item[isoKey] || '')
         };
       })
       .filter(Boolean)
@@ -1229,6 +1424,15 @@ Page({
     const dates = (docs || [])
       .filter((doc) => String(doc.category || doc.name || '').indexOf(keyword) >= 0)
       .map((doc) => this.normalizeResourceDate(doc.date || doc.name))
+      .filter(Boolean)
+      .sort((a, b) => String(b.iso).localeCompare(String(a.iso)));
+    return dates[0] || null;
+  },
+
+  latestVehicleRecordDate(records, type) {
+    const dates = (records || [])
+      .filter((record) => String(record.inspection_type || '') === type)
+      .map((record) => this.normalizeResourceDate(record.inspection_date))
       .filter(Boolean)
       .sort((a, b) => String(b.iso).localeCompare(String(a.iso)));
     return dates[0] || null;
@@ -1933,15 +2137,29 @@ Page({
       baseUrl: api.getBaseUrl(),
       role: api.getRole(this.data.session || api.getSession())
     });
-    api.resourceLibrary()
-      .then((library) => {
+    Promise.all([
+      api.resourceLibrary().catch((err) => ({
+        vehicles: [],
+        drivers: [],
+        summary: {},
+        resourceError: err && (err.error || err.detail || err.errMsg) || 'resource_failed'
+      })),
+      api.resourceDrivers().catch(() => ({ drivers: [] })),
+      api.resourceVehicles().catch(() => ({ vehicles: [] })),
+      api.resourceReminders().catch(() => ({ alerts: [] }))
+    ])
+      .then((results) => {
+        const library = results[0] || {};
+        const apiDrivers = Array.isArray(results[1] && results[1].drivers) ? results[1].drivers : [];
+        const apiVehicles = Array.isArray(results[2] && results[2].vehicles) ? results[2].vehicles : [];
+        const reminders = results[3] || {};
         const summary = (library && library.summary) || {};
         console.info('[dispatch resource refresh loaded]', {
           vehicles: Array.isArray(library && library.vehicles) ? library.vehicles.length : 0,
           drivers: Array.isArray(library && library.drivers) ? library.drivers.length : 0,
           pdf: summary.pdf_files || summary.pdfTotal || 0
         });
-        const resourceOverview = this.buildResourceOverview(library || {}, [], []);
+        const resourceOverview = this.buildResourceOverview(library || {}, apiDrivers, apiVehicles, reminders);
         const visibleResourceAlertRows = this.filterResourceAlertRows(
           resourceOverview.alertRows,
           this.data.resourceAlertFilter
@@ -1987,6 +2205,10 @@ Page({
   onBellTap() {
     console.info('[dispatch bell tap]');
     const newNotifications = this.unreadNotificationRows(this.data.notifications || []);
+    if (this.data.isOperationsManager) {
+      this.setData({ opsV5Mode: 'notifications', opsSearchQuery: '', opsNotificationRows: newNotifications });
+      return;
+    }
     const panel = this.data.canDispatch
       ? this.buildDispatchPanel('unread', this.data.unassignedRows || [], newNotifications, this.data.dispatchAllRows || [], this.data.driverStats || [], this.data.resourceAlertRows || [])
       : this.buildPanel('unread', [], this.data.driverAssignments || [], [], [], newNotifications);
@@ -1997,6 +2219,127 @@ Page({
       panelUnit: panel.unit || '条',
       panelRows: panel.rows
     });
+  },
+
+  onOpsNotificationTap(e) {
+    const index = Number(e.currentTarget.dataset.index || 0);
+    const item = (this.data.opsNotificationRows || [])[index];
+    if (!item) return;
+    wx.showModal({
+      title: item.title || '通知详情',
+      content: [item.meta, item.body].filter(Boolean).join('\n') || '无内容',
+      showCancel: false,
+      confirmText: '标为已读',
+      success: () => {
+        if (!item.notificationId) return;
+        api.markNotificationRead(item.notificationId)
+          .then(() => this.loadDashboard())
+          .catch(() => wx.showToast({ title: '已读同步失败', icon: 'none' }));
+      }
+    });
+  },
+
+  onResourceReminderDateChange(e) {
+    const dataset = e.currentTarget.dataset || {};
+    const resourceId = String(dataset.resourceId || '');
+    const reminderKind = String(dataset.reminderKind || '');
+    const resourceType = String(dataset.resourceType || '');
+    const value = String((e.detail || {}).value || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !resourceId || !reminderKind || !resourceType) return;
+    const payload = { resourceId, reminderKind, resourceType, value };
+    if (resourceType !== 'vehicle' || !['vehicle', 'inspection'].includes(reminderKind)) {
+      this.saveResourceReminder(payload);
+      return;
+    }
+    wx.showActionSheet({
+      itemList: ['仅更新日期', '拍照并上传', '从相册上传', '从微信聊天选择文件'],
+      success: (res) => {
+        if (res.tapIndex === 0) this.saveResourceReminder(payload);
+        if (res.tapIndex === 1) this.chooseResourceReminderFile(payload, 'camera');
+        if (res.tapIndex === 2) this.chooseResourceReminderFile(payload, 'album');
+        if (res.tapIndex === 3) this.chooseResourceReminderFile(payload, 'message');
+      }
+    });
+  },
+
+  saveResourceReminder(payload, file) {
+    const documentName = file && file.name ? `\n材料：${file.name}` : '';
+    wx.showModal({
+      title: '确认更新日期',
+      content: `${this.reminderKindLabel(payload.reminderKind)}：${payload.value}${documentName}`,
+      confirmText: '保存',
+      cancelText: '取消',
+      success: (res) => {
+        if (!res.confirm) return;
+        const requestData = {
+          resource_id: payload.resourceId,
+          resource_type: payload.resourceType,
+          reminder_kind: payload.reminderKind,
+          date: payload.value
+        };
+        const submit = () => {
+          wx.showLoading({ title: file ? '转换并上传中' : '更新中' });
+          api.updateResourceReminderDate(requestData)
+            .then(() => {
+              wx.hideLoading();
+              wx.showToast({ title: file ? '已更新并归档' : '已保存', icon: 'success' });
+              this.refreshResourceOverview();
+            })
+            .catch((err) => {
+              wx.hideLoading();
+              wx.showToast({ title: (err && (err.error || err.detail)) || '保存失败', icon: 'none' });
+            });
+        };
+        if (!file || !file.path) {
+          submit();
+          return;
+        }
+        wx.getFileSystemManager().readFile({
+          filePath: file.path,
+          encoding: 'base64',
+          success: (readRes) => {
+            requestData.file_base64 = readRes.data;
+            requestData.file_name = file.name || `${this.reminderKindLabel(payload.reminderKind)}.jpg`;
+            requestData.content_type = this.contentTypeForFile(requestData.file_name);
+            submit();
+          },
+          fail: () => wx.showToast({ title: '读取材料失败', icon: 'none' })
+        });
+      }
+    });
+  },
+
+  chooseResourceReminderFile(payload, source) {
+    const useMedia = source === 'camera' || source === 'album';
+    const onFile = (file) => {
+      if (!file || !file.path) return;
+      this.saveResourceReminder(payload, file);
+    };
+    if (useMedia) {
+      wx.chooseMedia({
+        count: 1,
+        mediaType: ['image'],
+        sourceType: [source],
+        sizeType: ['original'],
+        success: (res) => {
+          const item = res.tempFiles && res.tempFiles[0];
+          onFile(item && { path: item.tempFilePath, name: item.tempFilePath ? `现场${this.reminderKindLabel(payload.reminderKind)}.jpg` : '' });
+        }
+      });
+      return;
+    }
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'all',
+      success: (res) => {
+        const item = res.tempFiles && res.tempFiles[0];
+        onFile(item && { path: item.path, name: item.name || '微信文件' });
+      }
+    });
+  },
+
+  reminderKindLabel(kind) {
+    return { vehicle: '车检日期', inspection: '3个月点检日期', health: '健康体检日期', residence: '签证日期', license: '驾照日期' }[kind] || '日期';
   },
 
   isAssignmentOnDate(item, date) {

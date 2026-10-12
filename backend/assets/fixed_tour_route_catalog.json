@@ -1,0 +1,223 @@
+[
+  {
+    "route_code": "DT-OSAKA-NARA-RT",
+    "route_name": "大阪・奈良往返",
+    "status": "active",
+    "default_start_time": "09:00",
+    "default_end_time": null,
+    "standard_duration_minutes": null,
+    "operations_business_area": "大阪府・奈良県",
+    "default_order_type": "包车",
+    "route_summary": "大阪市内ホテル（待确认） → 奈良 → 大阪市内ホテル（待确认）",
+    "document_remark": "结束时间待确认；Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "大阪市内ホテル（待确认）", "default_departure_time": "09:00"},
+      {"stop_type": "waypoint", "location_name": "奈良"},
+      {"stop_type": "dropoff", "location_name": "大阪市内ホテル（待确认）"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-OSAKA-NARA-ARASHIYAMA",
+    "route_name": "大阪・奈良・岚山一日游",
+    "status": "active",
+    "default_start_time": "09:30",
+    "default_end_time": null,
+    "standard_duration_minutes": null,
+    "operations_business_area": "大阪府・奈良県・京都府",
+    "default_order_type": "包车",
+    "route_summary": "大阪市内ホテル（待确认） → 奈良 → 嵐山 → 大阪市内ホテル（待确认）",
+    "document_remark": "结束时间待确认；Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "大阪市内ホテル（待确认）", "default_departure_time": "09:30"},
+      {"stop_type": "waypoint", "location_name": "奈良"},
+      {"stop_type": "waypoint", "location_name": "嵐山"},
+      {"stop_type": "dropoff", "location_name": "大阪市内ホテル（待确认）"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-HIMEJI-KOBE",
+    "route_name": "姬路・神户一日游",
+    "status": "active",
+    "default_start_time": "09:00",
+    "default_end_time": null,
+    "standard_duration_minutes": null,
+    "operations_business_area": "大阪府・兵庫県",
+    "default_order_type": "包车",
+    "route_summary": "大阪市内ホテル（待确认） → 姫路城 → 神戸中華街 → 神戸ハーバーランド → 大阪市内ホテル（待确认）",
+    "document_remark": "结束时间待确认；Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "大阪市内ホテル（待确认）", "default_departure_time": "09:00"},
+      {"stop_type": "waypoint", "location_name": "姫路城"},
+      {"stop_type": "waypoint", "location_name": "神戸中華街"},
+      {"stop_type": "waypoint", "location_name": "神戸ハーバーランド"},
+      {"stop_type": "dropoff", "location_name": "大阪市内ホテル（待确认）"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-NARA-WAKAKUSA-IKOMA",
+    "route_name": "奈良公园・若草山・生驹山",
+    "status": "active",
+    "default_start_time": "09:00",
+    "default_end_time": null,
+    "standard_duration_minutes": null,
+    "operations_business_area": "大阪府・奈良県",
+    "default_order_type": "包车",
+    "route_summary": "日本橋 → 奈良公園・若草山 → 生駒山遊園地 → 日本橋",
+    "document_remark": "结束时间待确认；Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "日本橋", "default_departure_time": "09:00"},
+      {"stop_type": "waypoint", "location_name": "奈良公園・若草山"},
+      {"stop_type": "waypoint", "location_name": "生駒山遊園地"},
+      {"stop_type": "dropoff", "location_name": "日本橋"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-OSAKA-WAKAYAMA-RT",
+    "route_name": "大阪・和歌山往返",
+    "status": "active",
+    "default_start_time": "09:30",
+    "default_end_time": null,
+    "standard_duration_minutes": null,
+    "operations_business_area": "大阪府・和歌山県",
+    "default_order_type": "包车",
+    "route_summary": "大阪市内ホテル（待确认） → 和歌山 → 大阪市内ホテル（待确认）",
+    "document_remark": "结束时间待确认；Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "大阪市内ホテル（待确认）", "default_departure_time": "09:30"},
+      {"stop_type": "waypoint", "location_name": "和歌山"},
+      {"stop_type": "dropoff", "location_name": "大阪市内ホテル（待确认）"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-KATSUOJI-MIYAMA-ARASHIYAMA-USJ",
+    "route_name": "胜尾寺・美山・岚山・USJ",
+    "status": "active",
+    "default_start_time": "08:00",
+    "default_end_time": "18:30",
+    "standard_duration_minutes": 630,
+    "operations_business_area": "大阪府・京都府",
+    "default_order_type": "包车",
+    "route_summary": "日本橋1丁目 → 勝尾寺 → 美山かやぶき → 嵐山 → USJ → 大阪市内",
+    "document_remark": "Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "日本橋1丁目", "default_departure_time": "08:00"},
+      {"stop_type": "waypoint", "location_name": "勝尾寺"},
+      {"stop_type": "waypoint", "location_name": "美山かやぶき"},
+      {"stop_type": "waypoint", "location_name": "嵐山"},
+      {"stop_type": "waypoint", "location_name": "USJ"},
+      {"stop_type": "dropoff", "location_name": "大阪市内", "default_arrival_time": "18:30"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-KYOTO-NARA-CLASSIC",
+    "route_name": "京都・奈良经典一日游",
+    "status": "active",
+    "default_start_time": "08:40",
+    "default_end_time": "18:00",
+    "standard_duration_minutes": 560,
+    "operations_business_area": "大阪府・京都府・奈良県",
+    "default_order_type": "包车",
+    "route_summary": "日本橋1丁目 → 清水寺 → 伏見稲荷大社 → 奈良公園 → 日本橋1丁目",
+    "document_remark": "Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "日本橋1丁目", "default_departure_time": "08:40"},
+      {"stop_type": "waypoint", "location_name": "清水寺"},
+      {"stop_type": "waypoint", "location_name": "伏見稲荷大社"},
+      {"stop_type": "waypoint", "location_name": "奈良公園"},
+      {"stop_type": "dropoff", "location_name": "日本橋1丁目", "default_arrival_time": "18:00"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-SANZENIN-KIBUNE-ARASHIYAMA",
+    "route_name": "三千院・贵船・岚山一日游",
+    "status": "active",
+    "default_start_time": "08:40",
+    "default_end_time": "18:30",
+    "standard_duration_minutes": 590,
+    "operations_business_area": "大阪府・京都府",
+    "default_order_type": "包车",
+    "route_summary": "日本橋1丁目 → 京都駅 → 三千院 → 貴船神社 → 嵐山 → 京都駅 → 日本橋1丁目",
+    "document_remark": "Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "日本橋1丁目", "default_departure_time": "08:40"},
+      {"stop_type": "waypoint", "location_name": "京都駅"},
+      {"stop_type": "waypoint", "location_name": "三千院"},
+      {"stop_type": "waypoint", "location_name": "貴船神社"},
+      {"stop_type": "waypoint", "location_name": "嵐山"},
+      {"stop_type": "waypoint", "location_name": "京都駅"},
+      {"stop_type": "dropoff", "location_name": "日本橋1丁目", "default_arrival_time": "18:30"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-KUMANO-SANZAN-2D",
+    "route_name": "熊野古道・熊野三山 2日",
+    "status": "active",
+    "default_start_time": "09:00",
+    "default_end_time": null,
+    "standard_duration_minutes": null,
+    "operations_business_area": "大阪府・和歌山県",
+    "default_order_type": "包车",
+    "route_summary": "第1日：日本橋1丁目 → 那智勝浦町観光案内所 → 熊野那智大社 → 那智勝浦白蛇弁財天 → 那智勝浦（宿泊）；第2日：熊野速玉大社 → 発心門 → 熊野本宮大社 → 日本橋1丁目",
+    "document_remark": "2日行程；第1日主行程 09:00 出发，第2日 08:30 出发；最终结束时间和 Hiace / Alphard 建议价格待后台确认，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "日本橋1丁目", "default_departure_time": "09:00", "note": "第1日"},
+      {"stop_type": "waypoint", "location_name": "那智勝浦町観光案内所", "note": "第1日"},
+      {"stop_type": "waypoint", "location_name": "熊野那智大社", "note": "第1日"},
+      {"stop_type": "waypoint", "location_name": "那智勝浦白蛇弁財天", "note": "第1日"},
+      {"stop_type": "waypoint", "location_name": "那智勝浦（宿泊）", "default_departure_time": "08:30", "note": "第2日 08:30 出发"},
+      {"stop_type": "waypoint", "location_name": "熊野速玉大社", "note": "第2日"},
+      {"stop_type": "waypoint", "location_name": "発心門", "note": "第2日"},
+      {"stop_type": "waypoint", "location_name": "熊野本宮大社", "note": "第2日"},
+      {"stop_type": "dropoff", "location_name": "日本橋1丁目", "note": "第2日"}
+    ],
+    "prices": []
+  },
+  {
+    "route_code": "DT-HIMEJI-ARIMA-ROKKO",
+    "route_name": "姬路城・有马温泉・六甲山一日游",
+    "status": "active",
+    "default_start_time": "10:30",
+    "default_end_time": "21:00",
+    "standard_duration_minutes": 630,
+    "operations_business_area": "大阪府・兵庫県",
+    "default_order_type": "包车",
+    "route_summary": "日本橋駅 → 姫路城 → 有馬温泉 → 六甲山 → 日本橋駅",
+    "document_remark": "旅客行程 10:30–21:00；车辆运行约 10:00–21:30；Hiace / Alphard 建议价格待后台配置，未配置价格前不可生成当日行程。",
+    "application_method": "ウェブサイト",
+    "applicant_name": "SPI",
+    "stops": [
+      {"stop_type": "pickup", "location_name": "日本橋駅", "default_departure_time": "10:30"},
+      {"stop_type": "waypoint", "location_name": "姫路城"},
+      {"stop_type": "waypoint", "location_name": "有馬温泉"},
+      {"stop_type": "waypoint", "location_name": "六甲山"},
+      {"stop_type": "dropoff", "location_name": "日本橋駅", "default_arrival_time": "21:00"}
+    ],
+    "prices": []
+  }
+]

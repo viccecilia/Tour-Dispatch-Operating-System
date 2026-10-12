@@ -575,6 +575,59 @@ def update_driver_account_phone(
     return after
 
 
+def set_account_password(
+    user_id: int | str,
+    new_password: str,
+    actor: dict[str, Any] | str = "system",
+    tenant_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Set an administrator-specified password without retaining it in audits.
+
+    For a linked account Supabase is updated first.  A failed remote update
+    therefore leaves the local password hash and timestamps unchanged.
+    """
+    password = str(new_password or "")
+    if len(password) < 10 or password != password.strip() or any(char.isspace() for char in password):
+        raise ValueError("password_policy_invalid")
+    tenant_id = _normalize_tenant_id(tenant_id) or get_current_tenant_id()
+    with get_connection() as conn:
+        before = _get_account_row(conn, tenant_id, user_id)
+        if not before:
+            return None
+        before_public = _public_account(dict(before))
+        if isinstance(actor, dict):
+            assert_can_manage_target(actor, before_public)
+        if before["supabase_user_id"]:
+            try:
+                reset_supabase_password(str(before["supabase_user_id"]), password)
+            except SupabaseAuthError as exc:
+                raise ValueError(str(exc)) from exc
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?,
+                password_changed_at = CURRENT_TIMESTAMP,
+                must_change_password = 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND id = ?
+            """,
+            (hash_password(password), tenant_id, user_id),
+        )
+        conn.commit()
+    after = get_account(user_id, tenant_id=tenant_id)
+    record_audit(
+        "password_set_by_admin",
+        "user",
+        user_id,
+        before=before_public,
+        after=after,
+        actor=_actor_label(actor),
+        source_path=f"/api/auth/admin/set-password",
+        summary=f"Set password for account {user_id}",
+    )
+    return after
+
+
 def _resolve_profile_for_role_change(
     conn: sqlite3.Connection,
     tenant_id: int,

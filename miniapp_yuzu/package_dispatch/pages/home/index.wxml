@@ -3,7 +3,7 @@
     <view class="hero-eyebrow">TOURFLOW MOBILE</view>
     <view class="hero-title">{{heroName}}</view>
     <view class="hero-meta">{{heroMeta}}</view>
-    <view wx:if="{{session && canDispatch}}" class="hero-bell {{dashboard.counts.notifications_unread ? 'active' : ''}}" hover-class="hero-bell-pressed" hover-stay-time="80" catchtap="onBellTap">
+    <view wx:if="{{session && (canDispatch || isOperationsManager)}}" class="hero-bell {{dashboard.counts.notifications_unread ? 'active' : ''}}" hover-class="hero-bell-pressed" hover-stay-time="80" catchtap="onBellTap">
       <view class="hero-bell-symbol">
         <view class="hero-bell-cap"></view>
         <view class="hero-bell-dome"></view>
@@ -20,35 +20,58 @@
   </view>
 
   <view wx:else>
-    <view wx:if="{{isOperationsManager}}" class="panel ops-today-panel">
-      <view class="ops-today-head">
-        <view>
-          <view class="ops-today-kicker">TODAY</view>
-          <view class="panel-title">今日运营</view>
-        </view>
-        <view class="ops-today-state">运行中</view>
+    <block wx:if="{{isOperationsManager}}">
+      <view class="ops-v5-cards">
+        <view class="ops-v5-card {{opsV5Mode==='outbound'?'active':''}}" data-mode="outbound" bindtap="switchOpsV5Mode"><text>已出库 / 总车辆</text><strong>{{dispatchTaskRows.length}} / {{dispatchOverview.vehicleTotal}}</strong></view>
+        <view class="ops-v5-card {{opsV5Mode==='expiry'?'active':''}}" data-mode="expiry" bindtap="switchOpsV5Mode"><text>到期提醒</text><strong>{{resourceSummary.alertTotal}}</strong></view>
+        <view class="ops-v5-card {{opsV5Mode==='pending'?'active':''}}" data-mode="pending" bindtap="switchOpsV5Mode"><text>待处理</text><strong>{{operationsOverview.taskPending}}</strong></view>
       </view>
-      <view class="ops-today-primary">
-        <view class="ops-today-metric">
-          <text>待委派订单</text>
-          <strong>{{dispatchOverview.unassignedToday}}</strong>
-        </view>
-        <view class="ops-today-metric">
-          <text>联勤</text>
-          <strong>{{driverStats.length}}</strong>
-        </view>
+      <view class="ops-v5-search"><input value="{{opsSearchQuery}}" placeholder="搜索司机、车辆、证件、运行文书" bindinput="onOpsV5Search"/></view>
+      <view wx:if="{{opsV5Mode==='expiry'}}" class="ops-v5-chips">
+        <view class="{{resourceAlertFilter==='inspection'?'active':''}}" data-filter="inspection" bindtap="selectResourceAlertFilter">点检</view>
+        <view class="{{resourceAlertFilter==='vehicle'?'active':''}}" data-filter="vehicle" bindtap="selectResourceAlertFilter">车检</view>
+        <view class="{{resourceAlertFilter==='health'?'active':''}}" data-filter="health" bindtap="selectResourceAlertFilter">健康体检</view>
+        <view class="{{resourceAlertFilter==='residence'?'active':''}}" data-filter="residence" bindtap="selectResourceAlertFilter">签证</view>
+        <view class="{{resourceAlertFilter==='license'?'active':''}}" data-filter="license" bindtap="selectResourceAlertFilter">驾照</view>
+        <view data-mode="attendance" bindtap="switchOpsV5Mode">连续出勤</view>
       </view>
-      <view class="ops-capacity-line">
-        <view><strong>{{dispatchOverview.driverTotal}}</strong><text>司机</text></view>
-        <view><strong>{{dispatchOverview.hiaceTotal}}</strong><text>10座</text></view>
-        <view><strong>{{dispatchOverview.alphardTotal}}</strong><text>Alphard</text></view>
+      <view class="panel ops-v5-results">
+        <view class="panel-title">{{opsSearchQuery ? '搜索结果' : (opsV5Mode==='outbound' ? '已出库车辆' : (opsV5Mode==='expiry' ? '到期提醒' : (opsV5Mode==='attendance' ? '连续出勤' : (opsV5Mode==='notifications' ? '未读通知' : '待处理事项'))))}}</view>
+        <block wx:if="{{opsSearchQuery}}">
+          <view wx:for="{{opsSearchRows}}" wx:key="index" class="compact-row">
+            <view class="row-title">{{item.title}}</view>
+            <view class="muted">{{item.meta}}</view>
+            <view wx:if="{{item.body}}" class="compact-body">{{item.body}}</view>
+            <view wx:if="{{item.actions.length}}" class="ops-search-actions">
+              <view wx:for="{{item.actions}}" wx:for-item="action" wx:key="label" class="ops-search-action" data-action="{{action.key}}" data-kind="{{item.resultKind}}" data-key="{{item.resultKey}}" catchtap="openOpsSearchQuick">{{action.label}}</view>
+            </view>
+          </view>
+          <view wx:if="{{!opsSearchRows.length}}" class="empty-state">没有找到匹配的司机、车辆、证件或运行文书</view>
+        </block>
+        <block wx:elif="{{opsV5Mode==='outbound'}}">
+          <view wx:for="{{dispatchTaskRows}}" wx:key="id" class="compact-row"><view class="row-title">{{item.title}}</view><view class="muted">{{item.meta}}</view><view class="compact-body">{{item.body}}</view></view>
+        </block>
+        <block wx:elif="{{opsV5Mode==='expiry'}}">
+          <view wx:for="{{visibleResourceAlertRows}}" wx:key="id" class="compact-row">
+            <view class="row-title">{{item.title}}</view><view class="muted">{{item.meta}}</view>
+            <picker mode="date" value="{{item.editDate}}" data-resource-id="{{item.resourceId}}" data-resource-type="{{item.alertType==='vehicle'||item.alertType==='inspection'?'vehicle':'driver'}}" data-reminder-kind="{{item.alertType}}" bindchange="onResourceReminderDateChange">
+              <view class="ops-search-action">修改日期</view>
+            </picker>
+          </view>
+        </block>
+        <block wx:elif="{{opsV5Mode==='notifications'}}">
+          <view wx:for="{{opsNotificationRows}}" wx:key="id" class="compact-row" data-index="{{index}}" bindtap="onOpsNotificationTap"><view class="row-title">{{item.title}}</view><view class="muted">{{item.meta}}</view><view wx:if="{{item.body}}" class="compact-body">{{item.body}}</view></view>
+          <view wx:if="{{!opsNotificationRows.length}}" class="empty-state">暂无未读通知</view>
+        </block>
+        <block wx:elif="{{opsV5Mode==='attendance'}}">
+          <view wx:for="{{operationsAttendanceRows}}" wx:key="id" class="compact-row"><view class="row-title">{{item.title}}</view><view class="muted">{{item.meta}}</view></view>
+        </block>
+        <block wx:else>
+          <view wx:for="{{operationsTaskRows}}" wx:key="id" class="compact-row"><view class="row-title">{{item.title}}</view><view class="muted">{{item.meta}}</view></view>
+        </block>
+        <view wx:if="{{!opsSearchQuery && opsV5Mode==='outbound' && !dispatchTaskRows.length}}" class="empty-state">暂无已出库车辆</view>
       </view>
-      <view class="ops-resource-links">
-        <view data-section="drivers" bindtap="goInfo">司机资料 <text>›</text></view>
-        <view data-section="vehicles" bindtap="goInfo">车辆资料 <text>›</text></view>
-      </view>
-    </view>
-
+    </block>
     <view wx:if="{{canDispatch && !isOperationsManager}}" class="dispatch-command-grid compact-switch-grid">
       <view class="command-card command-resources info-card {{panelMode === 'resources' ? 'active' : ''}}" data-mode="resources" bindtap="switchPanel">
         <view class="command-label">车辆 / 人员</view>
@@ -134,7 +157,7 @@
       </view>
     </view>
 
-    <view wx:if="{{isOperationsManager}}" class="panel ops-alert-panel">
+    <view wx:if="{{isOperationsManager && false}}" class="panel ops-alert-panel">
       <view class="panel-header-lite">
         <view>
           <view class="title-with-help">
@@ -166,7 +189,7 @@
       <view wx:else class="empty-state compact-empty">{{resourceAlertFilter === 'all' ? '暂无 30 天内到期提醒' : '该分类暂无 30 天内到期提醒'}}</view>
     </view>
 
-    <view wx:if="{{isOperationsManager}}" class="panel ops-home-detail">
+    <view wx:if="{{isOperationsManager && false}}" class="panel ops-home-detail">
       <view class="panel-header-lite">
         <view>
           <view class="title-with-help">

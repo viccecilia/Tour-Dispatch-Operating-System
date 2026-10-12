@@ -71,6 +71,16 @@ DAILY_OUTPUT_FIELDS = DRAFT_FIELDS + [
     "flight_number",
     "driver_settlement_note",
     "operations_business_area",
+    "end_time_source",
+    "end_time_confirmed",
+    "pickup_source_text",
+    "dropoff_source_text",
+    "pickup_parsed_location",
+    "dropoff_parsed_location",
+    "pickup_suggested_location",
+    "dropoff_suggested_location",
+    "pickup_location_confirmed",
+    "dropoff_location_confirmed",
 ]
 
 EDITABLE_FIELDS = [
@@ -251,7 +261,12 @@ def parse_batch_text_to_drafts(raw_text: str, source_type: str = "text") -> list
     return [parse_text_to_draft(text, source_type) for text in split_batch_order_text(raw_text)]
 
 
-def parse_daily_assignment_text(raw_text: str) -> dict[str, Any]:
+def parse_daily_assignment_text(
+    raw_text: str,
+    *,
+    base_year: int | None = None,
+    default_date: str | None = None,
+) -> dict[str, Any]:
     """Parse pre-assigned daily text without creating drafts or assignments.
 
     Daily import shares the normal order parser, but adds one strict grouping layer:
@@ -268,7 +283,7 @@ def parse_daily_assignment_text(raw_text: str) -> dict[str, Any]:
         line = clean_text(raw_line)
         if not line:
             continue
-        header = _match_daily_assignment_header(line)
+        header = _match_daily_assignment_header(line, base_year=base_year, default_date=default_date)
         if header:
             current_group = {
                 "driverName": header["driver_name"],
@@ -367,10 +382,15 @@ def parse_daily_assignment_text(raw_text: str) -> dict[str, Any]:
     }
 
 
-def _match_daily_assignment_header(line: str) -> dict[str, str] | None:
+def _match_daily_assignment_header(
+    line: str,
+    *,
+    base_year: int | None = None,
+    default_date: str | None = None,
+) -> dict[str, str] | None:
     value = _strip_daily_order_ordinal(line)
     match = re.fullmatch(
-        r"(?P<date>\d{1,2}[./-]\d{1,2})\s*"
+        r"(?:(?P<date>\d{1,2}[./-]\d{1,2})\s*)?"
         r"(?P<driver>[^\d:：\r\n][^:：\r\n]*?)\s*"
         r"(?P<vehicle>[A-Za-z]?\d{3,4})"
         r"(?:\s*[（(](?P<office>[^）)]*)[）)])?\s*",
@@ -379,7 +399,10 @@ def _match_daily_assignment_header(line: str) -> dict[str, str] | None:
     if not match:
         return None
     driver_name = re.sub(r"[-－—–·\s]+$", "", match.group("driver") or "").strip()
-    service_date = normalize_date_token(match.group("date")) or ""
+    explicit_date = match.group("date") or ""
+    service_date = normalize_date_token(explicit_date, base_year) if explicit_date else str(default_date or "")
+    if service_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", service_date):
+        service_date = ""
     if not service_date or not driver_name:
         return None
     return {
@@ -523,10 +546,11 @@ def _apply_daily_field_boundaries(
     raw_nodes = _daily_route_nodes(route_core, business_type)
     if not raw_nodes:
         raw_nodes = [parsed.get("pickup_location"), parsed.get("dropoff_location")]
-    route_nodes = [
-        _daily_normalize_place(node, f"{stable_key}|route|{index}")
+    route_details = [
+        _daily_place_candidate(node, f"{stable_key}|route|{index}")
         for index, node in enumerate(raw_nodes)
     ]
+    route_nodes = [str(item.get("value") or "") for item in route_details]
     route_nodes = [node for node in route_nodes if node]
     if len(route_nodes) == 1:
         route_nodes.append("待补")
@@ -548,6 +572,16 @@ def _apply_daily_field_boundaries(
 
     parsed["pickup_location"] = route_nodes[0]
     parsed["dropoff_location"] = route_nodes[-1]
+    endpoint_details = (route_details[0], route_details[-1]) if route_details else ({}, {})
+    for side, value, detail in (
+        ("pickup", route_nodes[0], endpoint_details[0]),
+        ("dropoff", route_nodes[-1], endpoint_details[1]),
+    ):
+        candidate_value = str(detail.get("value") or "")
+        parsed[f"{side}_source_text"] = detail.get("source") or value
+        parsed[f"{side}_parsed_location"] = detail.get("parsed") if candidate_value == value else value
+        parsed[f"{side}_suggested_location"] = detail.get("suggested") if candidate_value == value else ""
+        parsed[f"{side}_location_confirmed"] = 0
     via_locations = route_nodes[1:-1]
     parsed["fee_remark"] = _replace_complete_route_note(parsed.get("fee_remark"), route_nodes)
 
@@ -637,21 +671,30 @@ def _daily_normalize_airport(value: Any) -> str | None:
     return None
 
 
-def _daily_normalize_place(value: Any, stable_key: str) -> str:
-    text = clean_text(value)
-    if not text or text in {"待补", "待確認", "待确认", "地点待补", "地点待補"}:
-        return "待补"
-    airport = _daily_normalize_airport(text)
+def _daily_place_candidate(value: Any, stable_key: str) -> dict[str, Any]:
+    source_text = clean_text(value)
+    if not source_text or source_text in {"待补", "待確認", "待确认", "地点待补", "地点待補"}:
+        return {"source": source_text or "待补", "parsed": "待补", "suggested": "", "value": "待补"}
+    airport = _daily_normalize_airport(source_text)
     if airport:
-        return airport
+        return {"source": source_text, "parsed": airport, "suggested": "", "value": airport}
     replacements = {
         "新大阪": "新大阪駅", "新大阪站": "新大阪駅", "新大阪駅": "新大阪駅",
         "胜尾寺": "勝尾寺", "神户": "神戸", "神戶": "神戸",
         "天桥立": "天橋立", "岚山": "嵐山",
     }
-    text = replacements.get(text, text)
-    normalized, _ = normalize_city_place(text, stable_key)
-    return normalized or text
+    parsed = replacements.get(source_text, source_text)
+    normalized, changed = normalize_city_place(parsed, stable_key)
+    return {
+        "source": source_text,
+        "parsed": parsed,
+        "suggested": normalized if changed else "",
+        "value": normalized or parsed,
+    }
+
+
+def _daily_normalize_place(value: Any, stable_key: str) -> str:
+    return str(_daily_place_candidate(value, stable_key)["value"])
 
 
 def _daily_city_matches_airport(place: str, airport: str) -> bool:
@@ -1053,6 +1096,8 @@ def _apply_readable_text_overlay(raw: str, parsed: dict[str, Any]) -> None:
         overlay["start_time"] = start_time
     if end_time:
         overlay["end_time"] = end_time
+        overlay["end_time_source"] = "explicit"
+        overlay["end_time_confirmed"] = 1
 
     order_type = _extract_modern_readable_order_type(raw)
     if order_type:
@@ -1125,10 +1170,26 @@ def _apply_readable_text_overlay(raw: str, parsed: dict[str, Any]) -> None:
 
     if not overlay.get("end_time") and overlay.get("start_time"):
         order_type_for_duration = overlay.get("order_type") or parsed.get("order_type")
-        hours = 10 if order_type_for_duration in {"包车", "charter"} else 2
-        computed_end = _real_add_hours(str(overlay["start_time"]), hours)
-        if computed_end:
-            overlay["end_time"] = computed_end
+        route_text = " ".join(
+            str(overlay.get(key) or parsed.get(key) or "")
+            for key in ("pickup_location", "dropoff_location")
+        )
+        is_airport_transfer = order_type_for_duration in {"接机", "接機", "送机", "送機", "airport_transfer"} or _real_has_airport_context(route_text)
+        minutes = 600 if order_type_for_duration in {"包车", "charter"} else (60 if is_airport_transfer else 120)
+        start_date = str(overlay.get("order_date") or parsed.get("order_date") or "")
+        try:
+            shifted = datetime.strptime(f"{start_date} {overlay['start_time']}", "%Y-%m-%d %H:%M") + timedelta(minutes=minutes)
+        except ValueError:
+            shifted = None
+        if shifted:
+            overlay["end_date"] = shifted.strftime("%Y-%m-%d")
+            overlay["end_time"] = shifted.strftime("%H:%M")
+            overlay["end_time_source"] = "suggested_60m" if is_airport_transfer else f"suggested_{minutes}m"
+            overlay["end_time_confirmed"] = 0
+        else:
+            computed_end = _real_add_hours(str(overlay["start_time"]), minutes // 60)
+            if computed_end:
+                overlay["end_time"] = computed_end
 
     for key, value in overlay.items():
         if value in ("", None):

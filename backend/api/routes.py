@@ -53,6 +53,7 @@ from backend.services.account_service import (
     enable_account,
     get_account_overview,
     reset_account_password,
+    set_account_password,
     unbind_account_wechat,
     update_account,
 )
@@ -90,6 +91,7 @@ from backend.services.dispatch_service import (
     cancel_assignment,
     import_daily_assignment_group,
     import_daily_assignment_batch,
+    get_daily_import_batch_status,
     list_assignments,
     list_available_drivers,
     list_available_vehicles,
@@ -196,6 +198,7 @@ from backend.services.resource_service import (
     delete_driver,
     delete_vehicle,
     delete_vehicle_inspection_record,
+    get_vehicle,
     get_resource_reminders,
     list_drivers,
     list_vehicles,
@@ -208,6 +211,7 @@ from backend.services.run_document_service import (
     DriverAccountPreflightError,
     confirm_order as confirm_run_order,
     generate_run_document,
+    get_run_document_preview,
     list_driver_run_documents,
     list_run_groups,
     mark_order_changed as mark_run_order_changed,
@@ -215,10 +219,27 @@ from backend.services.run_document_service import (
     review_and_publish_run_document,
     review_run_document,
     resolve_run_document,
+    update_run_document_node,
 )
 from backend.services.wechat_auth_service import WechatAuthError, login_with_wechat_code
 from backend.services.flight_info_service import build_flight_update, query_flight_info
-from backend.services.fixed_tour_service import copy_route as copy_fixed_tour_route, list_routes as list_fixed_tour_routes, list_today_runs as list_fixed_tour_today_runs, materialize as materialize_fixed_tour, route_detail as fixed_tour_route_detail, save_route as save_fixed_tour_route, set_route_status as set_fixed_tour_route_status, update_run as update_fixed_tour_run
+from backend.services.fixed_tour_service import (
+    charter_dispatch_options as fixed_tour_charter_dispatch_options,
+    charter_draft_detail as fixed_tour_charter_draft_detail,
+    copy_route as copy_fixed_tour_route,
+    create_charter_draft as create_fixed_tour_charter_draft,
+    delete_route as delete_fixed_tour_route,
+    generate_charter_draft_documents as generate_fixed_tour_charter_draft_documents,
+    list_routes as list_fixed_tour_routes,
+    list_today_runs as list_fixed_tour_today_runs,
+    materialize as materialize_fixed_tour,
+    route_detail as fixed_tour_route_detail,
+    save_preset_and_create_draft as save_fixed_tour_preset_and_create_draft,
+    save_route as save_fixed_tour_route,
+    set_route_status as set_fixed_tour_route_status,
+    update_charter_draft as update_fixed_tour_charter_draft,
+    update_run as update_fixed_tour_run,
+)
 from backend.services.settings_service import (
     get_platform_auth_settings,
     get_reminder_settings,
@@ -432,6 +453,28 @@ class ApiHandler(BaseHTTPRequestHandler):
             else:
                 self.send_json({"error": "resource_search_type_invalid"}, HTTPStatus.BAD_REQUEST)
             return
+        if path == "/api/dispatch-mobile/fixed-tour/routes":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            self.send_json({"routes": list_fixed_tour_routes(params.get("q", ""))})
+            return
+        if path == "/api/dispatch-mobile/fixed-tour/options":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            try:
+                result = fixed_tour_charter_dispatch_options(params.get("date"), params.get("draft_id"), params.get("route_id"), self.current_user())
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
+            return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/drafts/"):
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            draft_id = path.rsplit("/", 1)[-1]
+            draft = fixed_tour_charter_draft_detail(draft_id)
+            self.send_json({"draft": draft} if draft else {"error": "fixed_tour_charter_draft_not_found"}, HTTPStatus.OK if draft else HTTPStatus.NOT_FOUND)
+            return
         if path == "/api/fixed-tour/routes":
             user = self.require_role({"admin", "operations_manager"})
             if not user:
@@ -470,6 +513,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.send_json({"groups": list_run_groups(params.get("date"))})
+            return
+        if path == "/api/dispatch-mobile/daily-import/status":
+            if not self.require_role({"admin", "dispatcher", "operations_manager"}):
+                return
+            try:
+                status = get_daily_import_batch_status(params.get("client_batch_id") or "")
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"batch": status} if status else {"error": "daily_import_batch_not_found"}, HTTPStatus.OK if status else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/dispatch-mobile/fixed-tour/today-runs":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -1267,6 +1320,25 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             self.send_json({"user": user} if user else {"error": "user_not_found"}, HTTPStatus.OK if user else HTTPStatus.NOT_FOUND)
             return
+        if path == "/api/auth/admin/set-password":
+            actor_user = self.require_role({"admin"})
+            if not actor_user:
+                return
+            try:
+                user = set_account_password(
+                    payload.get("user_id"),
+                    payload.get("new_password"),
+                    actor_user,
+                    resolve_write_tenant(actor_user, payload.get("tenant_id")),
+                )
+            except PermissionError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.FORBIDDEN)
+                return
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"user": user} if user else {"error": "user_not_found"}, HTTPStatus.OK if user else HTTPStatus.NOT_FOUND)
+            return
         if path == "/api/auth/change-password":
             user = self.require_api_user()
             if not user:
@@ -1298,6 +1370,59 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
             self.send_json(result, HTTPStatus.CREATED)
+            return
+        if path == "/api/dispatch-mobile/resource-reminders/date":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            resource_type = str(payload.get("resource_type") or "").strip()
+            reminder_kind = str(payload.get("reminder_kind") or "").strip()
+            resource_id = str(payload.get("resource_id") or "").strip()
+            reminder_date = str(payload.get("date") or "").strip()
+            if resource_type not in {"driver", "vehicle"} or not resource_id.isdigit():
+                self.send_json({"error": "invalid_resource"}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                date.fromisoformat(reminder_date)
+            except ValueError:
+                self.send_json({"error": "invalid_date"}, HTTPStatus.BAD_REQUEST)
+                return
+            tenant_id = resolve_write_tenant(user, payload.get("tenant_id"))
+            if resource_type == "driver":
+                fields = {
+                    "health": "health_check_due_date",
+                    "license": "license_due_date",
+                    "residence": "residence_due_date",
+                }
+                field = fields.get(reminder_kind)
+                if not field:
+                    self.send_json({"error": "invalid_reminder_kind"}, HTTPStatus.BAD_REQUEST)
+                    return
+                result = update_driver(resource_id, {field: reminder_date}, tenant_id, user)
+            else:
+                vehicle = get_vehicle(resource_id, tenant_id)
+                if not vehicle:
+                    self.send_json({"error": "resource_not_found"}, HTTPStatus.NOT_FOUND)
+                    return
+                if reminder_kind in {"vehicle", "inspection"}:
+                    result = create_vehicle_inspection_record(resource_id, {
+                        "inspection_type": "shaken" if reminder_kind == "vehicle" else "inspection",
+                        "inspection_date": reminder_date,
+                        "source": "dispatch_mobile",
+                    }, tenant_id)
+                    if payload.get("file_base64") or payload.get("document_base64"):
+                        category = "车检" if reminder_kind == "vehicle" else "3个月点检"
+                        document = upload_vehicle_resource_document(
+                            vehicle.get("plate_number") or str(vehicle.get("id")),
+                            category,
+                            reminder_date,
+                            {**payload, "custom_title": f"{vehicle.get('plate_number') or vehicle.get('id')}_{category}_{reminder_date}.pdf"},
+                        )
+                        result = {**(result or {}), "document": document.get("document")}
+                else:
+                    self.send_json({"error": "invalid_reminder_kind"}, HTTPStatus.BAD_REQUEST)
+                    return
+            self.send_json({"resource": result} if result else {"error": "resource_not_found"}, HTTPStatus.OK if result else HTTPStatus.NOT_FOUND)
             return
         if path == "/api/dispatch-mobile/resource-library/driver-health":
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
@@ -1732,7 +1857,12 @@ class ApiHandler(BaseHTTPRequestHandler):
             principal = self.require_role({"admin", "dispatcher", "operations_manager"})
             if not principal:
                 return
-            self.send_json(parse_dispatcher_daily_text(payload, principal), HTTPStatus.OK)
+            try:
+                result = parse_dispatcher_daily_text(payload, principal)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result, HTTPStatus.OK)
             return
         if path == "/api/dispatch-mobile/order-context":
             principal = self.require_role({"admin", "dispatcher", "operations_manager"})
@@ -1750,6 +1880,82 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not self.require_role({"admin", "dispatcher", "operations_manager"}):
                 return
             self.dispatch_assign_with_audit(payload, path)
+            return
+        if path == "/api/dispatch-mobile/fixed-tour/routes":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                route = save_fixed_tour_route(payload, actor=user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"route": route}, HTTPStatus.CREATED)
+            return
+        if path == "/api/dispatch-mobile/fixed-tour/routes/save-use":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            request_id = str(payload.get("client_request_id") or "").strip()
+            logging.info(
+                "fixed_tour_save_use request_id=%s tenant_id=%s user_id=%s",
+                request_id or "-", user.get("tenant_id"), user.get("id"),
+            )
+            try:
+                result = save_fixed_tour_preset_and_create_draft(payload, user)
+            except ValueError as exc:
+                logging.warning("fixed_tour_save_use_failed request_id=%s error=%s", request_id or "-", exc)
+                self.send_json({"error": str(exc), "request_id": request_id or None}, HTTPStatus.BAD_REQUEST)
+                return
+            result["request_id"] = request_id
+            self.send_json(result, HTTPStatus.CREATED if result.get("created") else HTTPStatus.OK)
+            return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/routes/") and path.endswith("/copy"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            route_id = path.split("/")[-2]
+            try:
+                route = copy_fixed_tour_route(route_id, actor=user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"route": route}, HTTPStatus.CREATED)
+            return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/routes/") and path.endswith("/status"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            route_id = path.split("/")[-2]
+            try:
+                route = set_fixed_tour_route_status(route_id, str(payload.get("status") or ""))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"route": route})
+            return
+        if path == "/api/dispatch-mobile/fixed-tour/drafts":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                result = create_fixed_tour_charter_draft(payload, user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result, HTTPStatus.CREATED if result.get("created") else HTTPStatus.OK)
+            return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/drafts/") and path.endswith("/generate-documents"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            draft_id = path.split("/")[-2]
+            try:
+                result = generate_fixed_tour_charter_draft_documents(draft_id, payload, user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
             return
         if path == "/api/fixed-tour/routes":
             user = self.require_role({"admin"})
@@ -1818,6 +2024,37 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             record_audit("run_document_generate", "run_document", document.get("id"), after=document, actor=self.actor_label(), source_path=path, summary=f"Generated run document V{document.get('version')}")
             self.send_json({"document": document})
+            return
+        if path == "/api/dispatch-mobile/run-documents/preview":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                preview = get_run_document_preview(payload.get("group_key"), user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"preview": preview})
+            return
+        if path == "/api/dispatch-mobile/run-documents/node":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                preview = update_run_document_node(payload.get("group_key"), payload, user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            record_audit(
+                "run_document_route_node_update",
+                "run_document_route_node",
+                payload.get("route_node_id"),
+                after=preview,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Updated route node {payload.get('route_node_id')}",
+            )
+            self.send_json({"preview": preview})
             return
         if path == "/api/dispatch-mobile/run-documents/review":
             user = self.require_role({"admin", "dispatcher", "operations_manager"})
@@ -2017,6 +2254,42 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not user:
             return
         log_operation("PUT", path, payload, self.actor_label())
+        if path.startswith("/api/dispatch-mobile/fixed-tour/drafts/"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            draft_id = path.rsplit("/", 1)[-1]
+            try:
+                draft = update_fixed_tour_charter_draft(draft_id, payload, user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"draft": draft})
+            return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/routes/"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            route_id = path.rsplit("/", 1)[-1]
+            try:
+                route = save_fixed_tour_route(payload, route_id=route_id, actor=user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"route": route})
+            return
+        if path.startswith("/api/fixed-tour/routes/"):
+            user = self.require_role({"admin"})
+            if not user:
+                return
+            route_id = path.rsplit("/", 1)[-1]
+            try:
+                route = save_fixed_tour_route(payload, resolve_write_tenant(user, payload.get("tenant_id") or params.get("tenant_id")), route_id=route_id)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"route": route})
+            return
         workflow_rule_id = self.match_workflow_rule_path(path)
         if workflow_rule_id:
             if not self.require_role({"admin"}):
@@ -2140,6 +2413,24 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not user:
             return
         log_operation("DELETE", path, {}, self.actor_label())
+        fixed_tour_route_id = self._match_prefixed_id(path, "/api/fixed-tour/routes/")
+        if fixed_tour_route_id:
+            user = self.require_role({"admin"})
+            if not user:
+                return
+            try:
+                deleted = delete_fixed_tour_route(
+                    fixed_tour_route_id,
+                    resolve_write_tenant(user, params.get("tenant_id")),
+                )
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
+            self.send_json(
+                {"deleted": True} if deleted else {"error": "fixed_tour_route_not_found"},
+                HTTPStatus.OK if deleted else HTTPStatus.NOT_FOUND,
+            )
+            return
         draft_id = self.match_parser_draft_path(path)
         if draft_id:
             if not self.require_role({"admin", "dispatcher"}):
@@ -2455,6 +2746,11 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.send_json(result)
 
     def dispatch_daily_import_with_audit(self, payload: dict, path: str) -> None:
+        request_id = str(payload.get("client_batch_id") or payload.get("request_id") or "").strip()
+        logging.info(
+            "daily_import_start request_id=%s tenant_id=%s group_count=%s",
+            request_id or "-", (self.current_user() or {}).get("tenant_id"), len(payload.get("groups") or []),
+        )
         try:
             if payload.get("groups") is not None:
                 result = import_daily_assignment_batch(payload, actor=self.current_user())
@@ -2463,9 +2759,24 @@ class ApiHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        except Exception:
-            logging.exception("daily import transaction failed")
-            self.send_json({"error": "daily_import_transaction_failed"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception as exc:
+            logging.exception("daily import transaction failed request_id=%s", request_id or "-")
+            batch = None
+            if request_id:
+                try:
+                    batch = get_daily_import_batch_status(request_id)
+                except Exception:
+                    logging.exception("daily import status lookup failed request_id=%s", request_id)
+            error_code = (batch or {}).get("error_code") or (
+                "daily_import_oid_conflict" if "orders.oid" in str(exc) else "daily_import_transaction_failed"
+            )
+            self.send_json({
+                "error": error_code,
+                "request_id": request_id or None,
+                "failure_stage": "database_transaction",
+                "rolled_back": bool(batch and batch.get("status") == "failed"),
+                "batch_status": (batch or {}).get("status") or "unknown",
+            }, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         entity_id = ",".join(str(item) for item in result.get("assignment_ids", []))
         try:

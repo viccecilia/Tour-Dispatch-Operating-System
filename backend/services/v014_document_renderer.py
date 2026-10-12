@@ -36,7 +36,7 @@ FIXED_ACCEPTANCE_PROVIDER = {
 }
 
 OFFICE_PROFILES = {
-    "osaka": {"name": "大阪営業所", "manager": "胡東锴"},
+    "osaka": {"name": "大阪営業所", "manager": "胡東鍇"},
     "kyoto": {"name": "京都営業所", "manager": "朱英心"},
 }
 

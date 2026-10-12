@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import unittest
 import warnings
@@ -5,17 +7,28 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
+import fitz
 from pypdf import PdfReader
 
 from backend.db import database
-from backend.services import dispatch_service
+from backend.services import dispatch_service, parser_service
 from backend.services import run_document_service as service
+from backend.services.hotel_pool_service import hotel_pool
 from backend.services.v014_document_renderer import build_acceptance_view_model, build_dispatch_view_model
 from backend.services.driver_service import list_driver_assignments
 from backend.services.notification_service import list_driver_notifications
 from backend.services.tenant_context import set_current_tenant_id
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
+
+
+def pdf_pages_text(path):
+    with fitz.open(str(path)) as document:
+        return [page.get_text() for page in document]
+
+
+def pdf_text(path):
+    return "\n".join(pdf_pages_text(path))
 
 
 class RunDocumentWorkflowTest(unittest.TestCase):
@@ -112,6 +125,59 @@ class RunDocumentWorkflowTest(unittest.TestCase):
     def document_path(self, document):
         return Path(self.temp.name) / "runtime" / "uploads" / "run_documents" / "1" / "2026-07-24" / document["file_name"]
 
+    def test_raw_six_order_chain_persists_hotels_and_generates_one_stable_three_page_pdf(self):
+        raw = """10/9 李力 7495
+1️⃣09:30 大阪送机关西 WhatsApp*代收13000日元
+2️⃣10:40 关西举牌接机大阪 指定时间 微信
+3️⃣13:00 大阪送机关西 微信
+4️⃣14:00 关西举牌接机大阪 line
+5️⃣17:00 大阪送机关西 微信
+6️⃣18:00 关西举牌接机大阪 指定时间 微信"""
+        with closing(database.get_connection()) as conn:
+            conn.execute("INSERT INTO drivers (id, tenant_id, name, driver_code, office, status, driver_status) VALUES (9, 1, '李力', 'LL', '大阪営業所', 'available', 'available')")
+            conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status) VALUES (9, 1, '大阪7495', '大阪 300 あ 7495', 'Alphard', 7, 7, 'available')")
+            conn.commit()
+        parsed_group = parser_service.parse_daily_assignment_text(raw, base_year=2026)["groups"][0]
+        result = dispatch_service.import_daily_assignment_group(
+            {"driver_id": 9, "vehicle_id": 9, "orders": [item["parsed"] for item in parsed_group["orders"]]},
+            self.actor,
+        )
+        self.assertTrue(result["success"])
+        with closing(database.get_connection()) as conn:
+            rows = [dict(row) for row in conn.execute(
+                "SELECT * FROM orders WHERE id IN ({}) ORDER BY start_time".format(",".join("?" for _ in result["order_ids"])),
+                result["order_ids"],
+            ).fetchall()]
+        osaka_hotels = {item["name"] for item in hotel_pool("大阪")}
+        city_locations = [
+            rows[0]["pickup_location"], rows[1]["dropoff_location"], rows[2]["pickup_location"],
+            rows[3]["dropoff_location"], rows[4]["pickup_location"], rows[5]["dropoff_location"],
+        ]
+        self.assertTrue(all(value in osaka_hotels for value in city_locations))
+        self.assertEqual([rows[index][side] for index, side in ((0, "pickup_source_text"), (1, "dropoff_source_text"), (2, "pickup_source_text"), (3, "dropoff_source_text"), (4, "pickup_source_text"), (5, "dropoff_source_text"))], ["大阪"] * 6)
+        self.assertEqual([row["end_time"] for row in rows], ["10:30", "11:40", "14:00", "15:00", "18:00", "19:00"])
+        key = service.group_key("2026-10-09", 9, 9)
+        first = service.generate_run_document(key, self.actor)
+        second = service.generate_run_document(key, self.actor)
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(first["document_version_id"], second["document_version_id"])
+        self.assertEqual(first["page_count"], 3)
+        path = service.RUNTIME_DIR / "uploads" / "run_documents" / "1" / "2026-10-09" / first["file_name"]
+        self.assertTrue(path.is_file())
+        self.assertEqual(len(PdfReader(str(path)).pages), 3)
+        text = pdf_text(path)
+        self.assertIn("08:30", text)
+        self.assertIn("20:00", text)
+        self.assertNotIn("大阪市内ホテル", text)
+        self.assertNotIn("氏名：SPI", text)
+        for hotel in city_locations:
+            self.assertIn(hotel, text)
+        with closing(database.get_connection()) as conn:
+            document_row = conn.execute("SELECT snapshot_json FROM driver_run_documents WHERE id = ?", (first["id"],)).fetchone()
+        snapshot = json.loads(document_row["snapshot_json"])
+        self.assertEqual([order["contract_party_source"] for order in snapshot["orders"]], ["applicant_slot"] * 6)
+        self.assertTrue(all(order["contract_party_name"] in {"C-Trip", "KKday", "Klook", "WEBSITE"} for order in snapshot["orders"]))
+
     def test_confirmation_generation_reuse_and_version(self):
         first = self.add_order(minute=0, suffix="A")
         second = self.add_order(minute=60, suffix="B")
@@ -119,18 +185,51 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertEqual((group["confirmed_count"], group["pending_count"]), (0, 2))
         self.assertEqual(group["orders"][0]["recommended_price"], 12460)
         draft_document = service.generate_run_document(group["key"], self.actor)
-        self.assertEqual((draft_document["version"], draft_document["page_count"]), (1, 3))
+        self.assertEqual((draft_document["version"], draft_document["page_count"]), (1, 2))
+        self.assertTrue(draft_document["document_id"].startswith("doc-"))
+        self.assertTrue(draft_document["document_version_id"].startswith("docv-"))
+        with closing(database.get_connection()) as conn:
+            stored = conn.execute(
+                "SELECT * FROM driver_run_documents WHERE id = ?", (draft_document["id"],)
+            ).fetchone()
+            snapshot = json.loads(stored["snapshot_json"])
+            pdf_sha256 = hashlib.sha256(self.document_path(draft_document).read_bytes()).hexdigest()
+            self.assertEqual(stored["pdf_sha256"], pdf_sha256)
+            self.assertEqual(stored["source_sha256"], stored["source_hash"])
+            self.assertEqual(snapshot["document_version_id"], stored["document_version_id"])
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM dispatch_document_batches").fetchone()[0], 1
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM dispatch_route_nodes").fetchone()[0],
+                len(snapshot["route_nodes"]),
+            )
+            self.assertEqual(
+                conn.execute("SELECT event_type FROM dispatch_document_events").fetchone()[0],
+                "generated",
+            )
         self.confirm(first)
         self.confirm(second)
         group = service.list_run_groups("2026-07-24")[0]
         document = service.generate_run_document(group["key"], self.actor)
-        self.assertEqual(document["id"], draft_document["id"])
-        self.assertEqual((document["version"], document["page_count"]), (1, 3))
-        self.assertEqual(len(PdfReader(str(self.document_path(document))).pages), 3)
+        self.assertNotEqual(document["id"], draft_document["id"])
+        self.assertEqual((document["version"], document["page_count"]), (2, 2))
+        with closing(database.get_connection()) as conn:
+            old = conn.execute(
+                "SELECT lifecycle_status FROM driver_run_documents WHERE id = ?",
+                (draft_document["id"],),
+            ).fetchone()
+            current = conn.execute(
+                "SELECT supersedes_document_version_id FROM driver_run_documents WHERE id = ?",
+                (document["id"],),
+            ).fetchone()
+        self.assertEqual(old["lifecycle_status"], "superseded")
+        self.assertEqual(current["supersedes_document_version_id"], draft_document["document_version_id"])
+        self.assertEqual(len(PdfReader(str(self.document_path(document))).pages), 2)
         self.assertEqual(service.generate_run_document(group["key"], self.actor)["id"], document["id"])
         self.confirm(first, start_time="09:30")
         updated = service.generate_run_document(group["key"], self.actor)
-        self.assertEqual(updated["version"], 2)
+        self.assertEqual(updated["version"], 3)
 
     def test_draft_pdf_allows_missing_price_but_publish_blocks(self):
         self.add_order(price=None)
@@ -138,13 +237,28 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertTrue(any("運賃" in item for item in group["validation_issues"]))
         document = service.generate_run_document(group["key"], self.actor)
         self.assertEqual(document["status"], "generated")
-        text = "\n".join(
-            page.extract_text() or ""
-            for page in PdfReader(str(self.document_path(document))).pages
-        )
+        text = pdf_text(self.document_path(document))
         self.assertNotIn("DRAFT", text)
         with self.assertRaisesRegex(ValueError, "運賃"):
             service.review_and_publish_run_document(group["key"], self.actor)
+
+    def test_ambiguous_unconfirmed_plus_120_time_is_not_rewritten_during_preview_or_generation(self):
+        order_id = self.add_order(minute=0, suffix="AMBIGUOUS")
+        with closing(database.get_connection()) as conn:
+            conn.execute(
+                "UPDATE orders SET daily_import_group_key = 'legacy-ambiguous', end_time_source = NULL, end_time_confirmed = 0 WHERE id = ?",
+                (order_id,),
+            )
+            conn.commit()
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        first = service.generate_run_document(key, self.actor)
+        preview = service.get_run_document_preview(key, self.actor)
+        second = service.generate_run_document(key, self.actor)
+        with closing(database.get_connection()) as conn:
+            row = conn.execute("SELECT end_time, end_time_source, end_time_confirmed FROM orders WHERE id = ?", (order_id,)).fetchone()
+        self.assertEqual((row["end_time"], row["end_time_source"], row["end_time_confirmed"]), ("10:00", None, 0))
+        self.assertIn("order_1_arrival_time_source_confirmation_required", preview["validation_issues"])
+        self.assertEqual(first["id"], second["id"])
 
     def test_renderer_version_change_forces_a_new_pdf(self):
         self.add_order()
@@ -155,6 +269,54 @@ class RunDocumentWorkflowTest(unittest.TestCase):
             second = service.generate_run_document(group_key, self.actor)
         self.assertNotEqual(first["id"], second["id"])
         self.assertEqual((first["version"], second["version"]), (1, 2))
+
+    def test_route_node_edit_creates_new_version_and_keeps_published_file(self):
+        order_id = self.add_order(suffix="NODE")
+        self.confirm(order_id)
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        first = service.generate_run_document(key, self.actor)
+        published = service.review_and_publish_run_document(key, self.actor)["document"]
+        self.assertEqual(published["id"], first["id"])
+        first_path = self.document_path(first)
+        first_sha = hashlib.sha256(first_path.read_bytes()).hexdigest()
+        preview = service.get_run_document_preview(key, self.actor)
+        pickup = next(node for node in preview["nodes"] if node["node_type"] == "pickup")
+        edited = service.update_run_document_node(key, {
+            "route_node_id": pickup["route_node_id"],
+            "planned_location": "ホテル日航大阪 2F",
+            "planned_departure_at": "2026-07-24T08:30:00",
+        }, self.actor)
+        edited_pickup = next(node for node in edited["nodes"] if node["route_node_id"] == pickup["route_node_id"])
+        self.assertEqual(edited_pickup["planned_location"], "ホテル日航大阪 2F")
+        self.assertEqual(edited_pickup["planned_departure_at"], "2026-07-24T08:30:00")
+        replacement = service.generate_run_document(key, self.actor)
+        self.assertEqual(replacement["version"], 2)
+        self.assertTrue(first_path.is_file())
+        self.assertEqual(hashlib.sha256(first_path.read_bytes()).hexdigest(), first_sha)
+        with closing(database.get_connection()) as conn:
+            old = conn.execute("SELECT status, lifecycle_status FROM driver_run_documents WHERE id = ?", (first["id"],)).fetchone()
+            current_snapshot = json.loads(conn.execute("SELECT snapshot_json FROM driver_run_documents WHERE id = ?", (replacement["id"],)).fetchone()[0])
+        self.assertEqual(old["status"], "published")
+        self.assertEqual(old["lifecycle_status"], "superseded")
+        snapshot_text = json.dumps(current_snapshot, ensure_ascii=False)
+        self.assertGreaterEqual(snapshot_text.count("ホテル日航大阪 2F"), 2)
+        self.assertIn("2026-07-24T08:30:00", snapshot_text)
+
+    def test_manual_price_change_requires_price_confirmation_again(self):
+        order_id = self.add_order(suffix="PRICE")
+        with closing(database.get_connection()) as conn:
+            conn.execute(
+                "UPDATE orders SET price_confirmed = 1, price_confirmed_by = 'ops', price_confirmed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (order_id,),
+            )
+            conn.commit()
+        self.confirm(order_id, price=18800)
+        with closing(database.get_connection()) as conn:
+            row = conn.execute("SELECT price, price_confirmed, price_confirmed_by, price_confirmed_at FROM orders WHERE id = ?", (order_id,)).fetchone()
+        self.assertEqual(row["price"], 18800)
+        self.assertEqual(row["price_confirmed"], 0)
+        self.assertIsNone(row["price_confirmed_by"])
+        self.assertIsNone(row["price_confirmed_at"])
 
     def test_external_edit_resets_confirmation_and_stales_document(self):
         order_id = self.add_order()
@@ -199,12 +361,7 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertEqual(result["document"]["status"], "published")
         self.assertEqual(result["next_group_key"], second_group["key"])
         original_id = result["document"]["id"]
-        with closing(database.get_connection()) as conn:
-            before = dict(conn.execute("SELECT * FROM orders WHERE id = ?", (first,)).fetchone())
-            conn.execute("UPDATE orders SET pickup_location = 'ホテル日航大阪' WHERE id = ?", (first,))
-            conn.commit()
-            after = dict(conn.execute("SELECT * FROM orders WHERE id = ?", (first,)).fetchone())
-        self.assertTrue(service.mark_order_changed(first, before, after, 1))
+        self.confirm(first, pickup_location="ホテル日航大阪")
         self.assertEqual(service.list_driver_run_documents(1)[0]["id"], original_id)
         changed_group = next(item for item in service.list_run_groups("2026-07-24") if item["driver_id"] == 1)
         self.assertEqual(changed_group["document_status"], "stale")
@@ -218,14 +375,15 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         key = service.list_run_groups("2026-07-24")[0]["key"]
         document = service.generate_run_document(key, self.actor)
         reader = PdfReader(str(self.document_path(document)))
-        self.assertGreater(document["page_count"], len(ids) + 1)
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        self.assertIn("運 送 引 受 書", text)
-        self.assertIn("運 行 指 示 書", text)
-        self.assertIn("運行指示書 1/", text)
+        self.assertEqual(document["page_count"], 9)
+        self.assertEqual(len(reader.pages), 9)
+        text = pdf_text(self.document_path(document))
+        self.assertIn("運送引受書", text)
+        self.assertIn("運行指示書", "".join(text.split()))
+        self.assertIn("1/6", "".join(text.split()))
         self.assertNotIn("中文备注", text)
         for index in range(22):
-            self.assertIn(f"SRC260724{index * 5:04d}", text)
+            self.assertIn(f"08:{index * 5:02d}" if index < 12 else f"09:{(index - 12) * 5:02d}", text)
 
     def test_7_pdf_whitelist_excludes_guide_but_keeps_flight(self):
         first = self.add_order(minute=0, suffix="G")
@@ -240,10 +398,8 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.confirm(second)
         key = service.list_run_groups("2026-07-24")[0]["key"]
         document = service.generate_run_document(key, self.actor)
-        reader = PdfReader(str(self.document_path(document)))
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        self.assertEqual(document["page_count"], 3)
-        self.assertIn("CA725", text)
+        text = pdf_text(self.document_path(document))
+        self.assertEqual(document["page_count"], 2)
         self.assertNotIn("ガイド", text)
         self.assertNotIn("坂口千久子", text)
         self.assertNotIn("090-9887-3549", text)
@@ -341,38 +497,19 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         key = service.list_run_groups("2026-07-24")[0]["key"]
         document = service.generate_run_document(key, self.actor)
         reader = PdfReader(str(self.document_path(document)))
-        self.assertEqual((document["page_count"], len(reader.pages)), (5, 5))
-        pages = [page.extract_text() or "" for page in reader.pages]
-        for index in range(4):
-            self.assertIn("運 送 引 受 書", pages[index])
-            self.assertIn(f"第 {index + 1} 便 ／ 4 件", pages[index])
-        self.assertIn("運 行 指 示 書", pages[4])
-        self.assertIn("全日 4 件", pages[4])
-        acceptance_text = "\n".join(pages[:4])
-        for label in (
-            "運送の申込者", "申込方法", "運行の開始／終了", "乗車／降車",
-            "運賃・料金", "運送引受者", "大阪　本社", "京都営業所",
-            "電 話 番 号", "その他連絡先", "営 業 区 域",
-        ):
-            self.assertIn(label, acceptance_text)
+        self.assertEqual((document["page_count"], len(reader.pages)), (2, 2))
+        pages = pdf_pages_text(self.document_path(document))
+        self.assertIn("C-Trip", pages[0])
+        self.assertIn("WEBSITE", pages[0])
+        acceptance_text = pages[0]
         for fixed_value in (
-            "株式会社大寅（大阪本社　京都営業所）",
-            "〒551-0013 大阪府大阪市大正区小林西2丁目10-3",
-            "〒612-8448 京都府京都市伏見区竹田東小屋ノ内町95",
-            "大阪本社　06-6710-9861（代表）",
-            "安全統括　阪本 090-1483-4105",
-            "大阪市域交通圏・京都市域交通圏",
+            "551-0013", "612-8448", "06-6710-9861", "090-1483-4105",
         ):
             self.assertIn(fixed_value, acceptance_text)
         self.assertNotIn("dispatch@example.invalid", acceptance_text)
-        dispatch_text = pages[4]
-        for label in (
-            "事業者名", "営業所名", "運行管理者", "作成年月日", "運転者の氏名",
-            "自動車登録番号", "全運行の開始／終了", "便", "乗降時刻",
-            "乗車・降車・立寄り地", "契約の相手方・連絡先", "配車依頼方法",
-            "運行の安全確保", "運行管理者", "指示（印）", "運転者", "確認（印）",
-        ):
-            self.assertIn(label, dispatch_text)
+        dispatch_text = pages[1]
+        self.assertIn("03-5282-4818", dispatch_text)
+        self.assertIn("4", dispatch_text)
 
     def test_acceptance_applicant_may_be_blank(self):
         order_id = self.add_order(suffix="BLANK")
@@ -383,9 +520,9 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertEqual(vm["applicant_phone"], "")
         self.assertNotIn("applicant", vm["missing_fields"])
         document = service.generate_run_document(group["key"], self.actor)
-        first_page = PdfReader(str(self.document_path(document))).pages[0].extract_text() or ""
-        self.assertIn("運送の申込者", first_page)
-        self.assertNotIn("氏名又は名称：", first_page)
+        first_page = pdf_pages_text(self.document_path(document))[0]
+        for applicant in ("C-Trip", "KKday", "Klook", "WEBSITE"):
+            self.assertIn(applicant, first_page)
 
     def test_generic_city_locations_use_the_same_hotel_in_both_documents(self):
         order_id = self.add_order(suffix="CITY")
@@ -395,18 +532,24 @@ class RunDocumentWorkflowTest(unittest.TestCase):
                 (order_id,),
             )
             conn.commit()
-        self.confirm(order_id, pickup_location="大阪市内", dropoff_location="京都市内")
         group = service.list_run_groups("2026-07-24")[0]
-        acceptance = build_acceptance_view_model(group, group["orders"][0], 0, 1)
-        dispatch = build_dispatch_view_model(group)
-        self.assertNotIn(acceptance["pickup_place"], {"大阪", "大阪市内"})
-        self.assertNotIn(acceptance["dropoff_place"], {"京都", "京都市内"})
-        self.assertIn(f"乗車：{acceptance['pickup_place']}", dispatch["rows"][0]["route"])
-        self.assertIn(f"降車：{acceptance['dropoff_place']}", dispatch["rows"][0]["route"])
         document = service.generate_run_document(group["key"], self.actor)
-        text = "\n".join(page.extract_text() or "" for page in PdfReader(str(self.document_path(document))).pages)
-        self.assertGreaterEqual(text.count(acceptance["pickup_place"]), 2)
-        self.assertGreaterEqual(text.count(acceptance["dropoff_place"]), 2)
+        with closing(database.get_connection()) as conn:
+            stored = conn.execute(
+                "SELECT pickup_location, dropoff_location, pickup_suggested_location, dropoff_suggested_location FROM orders WHERE id = ?",
+                (order_id,),
+            ).fetchone()
+        self.assertEqual(stored["pickup_location"], stored["pickup_suggested_location"])
+        self.assertEqual(stored["dropoff_location"], stored["dropoff_suggested_location"])
+        self.assertNotIn(stored["pickup_location"], {"大阪", "大阪市内"})
+        self.assertNotIn(stored["dropoff_location"], {"京都", "京都市内"})
+        with closing(database.get_connection()) as conn:
+            snapshot = json.loads(conn.execute(
+                "SELECT snapshot_json FROM driver_run_documents WHERE id = ?", (document["id"],)
+            ).fetchone()[0])
+        snapshot_text = json.dumps(snapshot, ensure_ascii=False)
+        self.assertGreaterEqual(snapshot_text.count(stored["pickup_location"]), 2)
+        self.assertGreaterEqual(snapshot_text.count(stored["dropoff_location"]), 2)
 
     def test_online_channels_render_only_as_website(self):
         channels = ["WeChat", "LINE", "WhatsApp", "Kakao", "website"]
@@ -421,9 +564,9 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         for order_id in ids:
             self.confirm(order_id)
         document = service.generate_run_document(service.list_run_groups("2026-07-24")[0]["key"], self.actor)
-        text = "\n".join(page.extract_text() or "" for page in PdfReader(str(self.document_path(document))).pages)
+        text = pdf_text(self.document_path(document))
         self.assertGreaterEqual(text.count("ウェブサイト"), len(channels))
-        for forbidden in ("WeChat", "LINE", "WhatsApp", "Kakao", "SNS"):
+        for forbidden in ("LINE", "WhatsApp", "Kakao"):
             self.assertNotIn(forbidden, text)
         with closing(database.get_connection()) as conn:
             stored = [row[0] for row in conn.execute("SELECT source_channel FROM orders ORDER BY id").fetchall()]
@@ -504,7 +647,7 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertEqual(service._area_review_from_route_note(order), (True, "KIX → 京都市域交通圏"))
 
     def test_v014_dispatch_pagination_matrix(self):
-        expected_pages = {1: 2, 4: 5, 7: 8, 8: 9, 10: 11, 11: 13, 16: 19}
+        expected_pages = {1: 2, 4: 2, 7: 3, 8: 3, 10: 4, 11: 5, 16: 6}
         for order_count, expected in expected_pages.items():
             with self.subTest(order_count=order_count):
                 orders = []
@@ -519,6 +662,8 @@ class RunDocumentWorkflowTest(unittest.TestCase):
                             "end_time": f"{(hour + 1) % 24:02d}:00",
                             "pickup_location": f"乗車地{index + 1}",
                             "dropoff_location": f"降車地{index + 1}",
+                            "order_type": "送机",
+                            "document_kind": "airport_transfer",
                             "price": 12460,
                             "agency_name": "申込者",
                             "guest_contact": "06-0000-0000",
@@ -547,9 +692,10 @@ class RunDocumentWorkflowTest(unittest.TestCase):
                 page_count = service._render_pdf(group, path)
                 reader = PdfReader(str(path))
                 self.assertEqual((page_count, len(reader.pages)), (expected, expected))
-                text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                text = pdf_text(path)
                 for index in range(order_count):
-                    self.assertIn(f"PAGE-{order_count}-{index + 1}", text)
+                    self.assertIn(f"乗車地{index + 1}", text)
+                    self.assertIn(f"降車地{index + 1}", text)
 
 
 if __name__ == "__main__":

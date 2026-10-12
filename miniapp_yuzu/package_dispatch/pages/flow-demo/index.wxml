@@ -1,0 +1,96 @@
+<view class="demo-page">
+  <view class="demo-note">方案 Demo · 仅展示交互方向，不会写入订单或生成真实文书</view>
+
+  <scroll-view class="screen-tabs" scroll-x="true" show-scrollbar="false">
+    <view wx:for="{{screens}}" wx:key="key" class="screen-tab {{active === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="switchScreen">{{item.label}}</view>
+  </scroll-view>
+
+  <block wx:if="{{active === 'plan'}}">
+    <view class="notes-head">
+      <view>
+        <view class="notes-kicker">日配 · 已完成排班</view>
+        <view class="notes-title">10 月 10 日 星期五</view>
+        <view class="notes-meta">2 位司机 · 2 辆车 · 4 笔订单</view>
+      </view>
+      <view class="notes-status {{published ? 'fixed' : ''}}">{{published ? '已发布' : '待发布'}}</view>
+    </view>
+    <view wx:if="{{editing}}" class="edit-tip">编辑模式：只修改对应司机的订单组；完成后回到固定日配。</view>
+    <view wx:if="{{editingDriver}}" class="edit-sheet">
+      <view class="status-title">正在修改：{{editingDriver}}</view>
+      <view class="notes-meta">此处进入该司机的订单、地点、时间或车型修改；保存后，三份表格统一更新为新版本。</view>
+      <view class="small-button" bindtap="finishEditing">保存并返回日配</view>
+    </view>
+    <view wx:for="{{drivers}}" wx:key="name" class="driver-card">
+      <view class="driver-head">
+        <view><text class="driver-name">{{item.name}}</text><text class="vehicle">{{item.vehicle}}</text></view>
+        <view wx:if="{{editing}}" class="driver-edit" data-name="{{item.name}}" bindtap="editDriver">修改订单</view>
+        <view wx:else class="state {{item.tone}}">{{item.state}}</view>
+      </view>
+      <view wx:for="{{item.orders}}" wx:key="time" class="order-line">
+        <text class="time">{{item.time}}</text><text class="type">{{item.type}}</text><text class="route">{{item.route}}</text><text class="flag">{{item.flag}}</text>
+      </view>
+    </view>
+    <view class="notes-bottom-space"></view>
+    <view class="notes-bottom-actions">
+      <view class="notes-edit" bindtap="startEditing">修改</view>
+      <view class="notes-publish" bindtap="publish">确认发布</view>
+    </view>
+  </block>
+
+  <block wx:elif="{{active === 'publish'}}">
+    <view class="hero compact success-hero">
+      <view class="hero-eyebrow">DEMO 02 · 发布结果</view>
+      <view class="hero-title">{{published ? '已发布，等待回执' : '发布前检查'}}</view>
+      <view class="hero-meta">派车、司机任务、两份 PDF 与日报预填稿由同一动作触发</view>
+    </view>
+    <view class="status-card">
+      <view class="status-title">田中 · 大阪 510 あ 1450</view>
+      <view class="status-row"><text>派车记录</text><text class="ok">{{published ? '已生成' : '待发布'}}</text></view>
+      <view class="status-row"><text>运送引受书 PDF</text><text class="ok">{{published ? 'V1 已生成' : '待发布'}}</text></view>
+      <view class="status-row"><text>运行指示书 PDF</text><text class="ok">{{published ? 'V1 已生成' : '待发布'}}</text></view>
+      <view class="status-row"><text>日报预填稿</text><text class="ok">{{published ? 'V1 已生成' : '待发布'}}</text></view>
+      <view class="status-row"><text>司机确认</text><text class="{{driverConfirmed ? 'ok' : 'pending'}}">{{driverConfirmed ? '已确认收到' : '等待司机'}}</text></view>
+    </view>
+    <view wx:if="{{!published}}" class="large-button" bindtap="publish">确认分配并发布</view>
+    <view wx:else class="hint">日配修改后，系统重新生成三份表格的新版本；旧版保留归档，司机需确认最新版本。</view>
+  </block>
+
+  <block wx:elif="{{active === 'driver'}}">
+    <view class="hero compact driver-hero">
+      <view class="hero-eyebrow">DEMO 03 · 司机端</view>
+      <view class="hero-title">田中 · 今日运行</view>
+      <view class="hero-meta">大阪 510 あ 1450 · 2 笔任务</view>
+    </view>
+    <view class="task-card">
+      <view class="task-title">08:10 大阪市内 → KIX T1</view>
+      <view class="task-meta">计划出库 07:35 · 送机 · 10 座</view>
+      <view class="pdf-row"><view class="pdf">PDF · 运送引受书</view><view class="pdf">PDF · 运行指示书</view></view>
+      <view wx:if="{{!driverConfirmed}}" class="large-button" bindtap="confirmReceipt">确认收到今日安排</view>
+      <view wx:else class="confirmed">已确认收到 · 10/09 18:42</view>
+    </view>
+    <view class="report-card">
+      <view class="status-title">今日日报</view>
+      <view class="step-row"><text class="step {{reportStep >= 1 ? 'done' : ''}}">1 点呼点检</text><text class="step {{reportStep >= 2 ? 'done' : ''}}">2 逐站记录</text><text class="step {{reportStep >= 3 ? 'done' : ''}}">3 入库日报</text></view>
+      <view wx:if="{{reportStep < 3}}" class="small-button" bindtap="nextReportStep">模拟填写下一步</view>
+      <view wx:else class="confirmed">日报待调度审核</view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="hero compact warning-hero">
+      <view class="hero-eyebrow">DEMO 04 · 运行中变更</view>
+      <view class="hero-title">订单变更与留痕</view>
+      <view class="hero-meta">计划不会覆盖真实运行记录；重大救援另建执行段</view>
+    </view>
+    <view class="change-card">
+      <view class="status-title">订单 TD-20261010-014</view>
+      <view class="change-line"><text>原计划</text><text>15:15 KIX T1 → 大阪市内（待定）</text></view>
+      <view class="change-line"><text>修改为</text><text>{{changeApplied ? '15:15 KIX T1 → 难波站前' : '待调度填写实际地点'}}</text></view>
+      <view class="change-line"><text>司机状态</text><text class="{{changeApplied ? 'pending' : ''}}">{{changeApplied ? '待重新确认' : '未变更'}}</text></view>
+      <view class="change-line"><text>PDF</text><text>保留发布时版本</text></view>
+      <view class="change-line"><text>日报</text><text>记录变更原因与实际节点</text></view>
+    </view>
+    <view wx:if="{{!changeApplied}}" class="large-button warning" bindtap="applyChange">模拟调度修改地点</view>
+    <view wx:else class="hint">重点：常规变化写入日报与变更日志；换车/救援不能直接覆盖原司机和车辆。</view>
+  </block>
+</view>

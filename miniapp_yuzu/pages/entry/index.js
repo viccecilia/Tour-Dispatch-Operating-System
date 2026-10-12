@@ -8,7 +8,7 @@ Page({
 
   onShow() {
     const currentSession = session.getSession();
-    if (currentSession && currentSession.token && currentSession.port) {
+    if (session.isSessionActive(currentSession)) {
       const homeUrl = router.homeForSession(currentSession);
       if (homeUrl && homeUrl !== '/pages/entry/index') {
         wx.redirectTo({ url: homeUrl });

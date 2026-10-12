@@ -410,6 +410,37 @@
   word-break: break-all;
 }
 
+.ledger-tour {
+  margin-top: 10rpx;
+  padding: 12rpx 14rpx;
+  border: 1rpx solid #99f6e4;
+  border-radius: 14rpx;
+  background: #f0fdfa;
+}
+
+.ledger-tour-name {
+  color: #0f766e;
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 1.4;
+}
+
+.ledger-tour-summary {
+  margin-top: 4rpx;
+  color: #334155;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ledger-tour-price {
+  margin-top: 5rpx;
+  color: #047857;
+  font-size: 20rpx;
+  font-weight: 850;
+}
+
 .ledger-fields {
   display: flex;
   flex-wrap: wrap;

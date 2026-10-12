@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import io
 import json
 import os
 import re
@@ -10,6 +11,8 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin
 from urllib.request import Request, urlopen
+
+from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
 
 
 DEFAULT_LIBRARY_ROOT = Path("/var/www/tourflow-admin/vehicle-docs") if os.name != "nt" else Path(r"C:\Pang.S\车辆资料整理")
@@ -347,6 +350,27 @@ def _safe_upload_ext(file_name: str, content_type: str = "") -> str:
     raise ValueError("unsupported_health_document_type")
 
 
+def _as_searchable_pdf(data: bytes, file_name: str, content_type: str = "") -> bytes:
+    """Keep PDFs intact and convert one photographed document into an image PDF."""
+    if data.startswith(b"%PDF-"):
+        return data
+    suffix = _safe_upload_ext(file_name, content_type)
+    if suffix == "pdf":
+        raise ValueError("invalid_pdf_document")
+    try:
+        image = Image.open(io.BytesIO(data))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = ImageOps.autocontrast(image, cutoff=1)
+        image = ImageEnhance.Contrast(image).enhance(1.08)
+        image = ImageEnhance.Sharpness(image).enhance(1.12)
+        image.thumbnail((2800, 2800))
+        output = io.BytesIO()
+        image.save(output, format="PDF", resolution=200.0, quality=95)
+        return output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ValueError("invalid_image_document") from exc
+
+
 def _save_driver_health_document(driver_key: str, health_check_date: str, payload: dict | None) -> dict:
     payload = payload or {}
     file_data = str(payload.get("file_base64") or payload.get("document_base64") or payload.get("image_base64") or "").strip()
@@ -527,14 +551,15 @@ def upload_vehicle_resource_document(vehicle_key: str, category: str, document_d
     if not file_data:
         raise ValueError("resource_document_required")
     data = _decode_upload_payload(file_data)
-    if not data.startswith(b"%PDF-"):
-        raise ValueError("resource_document_must_be_pdf")
     original_name = str(payload.get("file_name") or "vehicle-resource.pdf").strip()
     custom_title = str(payload.get("custom_title") or payload.get("title") or "").strip()
-    display_name = custom_title or original_name
+    display_vehicle = str(payload.get("vehicle_display_name") or key).strip() or suffix
+    safe_vehicle = re.sub(r"[^A-Za-z0-9_-]+", "_", suffix).strip("_") or "vehicle"
+    safe_date = re.sub(r"[^0-9-]+", "", str(document_date or "")) or date.today().isoformat()
+    display_name = custom_title or f"{display_vehicle}_{normalized_category}_{safe_date}.pdf"
     if not display_name.lower().endswith(".pdf"):
         display_name = f"{display_name}.pdf"
-    safe_vehicle = re.sub(r"[^A-Za-z0-9_-]+", "_", suffix).strip("_") or "vehicle"
+    data = _as_searchable_pdf(data, original_name, payload.get("content_type") or "")
     stored_name = f"{safe_vehicle}_{uuid.uuid4().hex[:12]}.pdf"
     folder = _library_root() / "mobile-resource-library" / safe_vehicle
     folder.mkdir(parents=True, exist_ok=True)

@@ -17,6 +17,7 @@ const PLATFORM_PAGES = new Set<PageKey>([
   "automation",
   "copilot",
   "settings",
+  "fixed-tours",
 ]);
 
 const CARRIER_ADMIN_PAGES = new Set<PageKey>([
@@ -25,6 +26,7 @@ const CARRIER_ADMIN_PAGES = new Set<PageKey>([
   "parser",
   "orders",
   "dispatch",
+  "fixed-tours",
   "auction",
   "calendar",
   "driver-monitor",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -287,7 +288,20 @@ def parse_dispatcher_text(payload: dict[str, Any], principal: dict[str, Any]) ->
 
 def parse_dispatcher_daily_text(payload: dict[str, Any], principal: dict[str, Any]) -> dict[str, Any]:
     dispatcher = _dispatcher_from_user(principal)
-    result = parse_daily_assignment_text(payload.get("text", ""))
+    try:
+        base_year = int(payload.get("default_year") or 0) or None
+    except (TypeError, ValueError):
+        raise ValueError("daily_import_year_invalid")
+    if base_year is not None and not 2000 <= base_year <= 2100:
+        raise ValueError("daily_import_year_invalid")
+    default_date = str(payload.get("default_date") or "").strip()
+    if default_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", default_date):
+        raise ValueError("daily_import_default_date_invalid")
+    result = parse_daily_assignment_text(
+        payload.get("text", ""),
+        base_year=base_year,
+        default_date=default_date or None,
+    )
     record_dispatch_mobile_audit(
         "mobile_daily_parse",
         dispatcher,
