@@ -5,6 +5,7 @@ import re
 import sys
 from contextlib import closing
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -548,6 +549,7 @@ def generate_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, 
 
 
 def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
+    source_sha256 = snapshot_source_sha256(snapshot)
     order_kind = {
         int(order.get("order_id") or 0): str(order.get("document_kind") or "")
         for order in snapshot.get("orders") or []
@@ -563,6 +565,7 @@ def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "run_group_id": node.get("run_group_id"),
                 "document_version_id": node.get("document_version_id"),
                 "sequence_number": node.get("sequence_number"),
+                "business_date": node.get("business_date") or snapshot.get("business_date") or "",
                 "order_id": order_id or None,
                 "document_kind": order_kind.get(order_id, "operation"),
                 "node_type": node_type,
@@ -575,13 +578,13 @@ def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "document_references": ["acceptance", "dispatch"],
             }
         )
-    return {
+    preview = {
         "document_id": snapshot.get("document_id"),
         "document_version_id": snapshot.get("document_version_id"),
         "run_group_id": snapshot.get("run_group_id"),
         "business_date": snapshot.get("business_date"),
-        "source_sha256": snapshot_source_sha256(snapshot),
-        "document_revision": snapshot.get("document_version_id"),
+        "source_sha256": source_sha256,
+        "document_revision": source_sha256,
         "document_fields": [
             {"field_id": "operation:safety:waiting_place", "label": "待機場所", "value": (snapshot.get("safety") or {}).get("waiting_place") or "", "editable": True},
             {"field_id": "operation:safety:attention_place", "label": "注意箇所", "value": (snapshot.get("safety") or {}).get("attention_place") or "", "editable": True},
@@ -590,10 +593,216 @@ def _editable_node_preview(snapshot: dict[str, Any]) -> dict[str, Any]:
         ] + [field for order in snapshot.get("orders") or [] for field in (
             {"field_id": f"order:{order.get('order_id')}:contract_party_name", "order_id": order.get("order_id"), "label": "合同方", "value": order.get("contract_party_name") or order.get("applicant_name") or "", "editable": True},
             {"field_id": f"order:{order.get('order_id')}:applicant_contact", "order_id": order.get("order_id"), "label": "联系方式", "value": order.get("applicant_contact") or "", "editable": True},
-            {"field_id": f"order:{order.get('order_id')}:price_jpy", "order_id": order.get("order_id"), "label": "费用（日元）", "value": order.get("money", {}).get("total_jpy"), "editable": True, "input_type": "number"},
+            {"field_id": f"order:{order.get('order_id')}:price_jpy", "order_id": order.get("order_id"), "label": "合计（日元）", "value": order.get("money", {}).get("total_jpy"), "editable": True, "input_type": "number"},
+            {"field_id": f"order:{order.get('order_id')}:fare_jpy", "order_id": order.get("order_id"), "label": "运价（日元）", "value": order.get("money", {}).get("fare_jpy"), "editable": True, "input_type": "number"},
+            {"field_id": f"order:{order.get('order_id')}:service_fee_jpy", "order_id": order.get("order_id"), "label": "料金（日元）", "value": order.get("money", {}).get("service_fee_jpy"), "editable": True, "input_type": "number"},
+            {"field_id": f"order:{order.get('order_id')}:advance_jpy", "order_id": order.get("order_id"), "label": "其他立替（日元）", "value": order.get("money", {}).get("advance_jpy"), "editable": True, "input_type": "number"},
+            {"field_id": f"order:{order.get('order_id')}:toll_fee_jpy", "order_id": order.get("order_id"), "label": "高速费（日元）", "value": order.get("money", {}).get("toll_fee_jpy"), "editable": True, "input_type": "number"},
+            {"field_id": f"order:{order.get('order_id')}:parking_fee_jpy", "order_id": order.get("order_id"), "label": "停车费（日元）", "value": order.get("money", {}).get("parking_fee_jpy"), "editable": True, "input_type": "number"},
         )],
         "nodes": nodes,
         "validation_issues": list(snapshot.get("publish_validation_issues") or []),
+    }
+    preview["document_views"] = _document_workbench_views(snapshot, preview["document_fields"], nodes)
+    preview["page_plan"] = preview["document_views"].get("page_plan") or []
+    preview["template_version"] = DOCUMENT_RENDERER_VERSION
+    return preview
+
+
+def _document_workbench_views(
+    snapshot: dict[str, Any],
+    document_fields: list[dict[str, Any]],
+    nodes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return the data-driven mobile rendering model used by both document tabs.
+
+    The renderer and the workbench consume the same airport page plan.  Cells
+    carry stable ids so zooming, paging, and sorting cannot redirect an edit to
+    a different order.
+    """
+    field_by_id = {str(item.get("field_id") or ""): item for item in document_fields}
+    nodes_by_order: dict[int, list[dict[str, Any]]] = {}
+    operation_nodes: list[dict[str, Any]] = []
+    for node in nodes:
+        order_id = int(node.get("order_id") or 0)
+        (nodes_by_order.setdefault(order_id, []) if order_id else operation_nodes).append(node)
+
+    def cell(
+        label: str,
+        value: Any,
+        field_id: str = "",
+        *,
+        order_id: int | None = None,
+        route_node_id: str = "",
+        input_type: str = "text",
+        editable: bool | None = None,
+    ) -> dict[str, Any]:
+        existing = field_by_id.get(field_id) or {}
+        actual_value = existing.get("value") if field_id in field_by_id else value
+        can_edit = bool(existing.get("editable")) if editable is None else bool(editable)
+        if isinstance(actual_value, float) and actual_value.is_integer():
+            display_value = str(int(actual_value))
+        else:
+            display_value = "" if actual_value is None else str(actual_value)
+        return {
+            "label": label,
+            "value": actual_value,
+            "display_value": display_value,
+            "field_id": field_id,
+            "order_id": order_id,
+            "route_node_id": route_node_id,
+            "input_type": existing.get("input_type") or input_type,
+            "editable": can_edit,
+        }
+
+    def node_cell(node: dict[str, Any] | None, key: str, label: str, *, input_type: str = "text") -> dict[str, Any]:
+        item = node or {}
+        value = item.get(key) or ""
+        editable = True
+        if key == "planned_arrival_at":
+            editable = bool(item.get("editable_arrival"))
+        elif key == "planned_departure_at":
+            editable = bool(item.get("editable_departure"))
+        return cell(
+            label,
+            value,
+            f"route_node:{item.get('route_node_id')}:{key}" if item.get("route_node_id") else "",
+            order_id=item.get("order_id"),
+            route_node_id=str(item.get("route_node_id") or ""),
+            input_type=input_type,
+            editable=editable and bool(item.get("route_node_id")),
+        )
+
+    order_by_id = {int(item.get("order_id") or 0): item for item in snapshot.get("orders") or []}
+
+    def task(order: dict[str, Any], sequence: int) -> dict[str, Any]:
+        order_id = int(order.get("order_id") or 0)
+        order_nodes = nodes_by_order.get(order_id) or []
+        pickup = next((item for item in order_nodes if item.get("node_type") == "pickup"), None)
+        dropoff = next((item for item in reversed(order_nodes) if item.get("node_type") == "dropoff"), None)
+        route_text = " → ".join(
+            str(value) for value in (
+                (pickup or {}).get("planned_location"),
+                (dropoff or {}).get("planned_location"),
+            ) if value
+        )
+        return {
+            "sequence": sequence,
+            "order_id": order_id,
+            "document_kind": order.get("document_kind") or "airport_transfer",
+            "route_text": route_text,
+            "cells": {
+                "pickup_time": node_cell(pickup, "planned_departure_at", "配車時刻", input_type="datetime"),
+                "pickup_location": node_cell(pickup, "planned_location", "乗車地"),
+                "dropoff_time": node_cell(dropoff, "planned_arrival_at", "到着予定", input_type="datetime"),
+                "dropoff_location": node_cell(dropoff, "planned_location", "降車地"),
+                "contract_party": cell(
+                    "契約相手", order.get("contract_party_name") or order.get("applicant_name") or "",
+                    f"order:{order_id}:contract_party_name", order_id=order_id,
+                ),
+                "contact": cell(
+                    "連絡先", order.get("applicant_contact") or "",
+                    f"order:{order_id}:applicant_contact", order_id=order_id,
+                ),
+                "price": cell(
+                    "運賃・料金", (order.get("money") or {}).get("total_jpy"),
+                    f"order:{order_id}:price_jpy", order_id=order_id, input_type="number",
+                ),
+                "fare": cell(
+                    "運賃", (order.get("money") or {}).get("fare_jpy"),
+                    f"order:{order_id}:fare_jpy", order_id=order_id, input_type="number",
+                ),
+                "service_fee": cell(
+                    "料金", (order.get("money") or {}).get("service_fee_jpy"),
+                    f"order:{order_id}:service_fee_jpy", order_id=order_id, input_type="number",
+                ),
+                "advance": cell(
+                    "その他立替", (order.get("money") or {}).get("advance_jpy"),
+                    f"order:{order_id}:advance_jpy", order_id=order_id, input_type="number",
+                ),
+                "toll_fee": cell(
+                    "高速代", (order.get("money") or {}).get("toll_fee_jpy"),
+                    f"order:{order_id}:toll_fee_jpy", order_id=order_id, input_type="number",
+                ),
+                "parking_fee": cell(
+                    "駐車代", (order.get("money") or {}).get("parking_fee_jpy"),
+                    f"order:{order_id}:parking_fee_jpy", order_id=order_id, input_type="number",
+                ),
+            },
+        }
+
+    airport_pages: list[dict[str, Any]] = []
+    sequence = 1
+    for page_index, page_orders in enumerate(snapshot.get("airport_acceptance_pages") or [], 1):
+        tasks = []
+        for order in page_orders:
+            tasks.append(task(order, sequence))
+            sequence += 1
+        airport_pages.append({
+            "page_index": page_index,
+            "order_ids": [item["order_id"] for item in tasks],
+            "tasks": tasks,
+        })
+
+    charter_pages: list[dict[str, Any]] = []
+    for contract_index, contract in enumerate(snapshot.get("charter_contracts") or [], 1):
+        order_id = int(contract.get("order_id") or 0)
+        order = order_by_id.get(order_id) or {"order_id": order_id, "document_kind": "charter"}
+        for day_index, day in enumerate(contract.get("days") or [], 1):
+            day_nodes = [
+                item for item in nodes_by_order.get(order_id, [])
+                if str(item.get("business_date") or "") == str(day.get("date") or "")
+            ]
+            route_rows = []
+            for node_index, node in enumerate(day_nodes, 1):
+                route_rows.append({
+                    "sequence": node_index,
+                    "route_node_id": node.get("route_node_id"),
+                    "location": node_cell(node, "planned_location", "地点"),
+                    "arrival": node_cell(node, "planned_arrival_at", "到着", input_type="datetime"),
+                    "departure": node_cell(node, "planned_departure_at", "出発", input_type="datetime"),
+                })
+            charter_pages.append({
+                "page_index": len(charter_pages) + 1,
+                "contract_index": contract_index,
+                "day_index": day_index,
+                "day_date": day.get("date") or snapshot.get("business_date"),
+                "order_ids": [order_id],
+                "tasks": [task(order, contract_index)],
+                "route_rows": route_rows,
+            })
+
+    pages = airport_pages or charter_pages
+    total_pages = len(pages)
+    for page in pages:
+        page["page_total"] = total_pages
+
+    company = snapshot.get("company") or {}
+    operation = snapshot.get("operation") or {}
+    safety = snapshot.get("safety") or {}
+    common = {
+        "business_date": snapshot.get("business_date") or "",
+        "driver": snapshot.get("driver") or {},
+        "vehicle": snapshot.get("vehicle") or {},
+        "company": company,
+        "operations_manager": snapshot.get("operations_manager") or "",
+        "operation": operation,
+        "applicants": snapshot.get("applicants") or [],
+        "safety": {
+            "waiting_place": cell("待機場所", safety.get("waiting_place") or "", "operation:safety:waiting_place"),
+            "attention_place": cell("注意箇所", safety.get("attention_place") or "", "operation:safety:attention_place"),
+            "other_instruction": cell("安全指示", safety.get("other_instruction") or "", "operation:safety:other_instruction"),
+        },
+    }
+    page_plan = [
+        {"page_index": page["page_index"], "order_ids": page.get("order_ids") or []}
+        for page in pages
+    ]
+    return {
+        "template_version": DOCUMENT_RENDERER_VERSION,
+        "page_plan": page_plan,
+        "acceptance": {**common, "title": "運送引受書", "pages": pages},
+        "dispatch": {**common, "title": "運行指示書", "pages": pages},
     }
 
 
@@ -637,6 +846,322 @@ def get_run_document_preview(group_value: Any, actor: dict[str, Any]) -> dict[st
     snapshot = build_document_snapshot(group, "draft-preview")
     preview = _editable_node_preview(snapshot)
     preview["validation_issues"] = list(dict.fromkeys(preview["validation_issues"] + _route_timing_issues(snapshot)))
+    return preview
+
+
+def patch_run_document_draft(group_value: Any, payload: dict[str, Any], actor: dict[str, Any]) -> dict[str, Any]:
+    """Atomically persist a whitelisted set of workbench cell edits.
+
+    No PDF is rendered here.  A retry whose values are already current is a
+    safe no-op even if it carries the source hash from before the first save.
+    """
+    _require_operations_actor(actor)
+    date_value, driver_id, vehicle_id = parse_group_key(group_value)
+    tenant = int(actor.get("tenant_id") or get_current_tenant_id())
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
+    snapshot = build_document_snapshot(group, "draft-batch-edit")
+    preview_before = _editable_node_preview(snapshot)
+    raw_patches = payload.get("patches")
+    if not isinstance(raw_patches, list) or not raw_patches:
+        raise ValueError("document_patch_empty")
+    if len(raw_patches) > 100:
+        raise ValueError("document_patch_too_large")
+
+    node_by_id = {
+        str(item.get("route_node_id") or ""): item
+        for item in snapshot.get("route_nodes") or []
+    }
+    order_ids = {int(item.get("order_id") or 0) for item in snapshot.get("orders") or []}
+    field_value_by_id = {
+        str(item.get("field_id") or ""): item.get("value")
+        for item in preview_before.get("document_fields") or []
+    }
+    safety_fields = {
+        "operation:safety:waiting_place",
+        "operation:safety:attention_place",
+        "operation:safety:other_instruction",
+    }
+    normalized_patches: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_patch in raw_patches:
+        if not isinstance(raw_patch, dict):
+            raise ValueError("document_patch_invalid")
+        field_id = str(raw_patch.get("field_id") or "").strip()
+        if not field_id or field_id in seen:
+            raise ValueError("document_patch_duplicate_field" if field_id else "document_patch_field_missing")
+        seen.add(field_id)
+        raw_value = raw_patch.get("value")
+        value = "" if raw_value is None else str(raw_value).strip()
+        route_match = re.fullmatch(
+            r"route_node:([^:]+):(planned_location|planned_arrival_at|planned_departure_at)",
+            field_id,
+        )
+        order_match = re.fullmatch(
+            r"order:(\d+):(contract_party_name|applicant_contact|price_jpy|fare_jpy|service_fee_jpy|advance_jpy|toll_fee_jpy|parking_fee_jpy)",
+            field_id,
+        )
+        if route_match:
+            route_node_id, field_name = route_match.groups()
+            node = node_by_id.get(route_node_id)
+            if not node:
+                raise ValueError("route_node_not_found")
+            if field_name in {"planned_arrival_at", "planned_departure_at"} and value:
+                try:
+                    datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise ValueError(f"invalid_datetime:{field_name}") from exc
+            current_value = str(node.get(field_name) or "").strip()
+            normalized_patches.append({
+                "kind": "node", "field_id": field_id, "route_node_id": route_node_id,
+                "field_name": field_name, "value": value, "current_value": current_value,
+                "order_id": int(node.get("order_id") or 0) or None,
+            })
+        elif field_id in safety_fields:
+            if len(value) > 1000:
+                raise ValueError("document_field_value_too_long")
+            normalized_patches.append({
+                "kind": "safety", "field_id": field_id, "value": value,
+                "current_value": "" if field_value_by_id.get(field_id) is None else str(field_value_by_id.get(field_id)).strip(),
+            })
+        elif order_match:
+            order_id = int(order_match.group(1))
+            field_name = order_match.group(2)
+            if order_id not in order_ids:
+                raise ValueError("document_field_order_not_found")
+            if field_name in {"price_jpy", "fare_jpy", "service_fee_jpy", "advance_jpy", "toll_fee_jpy", "parking_fee_jpy"}:
+                if value:
+                    try:
+                        numeric_value = float(value)
+                    except ValueError as exc:
+                        raise ValueError("document_field_invalid_price") from exc
+                    if numeric_value < 0:
+                        raise ValueError("document_field_invalid_price")
+                else:
+                    numeric_value = None
+                stored_value: Any = numeric_value
+            else:
+                if len(value) > 240:
+                    raise ValueError("document_field_value_too_long")
+                stored_value = value
+            current_raw = field_value_by_id.get(field_id)
+            current_value = "" if current_raw is None else str(current_raw).strip()
+            if field_name.endswith("_jpy"):
+                def canonical_number(raw: Any) -> str:
+                    if raw is None or str(raw).strip() == "":
+                        return ""
+                    try:
+                        return format(Decimal(str(raw).strip()).normalize(), "f")
+                    except InvalidOperation:
+                        return str(raw).strip()
+                comparable_value = canonical_number(stored_value)
+                comparable_current = canonical_number(current_value)
+            else:
+                comparable_value = "" if stored_value is None else str(stored_value)
+                comparable_current = current_value
+            normalized_patches.append({
+                "kind": "order", "field_id": field_id, "field_name": field_name,
+                "value": stored_value, "raw_value": value, "current_value": comparable_current,
+                "comparable_value": comparable_value, "order_id": order_id,
+            })
+        else:
+            raise ValueError("document_field_not_editable")
+
+    # Preserve the established airport rule in the canonical draft layer: only
+    # an explicitly auto-suggested arrival follows a changed pickup time.  A
+    # manually overridden drop-off node or an unknown/explicit source is never
+    # rewritten.
+    order_by_id = {int(item.get("order_id") or 0): item for item in snapshot.get("orders") or []}
+    requested_ids = {item["field_id"] for item in normalized_patches}
+    for item in list(normalized_patches):
+        if item.get("kind") != "node" or item.get("field_name") != "planned_departure_at" or not item.get("order_id"):
+            continue
+        pickup_node = node_by_id.get(str(item.get("route_node_id") or "")) or {}
+        order = order_by_id.get(int(item["order_id"])) or {}
+        if pickup_node.get("node_type") != "pickup" or order.get("document_kind") != "airport_transfer":
+            continue
+        if order.get("arrival_time_source") != "suggested_60m" or bool(order.get("arrival_time_confirmed")):
+            continue
+        dropoff = next(
+            (node for node in snapshot.get("route_nodes") or [] if int(node.get("order_id") or 0) == int(item["order_id"]) and node.get("node_type") == "dropoff"),
+            None,
+        )
+        if not dropoff or not item.get("value"):
+            continue
+        dropoff_id = str(dropoff.get("route_node_id") or "")
+        dropoff_field_id = f"route_node:{dropoff_id}:planned_arrival_at"
+        if dropoff_field_id in requested_ids:
+            continue
+        existing_dropoff_override = next(
+            (override for override in group.get("route_node_overrides") or [] if str(override.get("route_node_id") or "") == dropoff_id),
+            {},
+        )
+        existing_changed_fields = existing_dropoff_override.get("changed_fields") or []
+        if "planned_arrival_at" in existing_changed_fields and "auto_suggested_arrival" not in existing_changed_fields:
+            continue
+        shifted = shift_date_time(str(item["value"])[:10], str(item["value"])[11:16], 60)["at"]
+        normalized_patches.append({
+            "kind": "node", "field_id": dropoff_field_id, "route_node_id": dropoff_id,
+            "field_name": "planned_arrival_at", "value": shifted,
+            "current_value": str(dropoff.get("planned_arrival_at") or "").strip(),
+            "order_id": int(item["order_id"]), "derived": True,
+        })
+
+    def comparable(item: dict[str, Any], key: str) -> str:
+        value = item.get(key)
+        return "" if value is None else str(value)
+
+    changed = [
+        item for item in normalized_patches
+        if comparable(item, "comparable_value" if "comparable_value" in item else "value")
+        != comparable(item, "current_value")
+    ]
+    current_source_hash = snapshot_source_sha256(snapshot)
+    expected_source_hash = str(payload.get("expected_source_hash") or "").strip()
+    if expected_source_hash and expected_source_hash != current_source_hash and changed:
+        raise ValueError("document_revision_conflict")
+    if not changed:
+        preview_before["saved_patch_count"] = 0
+        preview_before["idempotent_replay"] = True
+        return preview_before
+
+    actor_id = int(actor.get("id") or 0) or None
+    actor_name = str(actor.get("display_name") or actor.get("username") or "运行管理")
+    node_changes: dict[str, dict[str, Any]] = {}
+    derived_arrival_nodes: set[str] = set()
+    explicit_arrival_nodes: set[str] = set()
+    affected_order_ids: set[int] = set()
+    for item in changed:
+        if item["kind"] == "node":
+            bucket = node_changes.setdefault(item["route_node_id"], {})
+            bucket[item["field_name"]] = item["value"]
+            if item["field_name"] == "planned_arrival_at":
+                (derived_arrival_nodes if item.get("derived") else explicit_arrival_nodes).add(item["route_node_id"])
+            if item.get("order_id"):
+                affected_order_ids.add(int(item["order_id"]))
+        elif item["kind"] == "order":
+            affected_order_ids.add(int(item["order_id"]))
+
+    with closing(get_connection()) as conn:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for route_node_id, changes in node_changes.items():
+                node = node_by_id[route_node_id]
+                existing_override = next(
+                    (item for item in group.get("route_node_overrides") or [] if item.get("route_node_id") == route_node_id),
+                    {},
+                )
+                changed_fields = list(dict.fromkeys([*(existing_override.get("changed_fields") or []), *changes.keys()]))
+                if route_node_id in derived_arrival_nodes and "auto_suggested_arrival" not in changed_fields:
+                    changed_fields.append("auto_suggested_arrival")
+                if route_node_id in explicit_arrival_nodes:
+                    changed_fields = [field for field in changed_fields if field != "auto_suggested_arrival"]
+                values = {
+                    field: changes.get(field, node.get(field) or "")
+                    for field in ("planned_location", "planned_arrival_at", "planned_departure_at")
+                }
+                location_confirmed = (
+                    1 if "planned_location" in changes and bool(changes["planned_location"])
+                    else int(node.get("location_confirmed") or 0)
+                )
+                conn.execute(
+                    """
+                    INSERT INTO dispatch_route_node_overrides (
+                        tenant_id, run_group_id, route_node_id, planned_location,
+                        planned_arrival_at, planned_departure_at, location_confirmed,
+                        changed_fields_json, updated_by_user_id, updated_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_id, run_group_id, route_node_id) DO UPDATE SET
+                        planned_location = excluded.planned_location,
+                        planned_arrival_at = excluded.planned_arrival_at,
+                        planned_departure_at = excluded.planned_departure_at,
+                        location_confirmed = excluded.location_confirmed,
+                        changed_fields_json = excluded.changed_fields_json,
+                        updated_by_user_id = excluded.updated_by_user_id,
+                        updated_by = excluded.updated_by,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        tenant, snapshot["run_group_id"], route_node_id,
+                        values["planned_location"], values["planned_arrival_at"], values["planned_departure_at"],
+                        location_confirmed, canonical_json({"fields": changed_fields}), actor_id, actor_name,
+                    ),
+                )
+            for item in changed:
+                if item["kind"] == "safety":
+                    conn.execute(
+                        """
+                        INSERT INTO dispatch_document_field_overrides (
+                            tenant_id, run_group_id, field_id, value_text, updated_by_user_id, updated_by
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(tenant_id, run_group_id, field_id) DO UPDATE SET
+                            value_text = excluded.value_text,
+                            updated_by_user_id = excluded.updated_by_user_id,
+                            updated_by = excluded.updated_by,
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (tenant, snapshot["run_group_id"], item["field_id"], item["value"], actor_id, actor_name),
+                    )
+                elif item["kind"] == "order":
+                    if item["field_name"] == "price_jpy":
+                        conn.execute(
+                            """
+                            UPDATE orders SET price = ?, price_jpy = ?, price_confirmed = 0,
+                                price_confirmed_by_user_id = NULL, price_confirmed_by = NULL,
+                                price_confirmed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                            WHERE tenant_id = ? AND id = ?
+                            """,
+                            (item["value"], item["value"], tenant, item["order_id"]),
+                        )
+                    elif item["field_name"] in {"fare_jpy", "service_fee_jpy", "advance_jpy", "toll_fee_jpy", "parking_fee_jpy"}:
+                        column = "document_advance_jpy" if item["field_name"] == "advance_jpy" else item["field_name"]
+                        conn.execute(
+                            f"""
+                            UPDATE orders SET {column} = ?, price_confirmed = 0,
+                                price_confirmed_by_user_id = NULL, price_confirmed_by = NULL,
+                                price_confirmed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                            WHERE tenant_id = ? AND id = ?
+                            """,
+                            (item["value"], tenant, item["order_id"]),
+                        )
+                    else:
+                        column = "agency_name" if item["field_name"] == "contract_party_name" else "guest_contact"
+                        conn.execute(
+                            f"UPDATE orders SET {column} = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ?",
+                            (item["value"], tenant, item["order_id"]),
+                        )
+            for order_id in affected_order_ids:
+                conn.execute(
+                    """
+                    UPDATE orders SET run_confirmation_status = 'pending', run_confirmed_at = NULL,
+                        run_confirmed_by_user_id = NULL, run_confirmed_by = NULL,
+                        run_revision = COALESCE(run_revision, 1) + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE tenant_id = ? AND id = ?
+                    """,
+                    (tenant, order_id),
+                )
+            _mark_group_stale(conn, tenant, date_value, driver_id, vehicle_id)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    refreshed = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not refreshed:
+        raise ValueError("run_group_not_found")
+    updated_snapshot = build_document_snapshot(refreshed, make_document_version_id())
+    preview = _editable_node_preview(updated_snapshot)
+    preview["validation_issues"] = list(dict.fromkeys(preview["validation_issues"] + _route_timing_issues(updated_snapshot)))
+    preview["saved_patch_count"] = len(changed)
+    preview["idempotent_replay"] = False
+    with closing(get_connection()) as conn:
+        record_document_event(
+            conn, updated_snapshot, "document_draft_patched", actor,
+            {"field_ids": [item["field_id"] for item in changed], "client_request_id": str(payload.get("client_request_id") or "")[:120]},
+        )
+        conn.commit()
     return preview
 
 

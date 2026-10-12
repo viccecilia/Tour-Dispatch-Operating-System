@@ -106,7 +106,19 @@ function documentValidationItem(value) {
   const message = code.indexOf(':') >= 0
     ? nodeValidationLabel(code)
     : `${orderLabel}${field}${confirmation ? '已有内容，尚未确认' : '缺少必要信息'}`;
-  return { code, category, message, kind: confirmation ? 'confirmation' : 'missing' };
+  return { code, category, message, kind: confirmation ? 'confirmation' : 'missing', order_sequence: orderMatch ? Number(orderMatch[1]) : null, order_id: null, field_id: '' };
+}
+
+function documentValidationCellName(code) {
+  const value = String(code || '');
+  if (/pickup.*(?:time|at)|dispatch.*time/.test(value)) return 'pickup_time';
+  if (/pickup.*(?:location|place)/.test(value)) return 'pickup_location';
+  if (/(?:dropoff|arrival).*(?:location|place)/.test(value)) return 'dropoff_location';
+  if (/(?:dropoff|arrival).*(?:time|at)/.test(value)) return 'dropoff_time';
+  if (/price|fare|fee|advance|tax/.test(value)) return 'price';
+  if (/contact/.test(value)) return 'contact';
+  if (/applicant|contract_party|agency/.test(value)) return 'contract_party';
+  return '';
 }
 
 function buildValidationPresentation(values) {
@@ -783,6 +795,7 @@ Page({
     fixedTourView: 'quick',
     fixedTourPickerOpen: '',
     fixedTourReturnToQuick: false,
+    fixedTourReturnToDocumentWorkbench: false,
     fixedTourVisibleRoutes: [],
     fixedTourVisibleDrivers: [],
     fixedTourVisibleVehicles: [],
@@ -863,6 +876,16 @@ Page({
     dailyPdfFields: [],
     dailyPdfSourceHash: '',
     dailyPdfDocumentRevision: '',
+    dailyPdfDocumentViews: null,
+    dailyPdfActiveView: null,
+    dailyPdfVisiblePages: [],
+    dailyPdfZoom: 100,
+    dailyPdfScrollAnchor: '',
+    dailyPdfDocumentStale: false,
+    dailyPdfGenerating: false,
+    dailyTaskEditorOpen: false,
+    dailyTaskEditor: null,
+    dailyTaskEditorFocusFieldId: '',
     dailyFieldEditOpen: false,
     dailyFieldEditIndex: -1,
     dailyFieldEditForm: null,
@@ -1254,7 +1277,7 @@ Page({
   backFixedTourList() {
     const leave = () => {
       this.clearFixedTourEditorPersistence();
-      this.setData({ fixedTourView: 'quick', fixedTourPickerOpen: '', fixedTourEditor: null, fixedTourEditorDirty: false, fixedTourReturnToQuick: false, fixedTourMessage: '' });
+      this.setData({ fixedTourView: 'quick', fixedTourPickerOpen: '', fixedTourEditor: null, fixedTourEditorDirty: false, fixedTourReturnToQuick: false, fixedTourReturnToDocumentWorkbench: false, fixedTourMessage: '' });
       this.loadFixedTours();
     };
     if (!this.data.fixedTourEditorDirty) { leave(); return; }
@@ -1404,9 +1427,50 @@ Page({
       .then((result) => {
         this.clearFixedTourEditorPersistence();
         this.setData({ fixedTourCurrentDraft: result.draft, fixedTourEditorDirty: false, fixedTourMessage: '本次行程草稿已保存；原预设和历史订单未改变。' });
+        if (this.data.fixedTourReturnToDocumentWorkbench) return this.returnToFixedTourDocumentWorkbench(result.draft);
+        return null;
       })
       .catch((error) => this.setData({ fixedTourMessage: api.errorMessage(error) }))
       .finally(() => this.setData({ fixedTourSubmitting: false }));
+  },
+
+  returnToFixedTourDocumentWorkbench(draft) {
+    const group = this.data.dailyPdfReviewGroup || {};
+    const driverId = Number(group.driver_id || this.data.fixedTourDriverId || 0);
+    const vehicleId = Number(group.vehicle_id || this.data.fixedTourVehicleId || 0);
+    if (!draft || !draft.id || !driverId || !vehicleId) {
+      return Promise.reject(new Error('文书关联的司机或车辆信息不完整'));
+    }
+    const documentTab = this.data.dailyPdfDocumentTab || 'acceptance';
+    const scrollAnchor = this.data.dailyPdfScrollAnchor || '';
+    const zoom = Number(this.data.dailyPdfZoom || 100);
+    return api.prepareFixedTourDraftDocuments(draft.id, { driver_id: driverId, vehicle_id: vehicleId })
+      .then((result) => {
+        const preview = result && result.preview || {};
+        const activeDraft = result && result.draft || draft;
+        this.applyDailyDocumentPreview(preview, {
+          fixedTourView: 'quick',
+          fixedTourEditor: null,
+          fixedTourEditorDirty: false,
+          fixedTourCurrentDraft: activeDraft,
+          fixedTourReturnToDocumentWorkbench: false,
+          fixedTourMessage: '本次行程已保存并返回原文书；原预设未改变。',
+          dailyPdfReviewOpen: true,
+          dailyPdfDraftOnly: true,
+          dailyPdfSourceMode: 'fixed',
+          dailyPdfCurrentDraftId: String(activeDraft.id),
+          dailyPdfDocumentTab: documentTab,
+          dailyPdfReviewGroup: { ...group, key: result.group_key || group.key, business_date: activeDraft.business_start_date || group.business_date },
+          dailyPdfReviewDocument: null,
+          dailyPdfDocumentStale: true,
+          dailyPdfZoom: zoom,
+          dailyPdfScrollAnchor: scrollAnchor,
+          dailyPdfNodesExpanded: false,
+          dailyTaskEditorOpen: false,
+          dailyTaskEditor: null
+        });
+        return result;
+      });
   },
 
   onFixedTourQuery(e) { this.setData({ fixedTourQuery: e.detail.value }); },
@@ -1479,21 +1543,13 @@ Page({
     this.ensureFixedTourDraftForGeneration()
       .then((draft) => {
         activeDraft = draft;
-        return api.generateFixedTourDraftDocuments(draft.id, {
+        return api.prepareFixedTourDraftDocuments(draft.id, {
           driver_id: Number(driver.id),
           vehicle_id: Number(vehicle.id)
         });
       })
       .then((result) => {
-        const document = result && result.document;
         const preview = result && result.preview || {};
-        if (!document || !document.file_url) throw new Error('PDF 草稿生成结果无效');
-        const validation = buildValidationPresentation(preview.validation_issues || []);
-        const nodes = (preview.nodes || []).map((node) => ({
-          ...node,
-          type_label: nodeTypeLabel(node.node_type),
-          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
-        }));
         const group = {
           key: result.group_key || '',
           driver_id: Number(driver.id),
@@ -1507,38 +1563,36 @@ Page({
           order_count: 1,
           orders: [],
           workflowStatus: 'draft',
-          validation_issues: validation.raw
+          validation_issues: preview.validation_issues || []
         };
-        this.setData({
+        this.applyDailyDocumentPreview(preview, {
           fixedTourCurrentDraft: result.draft || activeDraft,
-          fixedTourGeneratedDocument: document,
           fixedTourPendingRequestId: '',
-          fixedTourMessage: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`,
+          fixedTourMessage: '文书草稿已准备，请核对后确认生成',
           dailyPdfReviewOpen: true,
           dailyPdfDraftOnly: true,
           dailyPdfSourceMode: 'fixed',
           dailyPdfCurrentDraftId: String((result.draft || activeDraft || {}).id || ''),
           dailyPdfDocumentTab: 'acceptance',
           dailyPdfReviewGroup: group,
-          dailyPdfReviewDocument: document,
+          dailyPdfReviewDocument: null,
           dailyPdfReviewCanConfirm: false,
           dailyPdfPreviewUnavailable: false,
           dailyPdfReviewIndex: 0,
           dailyPdfReviewTotal: 1,
-          dailyPdfValidationIssues: validation.issues,
-          dailyPdfValidationRaw: validation.raw,
-          dailyPdfSourceHash: preview.source_sha256 || '',
-          dailyPdfDocumentRevision: preview.document_revision || '',
-          dailyPdfIssueSummary: validation.summary,
           dailyPdfIssuesExpanded: false,
-          dailyPdfNodes: nodes,
-          dailyPdfFields: preview.document_fields || [],
+          dailyPdfDocumentStale: true,
+          dailyPdfZoom: 100,
+          dailyPdfScrollAnchor: '',
           dailyPdfNodesExpanded: false,
+          dailyTaskEditorOpen: false,
+          dailyTaskEditor: null,
+          dailyTaskEditorFocusFieldId: '',
           dailyNodeEditOpen: false,
           dailyNodeEditIndex: -1,
           dailyNodeEditForm: null
         });
-        wx.showToast({ title: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`, icon: 'success' });
+        wx.showToast({ title: '文书草稿已准备', icon: 'success' });
       })
       .catch((error) => {
         const unavailable = Number(error && error.statusCode || 0) === 404 || error && error.backendError === 'fixed_tour_service_unavailable';
@@ -1854,9 +1908,6 @@ Page({
         const activeGroup = this.data.dailyReviewGroup || {};
         const savedDate = (savedOrder && savedOrder.order_date) || payload.order_date;
         regeneratedGroupKey = `${savedDate}:${activeGroup.driver_id}:${activeGroup.vehicle_id}`;
-        return api.generateRunDocument(regeneratedGroupKey);
-      })
-      .then((res) => {
         const group = this.data.dailyReviewGroup;
         const currentIndex = this.data.dailyReviewOrderIndex;
         const updatedOrders = (group.orders || []).map((item, index) => index === currentIndex ? {
@@ -1874,7 +1925,6 @@ Page({
           reviewed: false
         } : item);
         const updatedGroup = { ...group, key: regeneratedGroupKey, business_date: payload.order_date, orders: updatedOrders };
-        const document = res && res.document;
         this.setData({
           loading: false,
           dailyReviewOpen: false,
@@ -1888,16 +1938,18 @@ Page({
           dailyPdfDocumentTab: 'acceptance',
           dailyReviewGroupKey: regeneratedGroupKey,
           dailyPdfReviewGroup: updatedGroup,
-          dailyPdfReviewDocument: document,
-          dailyPdfReviewCanConfirm: true,
+          dailyPdfReviewDocument: null,
+          dailyPdfReviewCanConfirm: false,
           dailyPdfPreviewUnavailable: false,
           dailyPdfValidationIssues: [],
           dailyPdfValidationRaw: [],
           dailyPdfIssueSummary: [],
           dailyPdfIssuesExpanded: false,
-          dailyPdfNodesExpanded: false
+          dailyPdfNodesExpanded: false,
+          dailyPdfDocumentStale: true
         });
-        wx.showToast({ title: '已保存并重生成', icon: 'success' });
+        wx.showToast({ title: '订单草稿已保存', icon: 'success' });
+        this.openDailyPdfByKey(regeneratedGroupKey, false);
         this.loadAll();
       })
       .catch((err) => {
@@ -1922,60 +1974,61 @@ Page({
     }
     const groupIndex = groups.findIndex((item) => item.key === key);
     this.setData({ loading: true, dailyPdfLoadingKey: key });
-    api.generateRunDocument(key)
-      .then((res) => api.runDocumentPreview(key)
-        .then((previewRes) => [res, previewRes])
-        .catch((error) => {
-          if (Number(error && error.statusCode || 0) === 404) {
-            console.warn('[run document preview unavailable]', error);
-            return [res, { preview: null, preview_unavailable: true }];
-          }
-          throw error;
-        }))
-      .then(([res, previewRes]) => {
-        const document = res && res.document;
-        if (!document || !document.file_url) throw new Error('PDF 生成结果无效');
+    api.runDocumentPreview(key)
+      .then((previewRes) => {
+        const document = group.latest_document || null;
         const preview = previewRes && previewRes.preview || {};
-        const previewUnavailable = !!(previewRes && previewRes.preview_unavailable);
-        const validation = buildValidationPresentation([...(group.validation_issues || []), ...(preview.validation_issues || [])]);
-        const nodes = (preview.nodes || []).map((node) => ({
-          ...node,
-          type_label: nodeTypeLabel(node.node_type),
-          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
-        }));
-        this.setData({
+        const documentViews = preview && preview.document_views || {};
+        const previewUnavailable = !['acceptance', 'dispatch'].some((viewName) => {
+          const view = documentViews[viewName];
+          return !!(view && Array.isArray(view.pages) && view.pages.length);
+        });
+        const documentStale = !document || group.document_status === 'stale' || (document.source_hash && document.source_hash !== preview.source_sha256);
+        this.applyDailyDocumentPreview({
+          ...preview,
+          validation_issues: [...(group.validation_issues || []), ...(preview.validation_issues || [])]
+        }, {
           dailyPdfReviewOpen: true,
           dailyPdfDraftOnly: false,
+          dailyPdfSourceMode: 'daily',
           dailyPdfReviewGroup: group,
           dailyPdfReviewDocument: document,
-          dailyPdfReviewCanConfirm: !previewUnavailable && document.status !== 'published' && !validation.raw.length,
+          dailyPdfReviewCanConfirm: !!document && !previewUnavailable && document.status !== 'published' && !(preview.validation_issues || []).length,
           dailyPdfPreviewUnavailable: previewUnavailable,
           dailyPdfReviewIndex: groupIndex,
           dailyPdfReviewTotal: groups.length,
-          dailyPdfValidationIssues: validation.issues,
-          dailyPdfValidationRaw: validation.raw,
-          dailyPdfIssueSummary: validation.summary,
-          dailyPdfSourceHash: preview.source_sha256 || '',
-          dailyPdfDocumentRevision: preview.document_revision || '',
           dailyPdfIssuesExpanded: false,
-          dailyPdfNodes: nodes,
-          dailyPdfFields: preview.document_fields || [],
+          dailyPdfDocumentStale: documentStale,
+          dailyPdfZoom: 100,
+          dailyPdfScrollAnchor: '',
           dailyPdfNodesExpanded: false,
+          dailyTaskEditorOpen: false,
+          dailyTaskEditor: null,
+          dailyTaskEditorFocusFieldId: '',
           dailyNodeEditOpen: false,
           dailyNodeEditIndex: -1,
           dailyNodeEditForm: null
         });
-        return autoOpen ? api.downloadAndOpenDocument(document.file_url) : null;
+        return autoOpen && document && !documentStale ? api.downloadAndOpenDocument(document.file_url) : null;
       })
       .then(() => this.setData({ loading: false, dailyPdfLoadingKey: '' }))
       .catch((err) => {
         console.warn('[run document open failed]', err);
         this.setData({ loading: false, dailyPdfLoadingKey: '' });
-        wx.showToast({ title: api.errorMessage(err) || 'PDF 打开失败', icon: 'none' });
+        wx.showToast({ title: api.errorMessage(err) || '文书草稿读取失败', icon: 'none' });
       });
   },
 
   closeDailyPdfReview() {
+    if (this.data.dailyTaskEditorOpen && this.documentTaskPatches().length) {
+      wx.showModal({
+        title: '有未保存修改',
+        content: '保存或放弃本次修改后才能离开文书。',
+        confirmText: '继续编辑',
+        showCancel: false
+      });
+      return;
+    }
     this.setData({
       dailyPdfReviewOpen: false,
       dailyPdfDraftOnly: false,
@@ -1994,6 +2047,16 @@ Page({
       dailyPdfFields: [],
       dailyPdfSourceHash: '',
       dailyPdfDocumentRevision: '',
+      dailyPdfDocumentViews: null,
+      dailyPdfActiveView: null,
+      dailyPdfVisiblePages: [],
+      dailyPdfZoom: 100,
+      dailyPdfScrollAnchor: '',
+      dailyPdfDocumentStale: false,
+      dailyPdfGenerating: false,
+      dailyTaskEditorOpen: false,
+      dailyTaskEditor: null,
+      dailyTaskEditorFocusFieldId: '',
       dailyPdfNodesExpanded: false,
       dailyNodeEditOpen: false,
       dailyNodeEditIndex: -1,
@@ -2014,7 +2077,329 @@ Page({
 
   switchDailyPdfDocumentTab(e) {
     const tab = String(e.currentTarget.dataset.tab || 'acceptance');
-    if (tab === 'acceptance' || tab === 'dispatch') this.setData({ dailyPdfDocumentTab: tab });
+    if (tab !== 'acceptance' && tab !== 'dispatch') return;
+    const views = this.data.dailyPdfDocumentViews || {};
+    const active = views[tab] || null;
+    this.setData({
+      dailyPdfDocumentTab: tab,
+      dailyPdfActiveView: active,
+      dailyPdfVisiblePages: active && active.pages || []
+    });
+  },
+
+  applyDailyDocumentPreview(preview, extra = {}) {
+    const safePreview = preview || {};
+    const views = safePreview.document_views || {};
+    const tab = extra.dailyPdfDocumentTab || this.data.dailyPdfDocumentTab || 'acceptance';
+    const active = views[tab] || views.acceptance || views.dispatch || null;
+    const validation = buildValidationPresentation(safePreview.validation_issues || []);
+    const acceptance = views.acceptance || views.dispatch || {};
+    const previewTasks = (acceptance.pages || []).reduce((items, page) => items.concat(page.tasks || []), []);
+    const validationIssues = validation.issues.map((issue) => {
+      const task = previewTasks.find((item) => Number(item.sequence) === Number(issue.order_sequence));
+      const cellName = documentValidationCellName(issue.code);
+      const cell = task && task.cells && task.cells[cellName];
+      return {
+        ...issue,
+        order_id: task ? task.order_id : null,
+        field_id: cell && cell.editable ? cell.field_id : ''
+      };
+    });
+    const nodes = (safePreview.nodes || []).map((node) => ({
+      ...node,
+      type_label: nodeTypeLabel(node.node_type),
+      time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
+    }));
+    this.setData({
+      dailyPdfDocumentViews: views,
+      dailyPdfActiveView: active,
+      dailyPdfVisiblePages: active && active.pages || [],
+      dailyPdfSourceHash: safePreview.source_sha256 || '',
+      dailyPdfDocumentRevision: safePreview.document_revision || '',
+      dailyPdfFields: safePreview.document_fields || [],
+      dailyPdfNodes: nodes,
+      dailyPdfValidationIssues: validationIssues,
+      dailyPdfValidationRaw: validation.raw,
+      dailyPdfIssueSummary: validation.summary,
+      ...extra
+    });
+  },
+
+  changeDailyDocumentZoom(e) {
+    const reset = !!(e.currentTarget.dataset && e.currentTarget.dataset.reset);
+    const delta = Number(e.currentTarget.dataset && e.currentTarget.dataset.delta || 0);
+    const next = reset ? 100 : Math.max(75, Math.min(175, Number(this.data.dailyPdfZoom || 100) + delta));
+    this.setData({ dailyPdfZoom: next });
+  },
+
+  rememberDailyDocumentScroll(e) {
+    this._dailyDocumentScrollTop = Number(e && e.detail && e.detail.scrollTop || 0);
+    this._dailyDocumentScrollLeft = Number(e && e.detail && e.detail.scrollLeft || 0);
+  },
+
+  findDocumentTask(orderId) {
+    const views = this.data.dailyPdfDocumentViews || {};
+    const acceptance = views.acceptance || {};
+    for (const page of acceptance.pages || []) {
+      const task = (page.tasks || []).find((item) => Number(item.order_id) === Number(orderId));
+      if (task) return task;
+    }
+    return null;
+  },
+
+  listDocumentTasks() {
+    const views = this.data.dailyPdfDocumentViews || {};
+    const acceptance = views.acceptance || {};
+    return (acceptance.pages || []).reduce((items, page) => items.concat(page.tasks || []), []);
+  },
+
+  findDocumentCell(fieldId) {
+    const views = this.data.dailyPdfDocumentViews || {};
+    for (const viewName of ['acceptance', 'dispatch']) {
+      const view = views[viewName] || {};
+      const safety = view.safety || {};
+      for (const safetyCell of Object.values(safety)) {
+        if (safetyCell && safetyCell.field_id === fieldId) return safetyCell;
+      }
+      for (const page of view.pages || []) {
+        for (const task of page.tasks || []) {
+          for (const item of Object.values(task.cells || {})) {
+            if (item && item.field_id === fieldId) return item;
+          }
+        }
+        for (const route of page.route_rows || []) {
+          for (const item of [route.location, route.arrival, route.departure]) {
+            if (item && item.field_id === fieldId) return item;
+          }
+        }
+      }
+    }
+    return null;
+  },
+
+  openDocumentCellEditor(e) {
+    const dataset = e && e.currentTarget && e.currentTarget.dataset || {};
+    const fieldId = String(dataset.fieldId || '');
+    const orderId = Number(dataset.orderId || 0);
+    if (!fieldId) return;
+    const task = orderId ? this.findDocumentTask(orderId) : null;
+    const fields = [];
+    const added = new Set();
+    const addCell = (item) => {
+      if (!item || !item.editable || !item.field_id || added.has(item.field_id)) return;
+      added.add(item.field_id);
+      fields.push({
+        ...item,
+        value: item.display_value == null ? '' : String(item.display_value),
+        original_value: item.display_value == null ? '' : String(item.display_value)
+      });
+    };
+    if (task) Object.values(task.cells || {}).forEach(addCell);
+    const focusedCell = this.findDocumentCell(fieldId);
+    if (focusedCell && focusedCell.route_node_id) {
+      const views = this.data.dailyPdfDocumentViews || {};
+      const routeView = views.acceptance || views.dispatch || {};
+      for (const page of routeView.pages || []) {
+        const route = (page.route_rows || []).find((item) => String(item.route_node_id) === String(focusedCell.route_node_id));
+        if (route) [route.location, route.arrival, route.departure].forEach(addCell);
+      }
+    }
+    addCell(focusedCell);
+    if (!fields.length) return;
+    const focusedIndex = fields.findIndex((item) => item.field_id === fieldId);
+    if (focusedIndex > 0) fields.unshift(fields.splice(focusedIndex, 1)[0]);
+    const typeLabel = task && task.document_kind === 'charter' ? '包车' : '机场接送';
+    const reusableMatch = fieldId.match(/^order:\d+:(contract_party_name|applicant_contact|price_jpy|fare_jpy|service_fee_jpy|advance_jpy|toll_fee_jpy|parking_fee_jpy)$/);
+    const reusableKey = reusableMatch && reusableMatch[1];
+    const applyOptions = reusableKey ? this.listDocumentTasks()
+      .filter((item) => Number(item.order_id) !== orderId && item.cells)
+      .map((item) => {
+        const reusableCellNames = {
+          contract_party_name: 'contract_party', applicant_contact: 'contact', price_jpy: 'price',
+          fare_jpy: 'fare', service_fee_jpy: 'service_fee', advance_jpy: 'advance',
+          toll_fee_jpy: 'toll_fee', parking_fee_jpy: 'parking_fee'
+        };
+        const cellName = reusableCellNames[reusableKey];
+        const target = item.cells[cellName];
+        return target ? {
+          order_id: item.order_id,
+          sequence: item.sequence,
+          route_text: item.route_text,
+          field_id: target.field_id,
+          current_value: target.display_value,
+          selected: false
+        } : null;
+      }).filter(Boolean) : [];
+    this.setData({
+      dailyTaskEditorOpen: true,
+      dailyTaskEditorFocusFieldId: fieldId,
+      dailyTaskEditor: {
+        order_id: orderId || null,
+        title: task ? `第${task.sequence}单 · ${typeLabel}` : (focusedCell && focusedCell.label || '运行计划'),
+        route_text: task && task.route_text || '本份运行计划',
+        fields,
+        apply_source_field_id: reusableKey ? fieldId : '',
+        apply_options: applyOptions
+      },
+      dailyPdfScrollAnchor: orderId ? `document-order-${orderId}` : this.data.dailyPdfScrollAnchor
+    });
+  },
+
+  onDocumentTaskFieldInput(e) {
+    const fieldId = String(e.currentTarget.dataset.fieldId || '');
+    const editor = this.data.dailyTaskEditor;
+    if (!editor || !fieldId) return;
+    const fields = (editor.fields || []).map((item) => item.field_id === fieldId ? { ...item, value: e.detail.value } : item);
+    this.setData({ dailyTaskEditor: { ...editor, fields } });
+  },
+
+  documentTaskPatches() {
+    const editor = this.data.dailyTaskEditor || {};
+    const patches = (editor.fields || [])
+      .filter((item) => String(item.value == null ? '' : item.value) !== String(item.original_value == null ? '' : item.original_value))
+      .map((item) => ({ field_id: item.field_id, value: item.value }));
+    const source = (editor.fields || []).find((item) => item.field_id === editor.apply_source_field_id);
+    if (source) {
+      (editor.apply_options || []).filter((item) => item.selected).forEach((item) => {
+        if (!patches.some((patch) => patch.field_id === item.field_id) && String(source.value == null ? '' : source.value) !== String(item.current_value == null ? '' : item.current_value)) {
+          patches.push({ field_id: item.field_id, value: source.value });
+        }
+      });
+    }
+    return patches;
+  },
+
+  toggleDocumentApplyTarget(e) {
+    const orderId = Number(e.currentTarget.dataset.orderId || 0);
+    const editor = this.data.dailyTaskEditor;
+    if (!editor || !orderId) return;
+    const options = (editor.apply_options || []).map((item) => Number(item.order_id) === orderId ? { ...item, selected: !item.selected } : item);
+    this.setData({ dailyTaskEditor: { ...editor, apply_options: options } });
+  },
+
+  editCurrentCharterRoute() {
+    if (!this.data.dailyPdfDraftOnly || !this.data.dailyPdfCurrentDraftId) return;
+    if (this.documentTaskPatches().length) {
+      wx.showToast({ title: '请先保存或取消当前修改', icon: 'none' });
+      return;
+    }
+    this.setData({ loading: true });
+    api.fixedTourCharterDraft(this.data.dailyPdfCurrentDraftId)
+      .then((result) => {
+        const draft = result && result.draft;
+        if (!draft) throw new Error('本次包车草稿不存在');
+        this.setData({ dailyPdfReviewOpen: false, fixedTourReturnToDocumentWorkbench: true }, () => this.openFixedTourDraft(draft));
+      })
+      .catch((error) => wx.showToast({ title: api.errorMessage(error) || '路线编辑器打开失败', icon: 'none' }))
+      .finally(() => this.setData({ loading: false }));
+  },
+
+  closeDocumentTaskEditor() {
+    const close = () => this.setData({ dailyTaskEditorOpen: false, dailyTaskEditor: null, dailyTaskEditorFocusFieldId: '' });
+    if (!this.documentTaskPatches().length) { close(); return; }
+    wx.showModal({
+      title: '放弃未保存修改？',
+      content: '已保存的其他修改不会撤销。',
+      confirmText: '放弃',
+      cancelText: '继续编辑',
+      success: (result) => { if (result.confirm) close(); }
+    });
+  },
+
+  persistDocumentPatches(patches) {
+    const group = this.data.dailyPdfReviewGroup || {};
+    if (!group.key) return Promise.reject(new Error('文书运行组无效'));
+    if (!patches.length) return Promise.resolve(null);
+    return api.patchRunDocumentDraft({
+      group_key: group.key,
+      patches,
+      expected_source_hash: this.data.dailyPdfSourceHash || '',
+      client_request_id: `document-draft-${Date.now()}-${Math.floor(Math.random() * 100000)}`
+    }).then((result) => {
+      const preview = result && result.preview || {};
+      this.applyDailyDocumentPreview(preview, {
+        dailyPdfDocumentStale: true,
+        dailyTaskEditorOpen: false,
+        dailyTaskEditor: null,
+        dailyTaskEditorFocusFieldId: ''
+      });
+      return preview;
+    });
+  },
+
+  saveDocumentTaskEdits() {
+    const patches = this.documentTaskPatches();
+    if (!patches.length) {
+      this.setData({ dailyTaskEditorOpen: false, dailyTaskEditor: null, dailyTaskEditorFocusFieldId: '' });
+      wx.showToast({ title: '没有需要保存的修改', icon: 'none' });
+      return;
+    }
+    this.setData({ loading: true });
+    this.persistDocumentPatches(patches)
+      .then(() => {
+        wx.showToast({ title: '草稿已保存，两份文书已同步', icon: 'success' });
+        this.loadAll();
+      })
+      .catch((err) => {
+        const conflict = String(err && (err.backendError || err.error) || '') === 'document_revision_conflict';
+        this.setData({ loading: false });
+        wx.showToast({ title: conflict ? '文书已被他人更新，输入已保留' : (api.errorMessage(err) || '保存失败，输入已保留'), icon: 'none' });
+      })
+      .finally(() => this.setData({ loading: false }));
+  },
+
+  saveDocumentDraft() {
+    if (this.data.dailyTaskEditorOpen && this.documentTaskPatches().length) {
+      this.saveDocumentTaskEdits();
+      return;
+    }
+    wx.showToast({ title: '当前草稿已保存', icon: 'success' });
+  },
+
+  confirmGenerateDocument() {
+    if (this.data.dailyPdfGenerating) return;
+    const group = this.data.dailyPdfReviewGroup || {};
+    if (!group.key) return;
+    const pending = this.data.dailyTaskEditorOpen ? this.documentTaskPatches() : [];
+    this.setData({ dailyPdfGenerating: true, loading: true });
+    const saveFirst = pending.length ? this.persistDocumentPatches(pending) : Promise.resolve(null);
+    saveFirst
+      .then(() => {
+        if (this.data.dailyPdfDraftOnly && this.data.dailyPdfCurrentDraftId) {
+          return api.generateFixedTourDraftDocuments(this.data.dailyPdfCurrentDraftId, {
+            driver_id: Number(group.driver_id),
+            vehicle_id: Number(group.vehicle_id)
+          });
+        }
+        return api.generateRunDocument(group.key);
+      })
+      .then((result) => {
+        const document = result && result.document;
+        if (!document || !document.file_url) throw new Error('PDF生成结果无效');
+        this.setData({
+          dailyPdfReviewDocument: document,
+          fixedTourGeneratedDocument: this.data.dailyPdfDraftOnly ? document : this.data.fixedTourGeneratedDocument,
+          fixedTourMessage: this.data.dailyPdfDraftOnly ? `PDF草稿已生成 · ${Number(document.page_count || 0)}页` : this.data.fixedTourMessage,
+          dailyPdfDocumentStale: false,
+          dailyPdfReviewCanConfirm: document.status !== 'published' && !(this.data.dailyPdfValidationRaw || []).length
+        });
+        wx.showToast({ title: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`, icon: 'success' });
+        this.loadAll();
+      })
+      .catch((err) => {
+        wx.showToast({ title: `草稿已保存，PDF生成失败：${api.errorMessage(err) || '可重试'}`, icon: 'none' });
+      })
+      .finally(() => this.setData({ dailyPdfGenerating: false, loading: false }));
+  },
+
+  openDocumentIssue(e) {
+    const fieldId = String(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.fieldId || '');
+    const orderId = Number(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.orderId || 0);
+    if (!orderId) return;
+    const task = this.findDocumentTask(orderId);
+    const first = fieldId ? this.findDocumentCell(fieldId) : task && Object.values(task.cells || {}).find((item) => item && item.editable);
+    if (!first) return;
+    this.openDocumentCellEditor({ currentTarget: { dataset: { fieldId: first.field_id, orderId } } });
   },
 
   openDailyFieldEdit(e) {
@@ -2037,45 +2422,13 @@ Page({
   },
 
   saveDailyFieldEdit() {
-    const group = this.data.dailyPdfReviewGroup || {};
     const form = this.data.dailyFieldEditForm || {};
-    if (!group.key || !form.field_id) return;
+    if (!form.field_id) return;
     this.setData({ loading: true });
-    api.updateRunDocumentField({
-      group_key: group.key,
-      field_id: form.field_id,
-      value: form.value,
-      expected_source_hash: this.data.dailyPdfSourceHash || ''
-    })
-      .then((result) => {
-        const preview = result && result.preview || {};
-        return Promise.all([api.generateRunDocument(group.key), Promise.resolve(preview)]);
-      })
-      .then(([documentResult, preview]) => {
-        const document = documentResult && documentResult.document;
-        const validation = buildValidationPresentation(preview.validation_issues || []);
-        const nodes = (preview.nodes || []).map((node) => ({
-          ...node,
-          type_label: nodeTypeLabel(node.node_type),
-          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
-        }));
-        this.setData({
-          loading: false,
-          dailyPdfReviewDocument: document,
-          fixedTourGeneratedDocument: this.data.dailyPdfDraftOnly ? document : this.data.fixedTourGeneratedDocument,
-          dailyPdfReviewCanConfirm: !!document && document.status !== 'published' && !validation.raw.length,
-          dailyPdfValidationIssues: validation.issues,
-          dailyPdfValidationRaw: validation.raw,
-          dailyPdfIssueSummary: validation.summary,
-          dailyPdfSourceHash: preview.source_sha256 || '',
-          dailyPdfDocumentRevision: preview.document_revision || '',
-          dailyPdfNodes: nodes,
-          dailyPdfFields: preview.document_fields || [],
-          dailyFieldEditOpen: false,
-          dailyFieldEditIndex: -1,
-          dailyFieldEditForm: null
-        });
-        wx.showToast({ title: '字段已保存并生成新版', icon: 'success' });
+    this.persistDocumentPatches([{ field_id: form.field_id, value: form.value }])
+      .then(() => {
+        this.setData({ loading: false, dailyFieldEditOpen: false, dailyFieldEditIndex: -1, dailyFieldEditForm: null });
+        wx.showToast({ title: '字段草稿已保存', icon: 'success' });
         this.loadAll();
       })
       .catch((err) => {
@@ -2129,53 +2482,20 @@ Page({
   },
 
   saveDailyNodeEdit() {
-    const group = this.data.dailyPdfReviewGroup || {};
     const form = this.data.dailyNodeEditForm || {};
-    if (!group.key || !form.route_node_id || !String(form.planned_location || '').trim()) {
+    if (!form.route_node_id || !String(form.planned_location || '').trim()) {
       wx.showToast({ title: '请填写行程地点', icon: 'none' });
       return;
     }
-    const payload = {
-      group_key: group.key,
-      route_node_id: form.route_node_id,
-      planned_location: String(form.planned_location || '').trim(),
-      expected_source_hash: this.data.dailyPdfSourceHash || ''
-    };
-    if (form.editable_arrival) payload.planned_arrival_at = composeNodeDateTime(form.arrival_date, form.arrival_time);
-    if (form.editable_departure) payload.planned_departure_at = composeNodeDateTime(form.departure_date, form.departure_time);
+    const prefix = `route_node:${form.route_node_id}:`;
+    const patches = [{ field_id: `${prefix}planned_location`, value: String(form.planned_location || '').trim() }];
+    if (form.editable_arrival) patches.push({ field_id: `${prefix}planned_arrival_at`, value: composeNodeDateTime(form.arrival_date, form.arrival_time) });
+    if (form.editable_departure) patches.push({ field_id: `${prefix}planned_departure_at`, value: composeNodeDateTime(form.departure_date, form.departure_time) });
     this.setData({ loading: true });
-    api.updateRunDocumentNode(payload)
-      .then((result) => {
-        const preview = result && result.preview || {};
-        return Promise.all([api.generateRunDocument(group.key), Promise.resolve(preview)]);
-      })
-      .then(([documentResult, preview]) => {
-        const document = documentResult && documentResult.document;
-        const validation = buildValidationPresentation(preview.validation_issues || []);
-        const nodes = (preview.nodes || []).map((node) => ({
-          ...node,
-          type_label: nodeTypeLabel(node.node_type),
-          time_text: `${String(node.planned_arrival_at || '').slice(0, 16).replace('T', ' ')}${node.planned_departure_at ? ` → ${String(node.planned_departure_at).slice(0, 16).replace('T', ' ')}` : ''}`
-        }));
-        this.setData({
-          loading: false,
-          dailyPdfReviewDocument: document,
-          fixedTourGeneratedDocument: this.data.dailyPdfDraftOnly ? document : this.data.fixedTourGeneratedDocument,
-          fixedTourMessage: this.data.dailyPdfDraftOnly && document ? `PDF草稿已生成 · ${Number(document.page_count || 0)}页` : this.data.fixedTourMessage,
-          dailyPdfReviewCanConfirm: !!document && document.status !== 'published' && !validation.raw.length,
-          dailyPdfPreviewUnavailable: false,
-          dailyPdfValidationIssues: validation.issues,
-          dailyPdfValidationRaw: validation.raw,
-          dailyPdfIssueSummary: validation.summary,
-          dailyPdfSourceHash: preview.source_sha256 || '',
-          dailyPdfDocumentRevision: preview.document_revision || '',
-          dailyPdfNodes: nodes,
-          dailyPdfFields: preview.document_fields || [],
-          dailyNodeEditOpen: false,
-          dailyNodeEditIndex: -1,
-          dailyNodeEditForm: null
-        });
-        wx.showToast({ title: '已保存并生成新版', icon: 'success' });
+    this.persistDocumentPatches(patches)
+      .then(() => {
+        this.setData({ loading: false, dailyNodeEditOpen: false, dailyNodeEditIndex: -1, dailyNodeEditForm: null });
+        wx.showToast({ title: '行程草稿已保存', icon: 'success' });
         this.loadAll();
       })
       .catch((err) => {
@@ -2206,7 +2526,18 @@ Page({
 
   openGeneratedDailyPdf() {
     const document = this.data.dailyPdfReviewDocument;
-    if (!document || !document.file_url) return;
+    if (this.data.dailyTaskEditorOpen && this.documentTaskPatches().length) {
+      wx.showToast({ title: '请先保存修改并确认生成当前打印版', icon: 'none' });
+      return;
+    }
+    if (this.data.dailyPdfDocumentStale) {
+      wx.showToast({ title: '打印版落后于草稿，请先确认生成', icon: 'none' });
+      return;
+    }
+    if (!document || !document.file_url) {
+      wx.showToast({ title: '请先确认生成打印版', icon: 'none' });
+      return;
+    }
     api.downloadAndOpenDocument(document.file_url).catch((err) => {
       wx.showToast({ title: (err && err.error) || 'PDF 打开失败', icon: 'none' });
     });

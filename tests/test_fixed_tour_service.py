@@ -286,6 +286,46 @@ class FixedTourServiceTest(unittest.TestCase):
         self.assertEqual(reopened['route_snapshot']['route_name'], '本次专用路线')
         self.assertEqual(reopened['source_preset_version'], 1)
 
+    def test_assigned_internal_draft_can_return_to_route_editor_but_published_assignment_stays_locked(self):
+        actor = {'id': 1, 'tenant_id': 1, 'role': 'operations_manager', 'display_name': '测试运管'}
+        route = self.route()
+        draft = service.create_charter_draft({
+            'source_preset_id': route['id'],
+            'business_start_date': '2026-11-08',
+            'client_request_id': 'assigned-draft-route-edit-1',
+        }, actor)['draft']
+        prepared = service.prepare_charter_draft_workbench(
+            draft['id'], {'driver_id': 1, 'vehicle_id': 1}, actor,
+        )
+        original_ids = [node['route_node_id'] for node in prepared['draft']['route_snapshot']['stops']]
+        edited_stops = [dict(node) for node in prepared['draft']['route_snapshot']['stops']]
+        edited_stops[0]['location_name'] = edited_stops[0]['location'] = '京都站八条口（本次）'
+        updated = service.update_charter_draft(draft['id'], {
+            'business_start_date': '2026-11-08',
+            'route': {'route_name': '本次包车路线', 'stops': edited_stops},
+        }, actor)
+        self.assertEqual(updated['status'], 'assigned_draft')
+        self.assertEqual([node['route_node_id'] for node in updated['route_snapshot']['stops']], original_ids)
+        self.assertEqual(updated['route_snapshot']['stops'][0]['location'], '京都站八条口（本次）')
+        self.assertEqual(service.route_detail(route['id'])['stops'][0]['location_name'], '京都')
+        self.assertEqual(updated['assignment']['id'], prepared['draft']['assignment']['id'])
+        prepared_again = service.prepare_charter_draft_workbench(
+            draft['id'], {'driver_id': 1, 'vehicle_id': 1}, actor,
+        )
+        for view_name in ('acceptance', 'dispatch'):
+            route_rows = prepared_again['preview']['document_views'][view_name]['pages'][0]['route_rows']
+            self.assertEqual(len(route_rows), 2)
+            self.assertEqual(route_rows[0]['location']['display_value'], '京都站八条口（本次）')
+        with closing(database.get_connection()) as conn:
+            revision = conn.execute('SELECT run_revision FROM orders WHERE id = ?', (draft['order_id'],)).fetchone()[0]
+            conn.execute('UPDATE assignments SET published_at = CURRENT_TIMESTAMP WHERE id = ?', (updated['assignment']['id'],))
+            conn.commit()
+        self.assertGreaterEqual(revision, 2)
+        with self.assertRaisesRegex(ValueError, 'fixed_tour_charter_draft_locked'):
+            service.update_charter_draft(draft['id'], {
+                'route': {'route_name': '不应保存', 'stops': edited_stops},
+            }, actor)
+
     def test_one_time_custom_charter_does_not_create_preset(self):
         result = service.create_charter_draft({
             'client_request_id': 'custom-once-1',
@@ -378,6 +418,12 @@ class FixedTourServiceTest(unittest.TestCase):
             'client_request_id': 'phase2c2-quick-1',
         })
         actor = {'id': 1, 'tenant_id': 1, 'role': 'operations_manager', 'username': 'ops'}
+        prepared = service.prepare_charter_draft_workbench(created['draft']['id'], {'driver_id': 1, 'vehicle_id': 1}, actor)
+        self.assertEqual(prepared['group_key'], '2026-11-12:1:1')
+        self.assertEqual(prepared['draft']['status'], 'assigned_draft')
+        self.assertTrue(prepared['preview']['document_views']['acceptance']['pages'])
+        with closing(database.get_connection()) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM driver_run_documents WHERE business_date = '2026-11-12'").fetchone()[0], 0)
         first = service.generate_charter_draft_documents(created['draft']['id'], {'driver_id': 1, 'vehicle_id': 1}, actor)
         second = service.generate_charter_draft_documents(created['draft']['id'], {'driver_id': 1, 'vehicle_id': 1}, actor)
         self.assertEqual(first['group_key'], '2026-11-12:1:1')

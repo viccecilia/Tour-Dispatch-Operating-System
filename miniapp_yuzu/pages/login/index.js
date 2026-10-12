@@ -196,7 +196,10 @@ Page({
       this.setData({ message: '请输入账号和密码。' });
       return;
     }
-    if (loginCode.toLowerCase() === 'admin') {
+    const allowLocalDispatchAdmin = this.data.port === 'dispatch'
+      && this.isDispatchDevtools()
+      && api.getBaseUrl() === api.LOCAL_BASE_URL;
+    if (loginCode.toLowerCase() === 'admin' && !allowLocalDispatchAdmin) {
       this.setData({ message: 'admin / admin123 是平台总后台账号，请在 Web 总后台登录。' });
       return;
     }

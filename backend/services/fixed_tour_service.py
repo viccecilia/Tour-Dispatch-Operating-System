@@ -364,12 +364,16 @@ def charter_dispatch_options(
     return {"business_date": service_date, "drivers": drivers, "vehicles": vehicles}
 
 
-def generate_charter_draft_documents(
+def prepare_charter_draft_workbench(
     draft_id: Any,
     payload: dict[str, Any],
     actor: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Idempotently assign a 2C-1 charter draft and generate its Phase 2B packet."""
+    """Idempotently assign a charter draft and return its editable view model.
+
+    This intentionally does not render a PDF.  Rendering remains an explicit
+    confirmation action in the shared document workbench.
+    """
     tenant_id = get_current_tenant_id()
     draft = charter_draft_detail(draft_id, tenant_id)
     if not draft:
@@ -415,12 +419,11 @@ def generate_charter_draft_documents(
             raise ValueError("fixed_tour_assignment_conflict")
         assignment_result["reused"] = False
     group_key = f"{str(order.get('order_date') or draft.get('business_start_date'))[:10]}:{driver_id}:{vehicle_id}"
-    document = generate_run_document(group_key, actor or {})
     preview = get_run_document_preview(group_key, actor or {})
     with get_connection() as conn:
         conn.execute(
             """UPDATE fixed_tour_charter_drafts
-               SET status = 'document_draft', updated_by_user_id = ?, updated_at = CURRENT_TIMESTAMP
+               SET status = 'assigned_draft', updated_by_user_id = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ? AND tenant_id = ?""",
             (_actor_user_id(actor), int(draft["id"]), tenant_id),
         )
@@ -429,9 +432,28 @@ def generate_charter_draft_documents(
         "draft": charter_draft_detail(draft["id"], tenant_id),
         "assignment": assignment_result,
         "group_key": group_key,
-        "document": document,
         "preview": preview,
     }
+
+
+def generate_charter_draft_documents(
+    draft_id: Any,
+    payload: dict[str, Any],
+    actor: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compatibility entrypoint: prepare the draft, then explicitly render."""
+    prepared = prepare_charter_draft_workbench(draft_id, payload, actor)
+    document = generate_run_document(prepared["group_key"], actor or {})
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE fixed_tour_charter_drafts
+               SET status = 'document_draft', updated_by_user_id = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND tenant_id = ?""",
+            (_actor_user_id(actor), int(prepared["draft"]["id"]), tenant_id),
+        )
+        conn.commit()
+    return {**prepared, "draft": charter_draft_detail(prepared["draft"]["id"], tenant_id), "document": document}
 
 
 def _draft_by_request(client_request_id: str, tenant_id: int) -> dict[str, Any] | None:
@@ -652,8 +674,35 @@ def update_charter_draft(draft_id: Any, payload: dict[str, Any], actor: dict[str
     current = charter_draft_detail(draft_id, tenant_id)
     if not current:
         raise ValueError("fixed_tour_charter_draft_not_found")
-    if current.get("status") != "draft":
+    assignment = current.get("assignment") or {}
+    editable_statuses = {"draft", "assigned_draft", "document_draft"}
+    if current.get("status") not in editable_statuses:
         raise ValueError("fixed_tour_charter_draft_locked")
+    if assignment and (
+        assignment.get("status") != "active"
+        or assignment.get("execution_status") != "draft"
+        or assignment.get("published_at")
+    ):
+        raise ValueError("fixed_tour_charter_draft_locked")
+    if assignment:
+        with get_connection() as conn:
+            published = conn.execute(
+                """
+                SELECT 1 FROM driver_run_documents
+                WHERE tenant_id = ? AND business_date = ? AND driver_id = ? AND vehicle_id = ?
+                  AND status = 'published'
+                LIMIT 1
+                """,
+                (
+                    tenant_id,
+                    str((current.get("order") or {}).get("order_date") or current.get("business_start_date") or "")[:10],
+                    int(assignment["driver_id"]),
+                    int(assignment["vehicle_id"]),
+                ),
+            ).fetchone()
+        if published:
+            raise ValueError("fixed_tour_charter_draft_locked")
+    before_order = dict(current.get("order") or {})
     current_snapshot = current["route_snapshot"]
     raw_route = payload.get("route") if isinstance(payload.get("route"), dict) else payload
     merged_route = {
@@ -691,16 +740,19 @@ def update_charter_draft(draft_id: Any, payload: dict[str, Any], actor: dict[str
     })
     if not updated_order:
         raise ValueError("fixed_tour_charter_order_not_found")
+    if assignment:
+        mark_order_changed(current["order_id"], before_order, updated_order, tenant_id, force=True)
+    next_status = "assigned_draft" if assignment else "draft"
     with get_connection() as conn:
         conn.execute(
             """
             UPDATE fixed_tour_charter_drafts
-            SET trip_type = ?, duration_days = ?, business_start_date = ?, business_end_date = ?,
+            SET status = ?, trip_type = ?, duration_days = ?, business_start_date = ?, business_end_date = ?,
                 route_name = ?, route_snapshot_json = ?, updated_by_user_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ?
             """,
             (
-                snapshot["trip_type"], snapshot["duration_days"], business_start_date, business_end_date,
+                next_status, snapshot["trip_type"], snapshot["duration_days"], business_start_date, business_end_date,
                 snapshot["route_name"], json.dumps(snapshot, ensure_ascii=False), _actor_user_id(actor),
                 current["id"], tenant_id,
             ),

@@ -1,5 +1,6 @@
 const API_STORAGE_KEY = 'yuzu_api_base_url';
 const FORCE_LOCAL_KEY = 'yuzu_force_local_api';
+const DISPATCH_FORCE_LOCAL_KEY = 'wx_dispatch_force_local_api';
 const TRIAL_BASE_URL = 'https://api-trial.taxi-airport.jp';
 const LOCAL_BASE_URL = 'http://127.0.0.1:18765';
 const DEFAULT_BASE_URL = TRIAL_BASE_URL;
@@ -31,8 +32,9 @@ function getRuntimeInfo() {
 }
 
 function syncEnvironmentBaseUrl() {
-  wx.removeStorageSync(FORCE_LOCAL_KEY);
-  setBaseUrl(TRIAL_BASE_URL);
+  const forceLocal = !!wx.getStorageSync(FORCE_LOCAL_KEY)
+    || !!wx.getStorageSync(DISPATCH_FORCE_LOCAL_KEY);
+  setBaseUrl(forceLocal ? LOCAL_BASE_URL : TRIAL_BASE_URL);
 }
 
 function request(path, options = {}) {

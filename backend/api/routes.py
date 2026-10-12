@@ -215,6 +215,7 @@ from backend.services.run_document_service import (
     list_driver_run_documents,
     list_run_groups,
     mark_order_changed as mark_run_order_changed,
+    patch_run_document_draft,
     publish_run_documents,
     review_and_publish_run_document,
     review_run_document,
@@ -231,6 +232,7 @@ from backend.services.fixed_tour_service import (
     create_charter_draft as create_fixed_tour_charter_draft,
     delete_route as delete_fixed_tour_route,
     generate_charter_draft_documents as generate_fixed_tour_charter_draft_documents,
+    prepare_charter_draft_workbench as prepare_fixed_tour_charter_draft_workbench,
     list_routes as list_fixed_tour_routes,
     list_today_runs as list_fixed_tour_today_runs,
     materialize as materialize_fixed_tour,
@@ -1958,6 +1960,18 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             self.send_json(result)
             return
+        if path.startswith("/api/dispatch-mobile/fixed-tour/drafts/") and path.endswith("/prepare-documents"):
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            draft_id = path.split("/")[-2]
+            try:
+                result = prepare_fixed_tour_charter_draft_workbench(draft_id, payload, user)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(result)
+            return
         if path == "/api/fixed-tour/routes":
             user = self.require_role({"admin"})
             if not user:
@@ -2035,6 +2049,29 @@ class ApiHandler(BaseHTTPRequestHandler):
             except (ValueError, TypeError) as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
+            self.send_json({"preview": preview})
+            return
+        if path == "/api/dispatch-mobile/run-documents/draft-patch":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                preview = patch_run_document_draft(payload.get("group_key"), payload, user)
+            except (ValueError, TypeError) as exc:
+                code = str(exc)
+                status = HTTPStatus.CONFLICT if code == "document_revision_conflict" else HTTPStatus.BAD_REQUEST
+                self.send_json({"error": code}, status)
+                return
+            record_audit(
+                "run_document_draft_patch", "run_document_draft", preview.get("run_group_id"),
+                after={
+                    "saved_patch_count": preview.get("saved_patch_count"),
+                    "source_sha256": preview.get("source_sha256"),
+                    "field_ids": [str(item.get("field_id") or "") for item in payload.get("patches") or []],
+                },
+                actor=self.actor_label(), source_path=path,
+                summary=f"Patched {preview.get('saved_patch_count', 0)} document draft fields",
+            )
             self.send_json({"preview": preview})
             return
         if path == "/api/dispatch-mobile/run-documents/node":

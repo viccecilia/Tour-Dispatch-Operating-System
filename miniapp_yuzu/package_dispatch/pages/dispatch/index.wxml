@@ -32,7 +32,7 @@
         <text>查看PDF ›</text>
       </view>
       <view class="tour-safe-spacer"></view>
-      <view class="tour-save-bar"><view class="tour-save-button" bindtap="generateFixedTourDocuments">{{fixedTourSubmitting ? '正在生成…' : '生成文书'}}</view></view>
+      <view class="tour-save-bar"><view class="tour-save-button" bindtap="generateFixedTourDocuments">{{fixedTourSubmitting ? '正在准备…' : (fixedTourCurrentDraft ? '查看草稿' : '生成文书')}}</view></view>
     </view>
 
     <view wx:if="{{fixedTourPickerOpen}}" class="tour-sheet-mask" catchtouchmove="noop" bindtap="closeFixedTourPicker">
@@ -107,23 +107,6 @@
       <view class="daily-import-warning">行程编辑器加载失败，输入内容未提交。请返回快速派车后重新打开。</view>
     </view>
 
-    <!-- Fixed tours use the exact same review state as daily dispatch.  Keep it
-         outside the daily branch so generation never falls through to a native
-         PDF viewer. -->
-    <view wx:if="{{dailyPdfReviewOpen}}" class="daily-fullscreen daily-pdf-review-screen">
-      <view class="daily-fullscreen-head"><view class="daily-back" bindtap="closeDailyPdfReview">‹ 快速派车</view><view class="daily-fullscreen-title">文书草稿</view><view class="daily-review-edit" bindtap="openGeneratedDailyPdf">下载打印</view></view>
-      <scroll-view scroll-y class="daily-fullscreen-body daily-pdf-review-body">
-        <view class="daily-review-title">{{dailyPdfReviewGroup.driver_name || dailyPdfReviewGroup.driver}} · {{dailyPdfReviewGroup.plate_number || dailyPdfReviewGroup.vehicleFull}}</view>
-        <view class="daily-review-summary">{{dailyPdfReviewGroup.business_date}} · {{dailyPdfReviewGroup.order_count || dailyPdfReviewGroup.orders.length}}单</view>
-        <view class="daily-doc-tabs"><view class="{{dailyPdfDocumentTab === 'acceptance' ? 'active' : ''}}" data-tab="acceptance" bindtap="switchDailyPdfDocumentTab">運送引受書</view><view class="{{dailyPdfDocumentTab === 'dispatch' ? 'active' : ''}}" data-tab="dispatch" bindtap="switchDailyPdfDocumentTab">運行指示書</view></view>
-        <view class="daily-pdf-meta">合并 PDF 草稿 V{{dailyPdfReviewDocument.version}} · {{dailyPdfReviewDocument.page_count}} 页</view>
-        <view class="daily-pdf-canvas compact" bindtap="openGeneratedDailyPdf"><view class="daily-pdf-canvas-icon">PDF</view><view class="daily-doc-head">打开原文件／下载打印</view><view>不自动跳出；可在此继续核对节点。</view></view>
-        <view class="daily-doc-fields" wx:if="{{dailyPdfFields.length}}"><view class="daily-doc-head">文书字段</view><view wx:for="{{dailyPdfFields}}" wx:key="field_id" wx:for-index="fieldIndex" class="daily-doc-field {{item.editable ? '' : 'readonly'}}" data-index="{{fieldIndex}}" bindtap="openDailyFieldEdit"><text>{{item.label}}</text><view>{{item.value || '待填写'}}{{item.editable ? ' ›' : ''}}</view></view></view>
-        <view class="daily-node-map" wx:if="{{dailyPdfNodes.length}}"><view class="daily-node-map-head" bindtap="toggleDailyPdfNodes"><view><view class="daily-doc-head">可编辑行程</view><view class="daily-node-map-note">时间和地点同步写回同一草稿。</view></view><view class="daily-node-map-count">{{dailyPdfNodes.length}}点 · {{dailyPdfNodesExpanded ? '收起' : '展开'}}</view></view><view wx:if="{{dailyPdfNodesExpanded}}" wx:for="{{dailyPdfNodes}}" wx:key="route_node_id" wx:for-index="nodeIndex" class="daily-node-row" data-index="{{nodeIndex}}" bindtap="openDailyNodeEdit"><view class="daily-node-sequence">{{nodeIndex + 1}}</view><view class="daily-node-content"><view class="daily-node-location">{{item.planned_location || '待填写地点'}}</view><view class="daily-node-time">{{item.time_text || '时间待填写'}}</view></view><view class="daily-node-edit-link">编辑</view></view></view>
-      </scroll-view>
-      <view wx:if="{{dailyNodeEditOpen}}" class="daily-node-editor-mask"><view class="daily-node-editor"><view class="daily-node-editor-head"><view>{{dailyNodeEditForm.type_label}}</view><view bindtap="closeDailyNodeEdit">关闭</view></view><view class="daily-node-editor-label">地点</view><input class="daily-node-editor-input" value="{{dailyNodeEditForm.planned_location}}" bindinput="onDailyNodeLocation" placeholder="输入车库、机场、酒店、车站或途经地"/><view wx:if="{{dailyNodeEditForm.editable_arrival}}" class="daily-node-editor-line"><view class="daily-node-editor-label">到达</view><picker mode="date" value="{{dailyNodeEditForm.arrival_date}}" data-field="arrival_date" bindchange="onDailyNodeDate"><view class="daily-node-editor-picker">{{dailyNodeEditForm.arrival_date || '选择日期'}}</view></picker><picker mode="time" value="{{dailyNodeEditForm.arrival_time}}" data-field="arrival_time" bindchange="onDailyNodeTime"><view class="daily-node-editor-picker">{{dailyNodeEditForm.arrival_time || '选择时间'}}</view></picker></view><view wx:if="{{dailyNodeEditForm.editable_departure}}" class="daily-node-editor-line"><view class="daily-node-editor-label">离开</view><picker mode="date" value="{{dailyNodeEditForm.departure_date}}" data-field="departure_date" bindchange="onDailyNodeDate"><view class="daily-node-editor-picker">{{dailyNodeEditForm.departure_date || '选择日期'}}</view></picker><picker mode="time" value="{{dailyNodeEditForm.departure_time}}" data-field="departure_time" bindchange="onDailyNodeTime"><view class="daily-node-editor-picker">{{dailyNodeEditForm.departure_time || '选择时间'}}</view></picker></view><view class="daily-node-editor-actions"><view bindtap="closeDailyNodeEdit">取消</view><view class="primary" bindtap="saveDailyNodeEdit">保存并重生成</view></view></view></view>
-      <view wx:if="{{dailyFieldEditOpen}}" class="daily-node-editor-mask"><view class="daily-node-editor"><view class="daily-node-editor-head"><view>{{dailyFieldEditForm.label}}</view><view bindtap="closeDailyFieldEdit">关闭</view></view><view class="daily-node-editor-label">内容</view><input class="daily-node-editor-input" type="{{dailyFieldEditForm.input_type || 'text'}}" value="{{dailyFieldEditForm.value}}" bindinput="onDailyFieldInput" placeholder="请输入文书字段内容"/><view class="daily-node-editor-help">保存后两种文书同步更新，并生成新的草稿版本。</view><view class="daily-node-editor-actions"><view bindtap="closeDailyFieldEdit">取消</view><view class="primary" bindtap="saveDailyFieldEdit">保存并重生成</view></view></view></view>
-    </view>
   </block>
 
   <block wx:if="{{workbenchMode === 'daily'}}">
@@ -168,7 +151,7 @@
           <view wx:if="{{item.hiddenCount}}" class="daily-more">+{{item.hiddenCount}} 单</view>
         </view>
         <view class="daily-run-actions">
-          <view class="daily-primary-action" data-key="{{item.key}}" bindtap="openDailyPdf">{{dailyPdfLoadingKey === item.key ? '生成中…' : (item.workflowStatus === 'published' ? '查看PDF' : '审核PDF')}}</view>
+          <view class="daily-primary-action" data-key="{{item.key}}" bindtap="openDailyPdf">{{dailyPdfLoadingKey === item.key ? '加载中…' : (item.workflowStatus === 'published' ? '查看PDF' : '核对文书')}}</view>
         </view>
         <view wx:if="{{item.documentStatusText}}" class="daily-doc-state">{{item.documentStatusText}}</view>
       </view>
@@ -218,92 +201,6 @@
       </view>
     </view>
 
-    <view wx:if="{{dailyPdfReviewOpen}}" class="daily-fullscreen daily-pdf-review-screen">
-      <view class="daily-fullscreen-head">
-        <view class="daily-back" bindtap="closeDailyPdfReview">‹ {{dailyPdfDraftOnly ? '快速派车' : '日配'}}</view>
-        <view class="daily-fullscreen-title">{{dailyPdfReviewIndex + 1}} / {{dailyPdfReviewTotal}} 司机</view>
-        <view wx:if="{{!dailyPdfPreviewUnavailable}}" class="daily-review-edit" bindtap="editDailyPdf">修改</view>
-        <view wx:else class="daily-review-edit muted">预览受限</view>
-      </view>
-      <scroll-view scroll-y class="daily-fullscreen-body daily-pdf-review-body">
-        <view class="daily-review-title">{{dailyPdfReviewGroup.driver_name || dailyPdfReviewGroup.driver}} · {{dailyPdfReviewGroup.plate_number || dailyPdfReviewGroup.vehicleFull}}</view>
-        <view class="daily-review-summary">{{dailyPdfReviewGroup.business_date}} · {{dailyPdfReviewGroup.order_count || dailyPdfReviewGroup.orders.length}}单</view>
-        <view class="daily-pdf-file">{{dailyPdfReviewDocument.file_name}}</view>
-        <view class="daily-pdf-meta">合并 PDF 草稿 V{{dailyPdfReviewDocument.version}} · {{dailyPdfReviewDocument.page_count}} 页</view>
-        <view class="daily-pdf-canvas compact" bindtap="openGeneratedDailyPdf">
-          <view class="daily-pdf-canvas-icon">PDF</view>
-          <view class="daily-doc-head">打开合并PDF</view>
-          <view>《運送引受書》＋《運行指示書》连续查看</view>
-          <view class="daily-doc-note">缺项草稿也可预览；正式发布仍须完成核对。</view>
-        </view>
-        <view wx:if="{{dailyPdfPreviewUnavailable}}" class="daily-pdf-issues">PDF 已生成，可打开检查；当前 Trial 后端缺少文书预览接口，暂不能编辑节点或确认发布。</view>
-        <view wx:if="{{dailyPdfIssueSummary.length}}" class="daily-pdf-issues">
-          <view class="daily-pdf-fold-head" bindtap="toggleDailyPdfIssues"><view class="daily-doc-head">待核对摘要 · {{dailyPdfValidationRaw.length}}项</view><text>{{dailyPdfIssuesExpanded ? '收起' : '展开'}}</text></view>
-          <view class="daily-issue-summary-row" wx:for="{{dailyPdfIssueSummary}}" wx:key="label"><strong>{{item.label}}</strong><text>{{item.count}}项 · {{item.detail}}</text></view>
-          <view wx:if="{{dailyPdfIssuesExpanded}}" class="daily-issue-details">
-            <view wx:for="{{dailyPdfValidationIssues}}" wx:key="code">{{item.message}}</view>
-          </view>
-        </view>
-        <view class="daily-doc-fields" wx:if="{{dailyPdfFields.length}}">
-          <view class="daily-doc-head">文书字段</view>
-          <view wx:for="{{dailyPdfFields}}" wx:key="field_id" wx:for-index="fieldIndex" class="daily-doc-field {{item.editable ? '' : 'readonly'}}" data-index="{{fieldIndex}}" bindtap="openDailyFieldEdit"><text>{{item.label}}</text><view>{{item.value || '待填写'}}{{item.editable ? ' ›' : ''}}</view></view>
-        </view>
-        <view wx:if="{{dailyPdfNodes.length}}" class="daily-node-map">
-          <view class="daily-node-map-head" bindtap="toggleDailyPdfNodes">
-            <view>
-              <view class="daily-doc-head">详细行程节点</view>
-              <view class="daily-node-map-note">按需展开；修改会同步两种文书并生成新版本。</view>
-            </view>
-            <view class="daily-node-map-count">{{dailyPdfNodes.length}}点 · {{dailyPdfNodesExpanded ? '收起' : '展开'}}</view>
-          </view>
-          <view wx:if="{{dailyPdfNodesExpanded}}" wx:for="{{dailyPdfNodes}}" wx:key="route_node_id" wx:for-index="nodeIndex" class="daily-node-row" data-index="{{nodeIndex}}" bindtap="openDailyNodeEdit">
-            <view class="daily-node-sequence">{{nodeIndex + 1}}</view>
-            <view class="daily-node-content">
-              <view class="daily-node-title"><text>{{item.type_label}}</text><text>{{item.document_kind === 'charter' ? '包车' : (item.document_kind === 'airport' ? '机场接送' : '运行')}}</text></view>
-              <view class="daily-node-location">{{item.planned_location || '待填写地点'}}</view>
-              <view class="daily-node-time">{{item.time_text || '时间待填写'}}</view>
-            </view>
-            <view class="daily-node-edit-link">{{dailyPdfReviewDocument.status === 'published' ? '新版本' : '编辑'}}</view>
-          </view>
-        </view>
-      </scroll-view>
-      <view wx:if="{{dailyNodeEditOpen}}" class="daily-node-editor-mask">
-        <view class="daily-node-editor">
-          <view class="daily-node-editor-head"><view>{{dailyNodeEditForm.type_label}}</view><view bindtap="closeDailyNodeEdit">关闭</view></view>
-          <view class="daily-node-editor-label">地点</view>
-          <input class="daily-node-editor-input" value="{{dailyNodeEditForm.planned_location}}" bindinput="onDailyNodeLocation" placeholder="输入车库、机场、酒店、车站或途经地" />
-          <view wx:if="{{dailyNodeEditForm.editable_arrival}}" class="daily-node-editor-line">
-            <view class="daily-node-editor-label">到达</view>
-            <picker mode="date" value="{{dailyNodeEditForm.arrival_date}}" data-field="arrival_date" bindchange="onDailyNodeDate"><view class="daily-node-editor-picker">{{dailyNodeEditForm.arrival_date || '选择日期'}}</view></picker>
-            <picker mode="time" value="{{dailyNodeEditForm.arrival_time}}" data-field="arrival_time" bindchange="onDailyNodeTime"><view class="daily-node-editor-picker">{{dailyNodeEditForm.arrival_time || '选择时间'}}</view></picker>
-          </view>
-          <view wx:if="{{dailyNodeEditForm.editable_departure}}" class="daily-node-editor-line">
-            <view class="daily-node-editor-label">离开</view>
-            <picker mode="date" value="{{dailyNodeEditForm.departure_date}}" data-field="departure_date" bindchange="onDailyNodeDate"><view class="daily-node-editor-picker">{{dailyNodeEditForm.departure_date || '选择日期'}}</view></picker>
-            <picker mode="time" value="{{dailyNodeEditForm.departure_time}}" data-field="departure_time" bindchange="onDailyNodeTime"><view class="daily-node-editor-picker">{{dailyNodeEditForm.departure_time || '选择时间'}}</view></picker>
-          </view>
-          <view class="daily-node-editor-help">修改后先检查时间顺序；保存会保留旧 PDF，并创建新版本。</view>
-          <view class="daily-node-editor-actions"><view bindtap="closeDailyNodeEdit">取消</view><view class="primary" bindtap="saveDailyNodeEdit">保存并重生成</view></view>
-        </view>
-      </view>
-      <view wx:if="{{dailyFieldEditOpen}}" class="daily-node-editor-mask">
-        <view class="daily-node-editor">
-          <view class="daily-node-editor-head"><view>{{dailyFieldEditForm.label}}</view><view bindtap="closeDailyFieldEdit">关闭</view></view>
-          <view class="daily-node-editor-label">内容</view>
-          <input class="daily-node-editor-input" type="{{dailyFieldEditForm.input_type || 'text'}}" value="{{dailyFieldEditForm.value}}" bindinput="onDailyFieldInput" placeholder="请输入文书字段内容" />
-          <view class="daily-node-editor-help">保存后两种文书同步更新，并生成新的草稿版本。</view>
-          <view class="daily-node-editor-actions"><view bindtap="closeDailyFieldEdit">取消</view><view class="primary" bindtap="saveDailyFieldEdit">保存并重生成</view></view>
-        </view>
-      </view>
-      <view class="daily-review-footer daily-pdf-review-footer">
-        <view class="daily-review-nav {{dailyPdfReviewIndex <= 0 ? 'disabled' : ''}}" bindtap="previousDailyPdfDriver">上一位</view>
-        <view wx:if="{{dailyPdfDraftOnly}}" class="daily-review-confirm disabled">草稿已生成</view>
-        <view wx:elif="{{dailyPdfReviewCanConfirm}}" class="daily-review-confirm" bindtap="confirmDailyPdfReview">确认草稿</view>
-        <view wx:else class="daily-review-confirm disabled">{{dailyPdfPreviewUnavailable ? '预览接口待更新' : (dailyPdfReviewGroup.workflowStatus === 'published' ? '已发布' : '请先补全')}}</view>
-        <view class="daily-review-nav {{dailyPdfReviewIndex + 1 >= dailyPdfReviewTotal ? 'disabled' : ''}}" bindtap="nextDailyPdfDriver">下一位</view>
-      </view>
-    </view>
-
     <view wx:if="{{dailyReviewOpen}}" class="daily-fullscreen daily-review-screen">
       <view class="daily-fullscreen-head">
         <view class="daily-back" bindtap="closeDailyReview">‹ 返回</view>
@@ -333,16 +230,97 @@
           <view class="daily-doc-head">运行文件预览</view>
           <view>运行引受书：按行程生成，可多页</view>
           <view>运行指示书：本车当日 1 份</view>
-          <view class="daily-doc-note">保存后会修改服务器源订单、作废旧草稿，并自动生成新版 PDF。</view>
+          <view class="daily-doc-note">保存后会更新文书草稿并作废旧审核状态；PDF仅在文书工作台点击“确认生成”时生成。</view>
         </view>
       </scroll-view>
       <view class="daily-review-footer">
         <view class="daily-review-nav {{dailyReviewOrderIndex <= 0 ? 'disabled' : ''}}" bindtap="previousDailyReviewOrder">上一单</view>
-        <view class="daily-review-confirm" bindtap="confirmDailyReview">保存并重生成</view>
+        <view class="daily-review-confirm" bindtap="confirmDailyReview">保存草稿</view>
         <view class="daily-review-nav {{dailyReviewOrderIndex + 1 >= dailyReviewGroup.orders.length ? 'disabled' : ''}}" bindtap="nextDailyReviewOrder">下一单</view>
       </view>
     </view>
   </block>
+
+  <!-- Shared daily/fixed document workbench.  The body is a data-driven paper,
+       not a PDF image or a field list. -->
+  <view wx:if="{{dailyPdfReviewOpen}}" class="daily-fullscreen daily-document-workbench">
+    <view class="daily-fullscreen-head document-workbench-head">
+      <view class="daily-back" bindtap="closeDailyPdfReview">关闭</view>
+      <view class="daily-fullscreen-title">{{dailyPdfReviewGroup.driver_name || dailyPdfReviewGroup.driver}} · {{dailyPdfReviewGroup.vehicle || dailyPdfReviewGroup.plate_number || dailyPdfReviewGroup.vehicleFull}} · {{dailyPdfReviewGroup.business_date}}</view>
+      <view class="daily-review-edit {{dailyPdfReviewDocument && dailyPdfReviewDocument.file_url ? '' : 'muted'}}" bindtap="openGeneratedDailyPdf">下载打印</view>
+    </view>
+    <view class="document-workbench-toolbar">
+      <view class="daily-doc-tabs"><view class="{{dailyPdfDocumentTab === 'acceptance' ? 'active' : ''}}" data-tab="acceptance" bindtap="switchDailyPdfDocumentTab">運送引受書</view><view class="{{dailyPdfDocumentTab === 'dispatch' ? 'active' : ''}}" data-tab="dispatch" bindtap="switchDailyPdfDocumentTab">運行指示書</view></view>
+      <view class="document-zoom"><text data-delta="-25" bindtap="changeDailyDocumentZoom">－</text><text data-reset="1" bindtap="changeDailyDocumentZoom">{{dailyPdfZoom}}%</text><text data-delta="25" bindtap="changeDailyDocumentZoom">＋</text></view>
+    </view>
+    <scroll-view scroll-y scroll-x enhanced show-scrollbar="{{false}}" scroll-into-view="{{dailyPdfScrollAnchor}}" class="document-workbench-scroll" bindscroll="rememberDailyDocumentScroll">
+      <view wx:if="{{dailyPdfPreviewUnavailable}}" class="daily-pdf-issues">当前后端版本未返回文书正文，不能安全编辑。请连接与本次小程序代码匹配的后端后重试；已生成文件仍可下载。</view>
+      <view wx:if="{{dailyPdfVisiblePages && dailyPdfVisiblePages.length}}" class="document-paper-stage zoom-{{dailyPdfZoom}}">
+        <view wx:for="{{dailyPdfVisiblePages}}" wx:key="page_index" class="document-paper" id="document-page-{{item.page_index}}">
+          <view class="document-paper-title">{{dailyPdfActiveView.title}}</view>
+          <view class="document-paper-meta"><text>{{dailyPdfActiveView.business_date}}</text><text>第 {{item.page_index}} / {{item.page_total}} 页</text></view>
+
+          <block wx:if="{{dailyPdfDocumentTab === 'acceptance'}}">
+            <view class="document-grid applicants"><view class="document-label">申込者</view><view class="document-value"><text wx:for="{{dailyPdfActiveView.applicants}}" wx:key="slot">{{item.slot}}. {{item.name}}</text></view></view>
+            <view class="document-grid"><view class="document-label">運行起止</view><view class="document-value">{{dailyPdfActiveView.operation.start_location}} {{dailyPdfActiveView.operation.start_at}} → {{dailyPdfActiveView.operation.end_location}} {{dailyPdfActiveView.operation.end_at}}</view></view>
+            <view wx:if="{{item.route_rows && item.route_rows.length}}" class="document-route-table">
+              <view class="document-table-row header"><text>No.</text><text>地点</text><text>到着</text><text>出発</text></view>
+              <view wx:for="{{item.route_rows}}" wx:key="route_node_id" wx:for-item="route" class="document-table-row">
+                <text>{{route.sequence}}</text>
+                <view class="document-cell editable" data-field-id="{{route.location.field_id}}" data-order-id="{{route.location.order_id}}" bindtap="openDocumentCellEditor">{{route.location.display_value === '' ? '待填写' : route.location.display_value}}</view>
+                <view class="document-cell editable" data-field-id="{{route.arrival.field_id}}" data-order-id="{{route.arrival.order_id}}" bindtap="openDocumentCellEditor">{{route.arrival.display_value === '' ? '待填写' : route.arrival.display_value}}</view>
+                <view class="document-cell editable" data-field-id="{{route.departure.field_id}}" data-order-id="{{route.departure.order_id}}" bindtap="openDocumentCellEditor">{{route.departure.display_value === '' ? '待填写' : route.departure.display_value}}</view>
+              </view>
+            </view>
+            <view wx:else class="document-task-table acceptance">
+              <view class="document-task-head"><text>No.</text><text>配車時刻</text><text>乗車地</text><text>降車地</text><text>運賃</text></view>
+              <view wx:for="{{item.tasks}}" wx:key="order_id" wx:for-item="task" class="document-task-row" id="document-order-{{task.order_id}}">
+                <text>{{task.sequence}}</text>
+                <view class="document-cell editable" data-field-id="{{task.cells.pickup_time.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.pickup_time.display_value === '' ? '待填写' : task.cells.pickup_time.display_value}}</view>
+                <view class="document-cell editable" data-field-id="{{task.cells.pickup_location.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.pickup_location.display_value === '' ? '待填写' : task.cells.pickup_location.display_value}}</view>
+                <view class="document-cell editable" data-field-id="{{task.cells.dropoff_location.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.dropoff_location.display_value === '' ? '待填写' : task.cells.dropoff_location.display_value}}</view>
+                <view class="document-cell editable" data-field-id="{{task.cells.price.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.price.display_value === '' ? '待填写' : task.cells.price.display_value}}</view>
+              </view>
+            </view>
+            <view class="document-grid"><view class="document-label">会社情報</view><view class="document-value">{{dailyPdfActiveView.company.company_name}}　{{dailyPdfActiveView.company.address}}</view></view>
+          </block>
+
+          <block wx:else>
+            <view class="document-grid"><view class="document-label">運転者・車両</view><view class="document-value">{{dailyPdfActiveView.driver.name}}　{{dailyPdfActiveView.vehicle.plate_number}}　{{dailyPdfActiveView.vehicle.vehicle_type}}</view></view>
+            <view class="document-grid"><view class="document-label">運行起止</view><view class="document-value">{{dailyPdfActiveView.operation.start_location}} {{dailyPdfActiveView.operation.start_at}} → {{dailyPdfActiveView.operation.end_location}} {{dailyPdfActiveView.operation.end_at}}</view></view>
+            <view wx:if="{{item.route_rows && item.route_rows.length}}" class="document-route-table"><view class="document-table-row header"><text>No.</text><text>運行地点</text><text>到着</text><text>出発</text></view><view wx:for="{{item.route_rows}}" wx:key="route_node_id" wx:for-item="route" class="document-table-row"><text>{{route.sequence}}</text><view class="document-cell editable" data-field-id="{{route.location.field_id}}" data-order-id="{{route.location.order_id}}" bindtap="openDocumentCellEditor">{{route.location.display_value === '' ? '待填写' : route.location.display_value}}</view><view class="document-cell editable" data-field-id="{{route.arrival.field_id}}" data-order-id="{{route.arrival.order_id}}" bindtap="openDocumentCellEditor">{{route.arrival.display_value === '' ? '待填写' : route.arrival.display_value}}</view><view class="document-cell editable" data-field-id="{{route.departure.field_id}}" data-order-id="{{route.departure.order_id}}" bindtap="openDocumentCellEditor">{{route.departure.display_value === '' ? '待填写' : route.departure.display_value}}</view></view></view>
+            <view wx:else class="document-task-table dispatch"><view class="document-task-head"><text>No.</text><text>時刻</text><text>運行経路</text><text>契約相手</text><text>連絡先</text></view><view wx:for="{{item.tasks}}" wx:key="order_id" wx:for-item="task" class="document-task-row" id="document-order-{{task.order_id}}"><text>{{task.sequence}}</text><view class="document-cell editable" data-field-id="{{task.cells.pickup_time.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.pickup_time.display_value === '' ? '待填写' : task.cells.pickup_time.display_value}}</view><view class="document-cell editable" data-field-id="{{task.cells.pickup_location.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.route_text || '待填写'}}</view><view class="document-cell editable" data-field-id="{{task.cells.contract_party.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.contract_party.display_value === '' ? '待填写' : task.cells.contract_party.display_value}}</view><view class="document-cell editable" data-field-id="{{task.cells.contact.field_id}}" data-order-id="{{task.order_id}}" bindtap="openDocumentCellEditor">{{task.cells.contact.display_value === '' ? '待填写' : task.cells.contact.display_value}}</view></view></view>
+            <view class="document-safety"><view class="document-label">安全指示</view><view class="document-cell editable" data-field-id="{{dailyPdfActiveView.safety.waiting_place.field_id}}" bindtap="openDocumentCellEditor">待機：{{dailyPdfActiveView.safety.waiting_place.display_value || '待填写'}}</view><view class="document-cell editable" data-field-id="{{dailyPdfActiveView.safety.attention_place.field_id}}" bindtap="openDocumentCellEditor">注意：{{dailyPdfActiveView.safety.attention_place.display_value || '待填写'}}</view><view class="document-cell editable" data-field-id="{{dailyPdfActiveView.safety.other_instruction.field_id}}" bindtap="openDocumentCellEditor">其他：{{dailyPdfActiveView.safety.other_instruction.display_value || '待填写'}}</view></view>
+            <view class="document-signature">指示者：{{dailyPdfActiveView.operations_manager}}　確認欄：　　　　　　　　　</view>
+          </block>
+        </view>
+      </view>
+    </scroll-view>
+    <view class="document-workbench-bottom">
+      <view class="document-issue-compact" bindtap="toggleDailyPdfIssues">待核对 {{dailyPdfValidationRaw.length}} 项 · {{dailyPdfIssuesExpanded ? '收起' : '定位查看'}}</view>
+      <view wx:if="{{dailyPdfIssuesExpanded}}" class="document-issue-list"><view wx:for="{{dailyPdfValidationIssues}}" wx:key="code" data-field-id="{{item.field_id}}" data-order-id="{{item.order_id}}" bindtap="openDocumentIssue">{{item.message}}</view></view>
+      <view class="document-workbench-actions"><view class="secondary" bindtap="saveDocumentDraft">保存草稿</view><view class="primary" bindtap="confirmGenerateDocument">{{dailyPdfGenerating ? '生成中…' : '确认生成'}}</view></view>
+      <view wx:if="{{dailyPdfReviewDocument}}" class="document-version-state">打印版 V{{dailyPdfReviewDocument.version}} · {{dailyPdfReviewDocument.page_count}}页{{dailyPdfDocumentStale ? ' · 已落后于当前草稿' : ''}}</view>
+    </view>
+    <view wx:if="{{dailyTaskEditorOpen}}" class="daily-node-editor-mask" catchtouchmove="noop">
+      <scroll-view scroll-y class="document-task-editor">
+        <view class="daily-node-editor-head"><view>{{dailyTaskEditor.title}}</view><view bindtap="closeDocumentTaskEditor">关闭</view></view>
+        <view class="document-task-editor-route">{{dailyTaskEditor.route_text}}</view>
+        <view wx:if="{{dailyPdfDraftOnly}}" class="document-route-edit-entry" bindtap="editCurrentCharterRoute">调整本次包车路线、节点顺序与日期 ›</view>
+        <view wx:for="{{dailyTaskEditor.fields}}" wx:key="field_id" class="document-task-editor-field {{item.field_id === dailyTaskEditorFocusFieldId ? 'focused' : ''}}"><view class="daily-node-editor-label">{{item.label}}</view><input class="daily-node-editor-input" type="{{item.input_type === 'number' ? 'digit' : 'text'}}" value="{{item.value}}" data-field-id="{{item.field_id}}" bindinput="onDocumentTaskFieldInput" placeholder="待填写"/></view>
+        <view wx:if="{{dailyTaskEditor.apply_options.length}}" class="document-apply-panel">
+          <view class="document-apply-title">应用到其他订单（默认不选）</view>
+          <view class="document-apply-help">只有勾选的订单会在本次保存中同步；任一项失败则全部不写入。</view>
+          <view wx:for="{{dailyTaskEditor.apply_options}}" wx:key="order_id" class="document-apply-option {{item.selected ? 'selected' : ''}}" data-order-id="{{item.order_id}}" bindtap="toggleDocumentApplyTarget">
+            <text class="document-apply-check">{{item.selected ? '✓' : ''}}</text>
+            <view><strong>第{{item.sequence}}单</strong><text>{{item.route_text}}</text><text>当前：{{item.current_value === '' ? '未填写' : item.current_value}}</text></view>
+          </view>
+        </view>
+        <view class="daily-node-editor-help">一次保存本单修改；两种文书同步。保存草稿不会生成PDF。</view>
+        <view class="daily-node-editor-actions"><view bindtap="closeDocumentTaskEditor">取消</view><view class="primary" bindtap="saveDocumentTaskEdits">保存修改</view></view>
+      </scroll-view>
+    </view>
+  </view>
 
   <block wx:if="{{workbenchMode === 'batch'}}">
   <view wx:if="{{importOpen}}" class="panel import-panel">

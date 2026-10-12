@@ -115,19 +115,50 @@ class Phase2C1MiniappContractTest(unittest.TestCase):
         self.assertIn("dailyPdfSourceMode: 'fixed'", self.page_js)
         self.assertIn("dailyPdfSourceMode: 'daily'", self.page_js)
         self.assertIn("expected_source_hash", self.page_js)
-        self.assertIn("updateRunDocumentField", self.api_js)
-        self.assertIn("/api/dispatch-mobile/run-documents/field", self.api_js)
-        self.assertIn("openDailyFieldEdit", self.page_wxml)
-        self.assertIn("saveDailyFieldEdit", self.page_wxml)
-        self.assertIn("字段已保存并生成新版", self.page_js)
-        self.assertIn("确认草稿", self.page_wxml)
+        self.assertIn("patchRunDocumentDraft", self.api_js)
+        self.assertIn("/api/dispatch-mobile/run-documents/draft-patch", self.api_js)
+        self.assertIn("openDocumentCellEditor", self.page_wxml)
+        self.assertIn("saveDocumentTaskEdits", self.page_wxml)
+        self.assertIn("草稿已保存，两份文书已同步", self.page_js)
+        self.assertIn("确认生成", self.page_wxml)
+        self.assertIn("document-paper", self.page_wxml)
+        self.assertEqual(self.page_wxml.count('wx:if="{{dailyPdfReviewOpen}}"'), 1)
         self.assertNotIn("确认并发布", self.page_wxml)
 
-    def test_pdf_generation_survives_older_trial_without_preview_route(self):
-        self.assertIn("preview_unavailable", self.page_js)
+    def test_document_workbench_requires_preview_and_separates_generate(self):
+        self.assertIn("api.runDocumentPreview(key)", self.page_js)
         self.assertIn("dailyPdfPreviewUnavailable", self.page_js)
-        self.assertIn("PDF 已生成，可打开检查", self.page_wxml)
-        self.assertIn("预览接口待更新", self.page_wxml)
+        self.assertIn("不能安全编辑", self.page_wxml)
+        self.assertIn("prepareFixedTourDraftDocuments", self.page_js)
+        self.assertIn("confirmGenerateDocument", self.page_js)
+        start = self.page_js.index("saveDocumentTaskEdits()")
+        end = self.page_js.index("saveDocumentDraft()", start)
+        self.assertNotIn("generateRunDocument", self.page_js[start:end])
+
+    def test_reusable_fields_require_explicit_atomic_apply_selection(self):
+        self.assertIn("应用到其他订单（默认不选）", self.page_wxml)
+        self.assertIn("toggleDocumentApplyTarget", self.page_wxml)
+        self.assertIn("apply_source_field_id", self.page_js)
+        self.assertIn("apply_options", self.page_js)
+        self.assertIn("documentTaskPatches()", self.page_js)
+        for field_name in ("price_jpy", "fare_jpy", "service_fee_jpy", "advance_jpy", "toll_fee_jpy", "parking_fee_jpy"):
+            self.assertIn(field_name, self.page_js)
+
+    def test_charter_workbench_reuses_current_draft_route_editor(self):
+        self.assertIn("调整本次包车路线、节点顺序与日期", self.page_wxml)
+        self.assertIn("editCurrentCharterRoute", self.page_js)
+        self.assertIn("api.fixedTourCharterDraft", self.page_js)
+        self.assertIn("this.openFixedTourDraft(draft)", self.page_js)
+        self.assertIn("fixedTourReturnToDocumentWorkbench: true", self.page_js)
+        self.assertIn("returnToFixedTourDocumentWorkbench", self.page_js)
+        self.assertIn("api.prepareFixedTourDraftDocuments(draft.id", self.page_js)
+        self.assertIn("dailyPdfDocumentTab: documentTab", self.page_js)
+        self.assertIn("dailyPdfScrollAnchor: scrollAnchor", self.page_js)
+
+    def test_validation_navigation_uses_stable_order_and_field_ids(self):
+        self.assertIn("documentValidationCellName", self.page_js)
+        self.assertIn("order_sequence", self.page_js)
+        self.assertIn('data-field-id="{{item.field_id}}"', self.page_wxml)
 
 
 if __name__ == "__main__":

@@ -342,6 +342,155 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         field = next(item for item in edited["document_fields"] if item["field_id"] == "operation:safety:waiting_place")
         self.assertEqual(field["value"], "第2ターミナル待機場")
 
+    def test_workbench_views_share_renderer_page_plan_and_stable_cells(self):
+        order_ids = [self.add_order(minute=index * 5, suffix=f"WB{index}", price=0 if index == 2 else 12460) for index in range(11)]
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        preview = service.get_run_document_preview(key, self.actor)
+        views = preview["document_views"]
+        self.assertEqual(preview["template_version"], service.DOCUMENT_RENDERER_VERSION)
+        self.assertEqual([len(page["order_ids"]) for page in preview["page_plan"]], [10, 1])
+        self.assertEqual(
+            [page["order_ids"] for page in views["acceptance"]["pages"]],
+            [page["order_ids"] for page in views["dispatch"]["pages"]],
+        )
+        third = views["acceptance"]["pages"][0]["tasks"][2]
+        self.assertEqual(third["order_id"], order_ids[2])
+        self.assertEqual(third["cells"]["price"]["display_value"], "0")
+        self.assertTrue(third["cells"]["pickup_location"]["field_id"].startswith("route_node:"))
+
+    def test_atomic_document_patch_saves_multiple_fields_without_rendering(self):
+        first = self.add_order(suffix="PATCH-A")
+        second = self.add_order(minute=60, suffix="PATCH-B")
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        preview = service.get_run_document_preview(key, self.actor)
+        pickup = next(node for node in preview["nodes"] if node["order_id"] == first and node["node_type"] == "pickup")
+        with closing(database.get_connection()) as conn:
+            before_documents = conn.execute("SELECT COUNT(*) FROM driver_run_documents").fetchone()[0]
+        updated = service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "client_request_id": "workbench-multi-field-1",
+            "patches": [
+                {"field_id": f"route_node:{pickup['route_node_id']}:planned_location", "value": "ホテル日航大阪 正面玄関"},
+                {"field_id": f"route_node:{pickup['route_node_id']}:planned_departure_at", "value": "2026-07-24T09:15:00"},
+                {"field_id": f"order:{first}:applicant_contact", "value": "06-1234-5678"},
+            ],
+        }, self.actor)
+        self.assertEqual(updated["saved_patch_count"], 3)
+        changed_node = next(node for node in updated["nodes"] if node["route_node_id"] == pickup["route_node_id"])
+        self.assertEqual(changed_node["planned_location"], "ホテル日航大阪 正面玄関")
+        self.assertEqual(changed_node["planned_departure_at"], "2026-07-24T09:15:00")
+        field = next(item for item in updated["document_fields"] if item["field_id"] == f"order:{first}:applicant_contact")
+        self.assertEqual(field["value"], "06-1234-5678")
+        with closing(database.get_connection()) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM driver_run_documents").fetchone()[0], before_documents)
+            untouched = conn.execute("SELECT guest_contact FROM orders WHERE id = ?", (second,)).fetchone()
+        self.assertFalse(untouched["guest_contact"])
+
+        replay = service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "client_request_id": "workbench-multi-field-1",
+            "patches": [
+                {"field_id": f"route_node:{pickup['route_node_id']}:planned_location", "value": "ホテル日航大阪 正面玄関"},
+                {"field_id": f"route_node:{pickup['route_node_id']}:planned_departure_at", "value": "2026-07-24T09:15:00"},
+                {"field_id": f"order:{first}:applicant_contact", "value": "06-1234-5678"},
+            ],
+        }, self.actor)
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(replay["saved_patch_count"], 0)
+
+    def test_atomic_document_patch_rolls_back_when_any_field_is_invalid(self):
+        order_id = self.add_order(suffix="PATCH-ROLLBACK")
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        preview = service.get_run_document_preview(key, self.actor)
+        with self.assertRaisesRegex(ValueError, "document_field_not_editable"):
+            service.patch_run_document_draft(key, {
+                "expected_source_hash": preview["source_sha256"],
+                "patches": [
+                    {"field_id": f"order:{order_id}:applicant_contact", "value": "should-not-save"},
+                    {"field_id": f"order:{order_id}:internal_secret", "value": "blocked"},
+                ],
+            }, self.actor)
+        with closing(database.get_connection()) as conn:
+            row = conn.execute("SELECT guest_contact FROM orders WHERE id = ?", (order_id,)).fetchone()
+        self.assertFalse(row["guest_contact"])
+
+    def test_atomic_document_patch_covers_fee_breakdown_without_confirming_price(self):
+        order_id = self.add_order(suffix="PATCH-FEES", price=1000)
+        with closing(database.get_connection()) as conn:
+            conn.execute(
+                "UPDATE orders SET price_confirmed = 1, fare_jpy = 800, service_fee_jpy = 200 WHERE id = ?",
+                (order_id,),
+            )
+            conn.commit()
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        preview = service.get_run_document_preview(key, self.actor)
+        fee_fields = {
+            item["field_id"]: item["value"]
+            for item in preview["document_fields"]
+            if str(item["field_id"]).startswith(f"order:{order_id}:")
+        }
+        self.assertEqual(fee_fields[f"order:{order_id}:fare_jpy"], 800)
+        self.assertEqual(fee_fields[f"order:{order_id}:service_fee_jpy"], 200)
+        updated = service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "patches": [
+                {"field_id": f"order:{order_id}:fare_jpy", "value": "900"},
+                {"field_id": f"order:{order_id}:service_fee_jpy", "value": "250"},
+                {"field_id": f"order:{order_id}:advance_jpy", "value": "300"},
+                {"field_id": f"order:{order_id}:toll_fee_jpy", "value": "400"},
+                {"field_id": f"order:{order_id}:parking_fee_jpy", "value": "500"},
+                {"field_id": f"order:{order_id}:price_jpy", "value": "2350"},
+            ],
+        }, self.actor)
+        self.assertEqual(updated["saved_patch_count"], 6)
+        with closing(database.get_connection()) as conn:
+            row = conn.execute(
+                "SELECT price_jpy, fare_jpy, service_fee_jpy, document_advance_jpy, toll_fee_jpy, parking_fee_jpy, price_confirmed FROM orders WHERE id = ?",
+                (order_id,),
+            ).fetchone()
+        self.assertEqual(tuple(row), (2350, 900, 250, 300, 400, 500, 0))
+
+        replay = service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "patches": [{"field_id": f"order:{order_id}:fare_jpy", "value": "900.00"}],
+        }, self.actor)
+        self.assertTrue(replay["idempotent_replay"])
+
+    def test_pickup_time_only_moves_auto_suggested_arrival_and_preserves_manual_arrival(self):
+        order_id = self.add_order(suffix="PATCH-TIME")
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE orders SET end_time = '09:00', end_time_source = 'suggested_60m', end_time_confirmed = 0 WHERE id = ?", (order_id,))
+            conn.commit()
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        preview = service.get_run_document_preview(key, self.actor)
+        pickup = next(node for node in preview["nodes"] if node["order_id"] == order_id and node["node_type"] == "pickup")
+        dropoff = next(node for node in preview["nodes"] if node["order_id"] == order_id and node["node_type"] == "dropoff")
+        moved = service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "patches": [{"field_id": f"route_node:{pickup['route_node_id']}:planned_departure_at", "value": "2026-07-24T10:30:00"}],
+        }, self.actor)
+        moved_dropoff = next(node for node in moved["nodes"] if node["route_node_id"] == dropoff["route_node_id"])
+        self.assertEqual(moved_dropoff["planned_arrival_at"], "2026-07-24T11:30:00")
+
+        manual = service.patch_run_document_draft(key, {
+            "expected_source_hash": moved["source_sha256"],
+            "patches": [{"field_id": f"route_node:{dropoff['route_node_id']}:planned_arrival_at", "value": "2026-07-24T12:45:00"}],
+        }, self.actor)
+        moved_again = service.patch_run_document_draft(key, {
+            "expected_source_hash": manual["source_sha256"],
+            "patches": [{"field_id": f"route_node:{pickup['route_node_id']}:planned_departure_at", "value": "2026-07-24T11:00:00"}],
+        }, self.actor)
+        final_dropoff = next(node for node in moved_again["nodes"] if node["route_node_id"] == dropoff["route_node_id"])
+        self.assertEqual(final_dropoff["planned_arrival_at"], "2026-07-24T12:45:00")
+
+    def test_driver_cannot_patch_document_draft(self):
+        self.add_order(suffix="PATCH-ROLE")
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        with self.assertRaisesRegex(ValueError, "権限"):
+            service.patch_run_document_draft(key, {
+                "patches": [{"field_id": "operation:safety:waiting_place", "value": "x"}],
+            }, {"id": 101, "tenant_id": 1, "role": "driver", "profile_id": 1})
+
     def test_manual_price_change_requires_price_confirmation_again(self):
         order_id = self.add_order(suffix="PRICE")
         with closing(database.get_connection()) as conn:

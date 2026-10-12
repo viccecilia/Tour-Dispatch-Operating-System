@@ -19,15 +19,20 @@ class Phase2C2R2MiniappContractTest(unittest.TestCase):
         self.assertNotIn("生成两份 PDF 草稿", self.wxml)
         self.assertNotIn("两份内部 PDF 草稿已生成", self.js)
 
-    def test_pdf_entry_precedes_collapsed_diagnostics(self):
-        open_index = self.wxml.index("打开合并PDF")
-        issues_index = self.wxml.index("待核对摘要")
-        nodes_index = self.wxml.index("详细行程节点")
-        self.assertLess(open_index, issues_index)
-        self.assertLess(open_index, nodes_index)
+    def test_document_body_precedes_collapsed_diagnostics(self):
+        paper_index = self.wxml.index("document-paper-title")
+        issues_index = self.wxml.index("document-issue-compact")
+        self.assertLess(paper_index, issues_index)
         self.assertIn("dailyPdfIssuesExpanded", self.wxml)
-        self.assertIn("dailyPdfNodesExpanded", self.wxml)
+        self.assertIn("openDocumentCellEditor", self.wxml)
+        self.assertIn("下载打印", self.wxml)
         self.assertIn("buildValidationPresentation", self.js)
+
+    def test_document_workbench_does_not_silently_render_an_empty_preview(self):
+        self.assertIn("previewUnavailable = !['acceptance', 'dispatch'].some", self.js)
+        self.assertIn("dailyPdfVisiblePages && dailyPdfVisiblePages.length", self.wxml)
+        self.assertIn("当前后端版本未返回文书正文", self.wxml)
+        self.assertNotIn('style="width: {{dailyPdfZoom}}%;"', self.wxml)
 
 
 if __name__ == "__main__":
