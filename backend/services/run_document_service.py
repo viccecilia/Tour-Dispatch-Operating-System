@@ -50,7 +50,7 @@ JP_FONT_PATH = FONT_DIR / "NotoSansJP-VF.ttf"
 SC_FONT_PATH = FONT_DIR / "NotoSansSC-VF.ttf"
 # Bump this whenever the formal PDF layout or fixed rendering rules change.
 # It prevents a previously generated file from being reused after a template fix.
-DOCUMENT_RENDERER_VERSION = "v014-hire-phase2c3-shared-10-job-pages-20261012-1"
+DOCUMENT_RENDERER_VERSION = "v014-hire-document-workbench-10job-20261012-1"
 
 
 def _optional_coalesce_expr(
