@@ -1,5 +1,5 @@
 <view class="page {{isDriverTheme ? 'driver-theme' : ''}}">
-  <view class="hero dashboard-hero">
+  <view wx:if="{{!isDriverTheme}}" class="hero dashboard-hero">
     <view class="hero-eyebrow">TOURFLOW MOBILE</view>
     <view class="hero-title">{{heroName}}</view>
     <view class="hero-meta">{{heroMeta}}</view>
@@ -20,6 +20,87 @@
   </view>
 
   <view wx:else>
+    <block wx:if="{{isDriverTheme && driverTodayWorkbenchEnabled}}">
+      <view class="driver-home-v2">
+        <view class="driver-home-hero">
+          <view class="driver-home-hero-top">
+            <view class="driver-home-identity">
+              <view class="driver-home-date">{{driverTodayView.dateText}}</view>
+              <view class="driver-home-name">{{driverTodayView.driverName}}</view>
+              <view class="driver-home-meta"><text wx:if="{{driverTodayView.driverCode}}">编号 {{driverTodayView.driverCode}} · </text>{{driverTodayView.vehicleText}}</view>
+            </view>
+            <view class="driver-home-status {{driverTodayView.stateTone}}" bindtap="openDriverHeroAction">
+              <strong>{{driverTodayView.stateLabel}}</strong>
+              <text>{{driverTodayView.nextStepLabel}} ›</text>
+            </view>
+          </view>
+          <view class="driver-home-hero-bottom">
+            <view class="driver-home-task-total"><strong>{{driverTodayView.orderCount}}</strong><text>今日任务</text></view>
+            <view class="driver-home-flow">
+              <strong>{{driverTodayView.flowSummary}}</strong>
+              <text>填写与证据仍在原任务页完成</text>
+            </view>
+            <view wx:if="{{driverTodayView.changeCount}}" class="driver-home-change">变更 {{driverTodayView.changeCount}}</view>
+          </view>
+        </view>
+
+        <view class="driver-home-shortcuts">
+          <view class="driver-home-shortcut instruction" data-target="instruction" bindtap="openDriverHomeShortcut">
+            <view class="driver-home-shortcut-icon">指</view>
+            <strong>运行指示书</strong>
+            <text>{{driverTodayView.documents.available ? '已发布' : '任务页'}}</text>
+          </view>
+          <view class="driver-home-shortcut acceptance" data-target="acceptance" bindtap="openDriverHomeShortcut">
+            <view class="driver-home-shortcut-icon">引</view>
+            <strong>运送引受书</strong>
+            <text>{{driverTodayView.documents.available ? '已发布' : '任务页'}}</text>
+          </view>
+          <view class="driver-home-shortcut report" data-target="report" bindtap="openDriverHomeShortcut">
+            <view class="driver-home-shortcut-icon">报</view>
+            <strong>司机日报</strong>
+            <text>{{driverTodayView.report.label}}</text>
+          </view>
+          <view class="driver-home-shortcut provisional" aria-label="臨時業務を記録" data-target="provisional" bindtap="openDriverHomeShortcut">
+            <view class="driver-home-shortcut-icon">临</view>
+            <strong>临时业务</strong>
+            <text>{{provisionalHint}}</text>
+            <view wx:if="{{provisionalMyCount}}" class="driver-home-shortcut-badge">{{provisionalMyCount}}</view>
+          </view>
+        </view>
+
+        <view class="driver-home-tasks">
+          <view class="driver-home-tasks-head">
+            <view><strong>今日任务</strong><text>按计划时间排序</text></view>
+            <view class="driver-home-all-tasks" bindtap="goTask">进入原任务页处理</view>
+          </view>
+          <view wx:if="{{driverTodayView.changeCount}}" class="driver-home-change-note">有 {{driverTodayView.changeCount}} 条未读变更，请在任务详情中核对。</view>
+          <view class="driver-home-task-list">
+            <view wx:for="{{driverTodayView.orders}}" wx:key="id" class="driver-home-task {{item.todayTone}}" bindtap="openDriverTodayTask">
+              <view class="driver-home-task-time">{{item.start_time || '--:--'}}</view>
+              <view class="driver-home-task-main">
+                <view class="driver-home-task-route">{{item.todayRouteText}}</view>
+                <view class="driver-home-task-meta">{{item.todayTypeText}} · {{item.orderNoText}}</view>
+                <view wx:if="{{item.todayAlertText}}" class="driver-home-task-alert">{{item.todayAlertText}}</view>
+              </view>
+              <view class="driver-home-task-status">{{item.todayStatusMark}}{{item.todayStatusText}}</view>
+            </view>
+            <view wx:if="{{!driverTodayView.orders.length && !loading}}" class="driver-home-empty">
+              <strong>今天没有任务</strong>
+              <text>当前没有已发布给你的正式任务。</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <block wx:else>
+    <view wx:if="{{isCarrierAdmin}}" class="panel provisional-admin-entry" aria-label="臨時注文・確認待ち" bindtap="openProvisionalTasks">
+      <view>
+        <view class="panel-title">臨時注文・確認待ち</view>
+        <view class="muted">仅所属车公司管理员可确认真实性、关联订单与定价</view>
+      </view>
+      <view class="provisional-admin-count">{{provisionalPendingCount || 0}}<text>待确认</text></view>
+    </view>
     <block wx:if="{{isOperationsManager}}">
       <view class="ops-v5-cards">
         <view class="ops-v5-card {{opsV5Mode==='outbound'?'active':''}}" data-mode="outbound" bindtap="switchOpsV5Mode"><text>已出库 / 总车辆</text><strong>{{dispatchTaskRows.length}} / {{dispatchOverview.vehicleTotal}}</strong></view>
@@ -509,6 +590,7 @@
         <view wx:if="{{panelMode !== 'idle' && panelMode !== 'resources' && !panelRows.length}}" class="empty-state">暂无内容</view>
       </view>
     </view>
+    </block>
 
   </view>
 

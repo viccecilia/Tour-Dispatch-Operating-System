@@ -1,5 +1,59 @@
 @import "../../../app.wxss";
 
+.driver-provisional-entry,
+.provisional-admin-entry {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  border: 2rpx solid #b9d9d4;
+  background: linear-gradient(135deg, #effcf9 0%, #ffffff 100%);
+  box-shadow: 0 12rpx 30rpx rgba(15, 118, 110, 0.08);
+}
+
+.driver-provisional-entry {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: 24rpx;
+}
+
+.driver-provisional-icon {
+  width: 66rpx;
+  height: 66rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: #0f766e;
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.driver-provisional-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.driver-provisional-copy strong { color: #134e4a; font-size: 28rpx; }
+.driver-provisional-copy text { color: #52716e; font-size: 22rpx; line-height: 1.45; }
+
+.driver-provisional-count,
+.provisional-admin-count {
+  min-width: 72rpx;
+  color: #0f766e;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.driver-provisional-count text,
+.provisional-admin-count text { display: block; font-size: 18rpx; font-weight: 700; }
+
+.provisional-admin-entry { justify-content: space-between; }
+
 .dashboard-hero {
   background: linear-gradient(135deg, #153b92 0%, #246bfe 100%);
   position: relative;
@@ -1481,6 +1535,511 @@
   font-weight: 950;
 }
 
+/* Driver Phase 1: today's workbench shell. All workflow writes remain on the
+ * existing task page; these rules only reorganize the home projection. */
+.driver-today-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  padding-bottom: 148rpx;
+}
+
+.driver-today-head,
+.driver-today-section,
+.driver-today-metrics,
+.driver-today-shortcuts {
+  background: #fff;
+  border: 1rpx solid #dbe7f2;
+  border-radius: 22rpx;
+  box-shadow: 0 8rpx 22rpx rgba(17, 48, 79, 0.06);
+}
+
+.driver-today-head {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 24rpx;
+}
+
+.driver-today-date {
+  color: #194d78;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.driver-today-identity {
+  margin-top: 8rpx;
+  color: #132f4c;
+  font-size: 25rpx;
+  font-weight: 700;
+}
+
+.driver-today-identity text,
+.driver-today-vehicle {
+  color: #698095;
+  font-size: 21rpx;
+  font-weight: 500;
+}
+
+.driver-today-vehicle {
+  margin-top: 5rpx;
+}
+
+.driver-today-state {
+  min-width: 190rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 18rpx;
+  padding: 16rpx 18rpx;
+  text-align: center;
+}
+
+.driver-today-state view {
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.driver-today-state text {
+  margin-top: 6rpx;
+  font-size: 19rpx;
+}
+
+.driver-today-state.pending {
+  color: #1763a6;
+  background: #edf6ff;
+  border: 1rpx solid #9cc8ed;
+}
+
+.driver-today-state.active {
+  color: #fff;
+  background: #118b83;
+}
+
+.driver-today-state.completed {
+  color: #13744d;
+  background: #e6f8ef;
+  border: 1rpx solid #90d9b8;
+}
+
+.driver-today-state.exception {
+  color: #b3292f;
+  background: #fff0f0;
+  border: 1rpx solid #efaaaa;
+}
+
+.driver-today-state.idle {
+  color: #52687b;
+  background: #f2f5f8;
+}
+
+.driver-today-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  overflow: hidden;
+}
+
+.driver-today-metrics view {
+  min-width: 0;
+  padding: 18rpx 8rpx;
+  border-right: 1rpx solid #e4edf5;
+  text-align: center;
+}
+
+.driver-today-metrics view:last-child {
+  border-right: 0;
+}
+
+.driver-today-metrics strong,
+.driver-today-metrics text {
+  display: block;
+}
+
+.driver-today-metrics strong {
+  color: #143d63;
+  font-size: 32rpx;
+}
+
+.driver-today-metrics text {
+  margin-top: 4rpx;
+  color: #6b8093;
+  font-size: 18rpx;
+}
+
+.driver-today-metrics .attention {
+  background: #fff8e9;
+}
+
+.driver-today-metrics .attention strong,
+.driver-today-metrics .attention text {
+  color: #a96308;
+}
+
+.driver-today-section {
+  overflow: hidden;
+}
+
+.driver-today-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 20rpx 22rpx;
+  border-bottom: 1rpx solid #e6edf4;
+}
+
+.driver-today-section-head strong,
+.driver-today-section-head text {
+  display: block;
+}
+
+.driver-today-section-head strong {
+  color: #173b5c;
+  font-size: 26rpx;
+}
+
+.driver-today-section-head text {
+  margin-top: 4rpx;
+  color: #75889a;
+  font-size: 19rpx;
+}
+
+.driver-section-count {
+  min-width: 44rpx;
+  height: 44rpx;
+  display: grid;
+  place-items: center;
+  border-radius: 999rpx;
+  color: #9b5c00;
+  background: #ffedbf;
+  font-weight: 800;
+}
+
+.driver-change-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14rpx;
+  padding: 18rpx 22rpx;
+  border-bottom: 1rpx solid #edf2f6;
+}
+
+.driver-change-row:last-child {
+  border-bottom: 0;
+}
+
+.driver-change-tag {
+  padding: 5rpx 10rpx;
+  border-radius: 8rpx;
+  color: #9b5c00;
+  background: #ffedbf;
+  font-size: 18rpx;
+  font-weight: 800;
+}
+
+.driver-change-row.canceled .driver-change-tag {
+  color: #66727d;
+  background: #edf0f3;
+  text-decoration: line-through;
+}
+
+.driver-change-row.exception .driver-change-tag {
+  color: #b3212c;
+  background: #ffe4e5;
+}
+
+.driver-change-main strong,
+.driver-change-main text {
+  display: block;
+}
+
+.driver-change-main strong {
+  overflow: hidden;
+  color: #203d57;
+  font-size: 22rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-change-main text,
+.driver-row-arrow {
+  color: #788b9d;
+  font-size: 18rpx;
+}
+
+.driver-change-detail {
+  grid-column: 1 / -1;
+  padding: 16rpx;
+  border-radius: 14rpx;
+  color: #3b5268;
+  background: #f7fafc;
+  font-size: 20rpx;
+  line-height: 1.6;
+}
+
+.driver-change-detail text {
+  display: block;
+  margin-top: 10rpx;
+  color: #8a6c32;
+  font-size: 17rpx;
+}
+
+.driver-receipt-button,
+.driver-order-open {
+  margin: 14rpx 0 0;
+  border: 0;
+  border-radius: 12rpx;
+  color: #fff;
+  background: #118b83;
+  font-size: 21rpx;
+  font-weight: 700;
+  line-height: 68rpx;
+}
+
+.driver-today-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rpx;
+  overflow: hidden;
+}
+
+.driver-shortcut {
+  min-width: 0;
+  padding: 20rpx 8rpx;
+  background: #fff;
+  text-align: center;
+}
+
+.driver-shortcut-icon {
+  width: 52rpx;
+  height: 52rpx;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 10rpx;
+  border-radius: 16rpx;
+  color: #fff;
+  background: #2f7fc1;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.driver-shortcut:nth-child(2) .driver-shortcut-icon {
+  background: #a67428;
+}
+
+.driver-shortcut:nth-child(3) .driver-shortcut-icon {
+  background: #118b83;
+}
+
+.driver-shortcut strong,
+.driver-shortcut text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-shortcut strong {
+  color: #1c3c58;
+  font-size: 20rpx;
+}
+
+.driver-shortcut text {
+  margin-top: 5rpx;
+  color: #7890a4;
+  font-size: 16rpx;
+}
+
+.driver-task-entry {
+  flex: none;
+  padding: 8rpx 14rpx;
+  border: 1rpx solid #9cc4e5;
+  border-radius: 999rpx;
+  color: #1763a6;
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+.driver-flow-grid {
+  display: grid;
+  gap: 12rpx;
+  padding: 18rpx 22rpx 22rpx;
+}
+
+.driver-flow-card {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 15rpx;
+  border-radius: 15rpx;
+}
+
+.driver-flow-card.pending {
+  color: #205f96;
+  background: #f2f8fd;
+  border: 1rpx solid #b6d3eb;
+}
+
+.driver-flow-card.completed {
+  color: #176a49;
+  background: #eef9f3;
+  border: 1rpx solid #a7d9c1;
+}
+
+.driver-flow-mark {
+  width: 50rpx;
+  height: 50rpx;
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #2d7fc3;
+  font-weight: 800;
+}
+
+.driver-flow-card.completed .driver-flow-mark {
+  background: #39a66f;
+}
+
+.driver-flow-card strong,
+.driver-flow-card text {
+  display: block;
+}
+
+.driver-flow-card strong {
+  font-size: 22rpx;
+}
+
+.driver-flow-card text {
+  margin-top: 3rpx;
+  color: #6f8598;
+  font-size: 18rpx;
+}
+
+.driver-today-order {
+  position: relative;
+  display: grid;
+  grid-template-columns: 8rpx 90rpx minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14rpx;
+  min-height: 100rpx;
+  padding: 14rpx 20rpx 14rpx 0;
+  border-bottom: 1rpx solid #edf2f6;
+}
+
+.driver-today-order:last-child {
+  border-bottom: 0;
+}
+
+.driver-order-rail {
+  align-self: stretch;
+  border-radius: 0 8rpx 8rpx 0;
+  background: #2d7fc3;
+}
+
+.driver-today-order.active {
+  background: #eaf8f7;
+}
+
+.driver-today-order.active .driver-order-rail {
+  background: #118b83;
+}
+
+.driver-today-order.completed .driver-order-rail {
+  background: #39a66f;
+}
+
+.driver-today-order.added,
+.driver-today-order.adjusted {
+  background: #fff9ec;
+}
+
+.driver-today-order.added .driver-order-rail,
+.driver-today-order.adjusted .driver-order-rail {
+  background: #d99020;
+}
+
+.driver-today-order.canceled {
+  color: #7e8993;
+  background: #f4f5f6;
+  text-decoration: line-through;
+}
+
+.driver-today-order.canceled .driver-order-rail {
+  background: #9ba4ad;
+}
+
+.driver-today-order.exception {
+  background: #fff0f0;
+}
+
+.driver-today-order.exception .driver-order-rail {
+  background: #d6424a;
+}
+
+.driver-order-time {
+  color: #173f62;
+  font-size: 27rpx;
+  font-weight: 800;
+  text-align: center;
+}
+
+.driver-order-route {
+  color: #1b3851;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.driver-order-meta {
+  margin-top: 5rpx;
+  color: #74899b;
+  font-size: 17rpx;
+}
+
+.driver-order-status {
+  padding: 6rpx 10rpx;
+  border-radius: 999rpx;
+  color: #236ba5;
+  background: #edf6ff;
+  font-size: 18rpx;
+  font-weight: 700;
+}
+
+.driver-today-order.active .driver-order-status {
+  color: #fff;
+  background: #118b83;
+}
+
+.driver-today-order.completed .driver-order-status {
+  color: #147249;
+  background: #e2f5eb;
+}
+
+.driver-today-order.exception .driver-order-status {
+  color: #b2232c;
+  background: #ffdfe1;
+}
+
+.driver-order-detail {
+  grid-column: 2 / -1;
+  padding: 14rpx;
+  border-radius: 14rpx;
+  color: #465f75;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 19rpx;
+  line-height: 1.65;
+  text-decoration: none;
+}
+
+.driver-today-empty {
+  padding: 50rpx 24rpx;
+  color: #7a8ea1;
+  text-align: center;
+  font-size: 22rpx;
+}
+
 .health-edit-button {
   background: #0f766e;
   color: #ffffff;
@@ -2051,3 +2610,347 @@
 .ops-v5-results { margin-bottom: 20rpx; }
 .ops-search-actions { display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 12rpx; }
 .ops-search-action { padding: 8rpx 12rpx; border: 1rpx solid #bfdbfe; border-radius: 999rpx; background: #eff6ff; color: #1d4ed8; font-size: 20rpx; }
+
+/* Driver Home UI V2: one compact daily hero, four real shortcuts and tasks. */
+.driver-home-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+}
+
+.driver-home-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 25rpx;
+  border-radius: 26rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #0e5e69 0%, #0d8f86 100%);
+  box-shadow: 0 16rpx 34rpx rgba(12, 104, 103, 0.18);
+}
+
+.driver-home-hero::after {
+  content: '';
+  position: absolute;
+  top: -62rpx;
+  right: -44rpx;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.driver-home-hero-top,
+.driver-home-hero-bottom,
+.driver-home-tasks-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.driver-home-identity,
+.driver-home-task-main,
+.driver-home-flow,
+.driver-home-tasks-head > view:first-child {
+  min-width: 0;
+}
+
+.driver-home-date {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.driver-home-name {
+  margin-top: 7rpx;
+  font-size: 36rpx;
+  font-weight: 900;
+  line-height: 1.08;
+}
+
+.driver-home-meta {
+  max-width: 430rpx;
+  margin-top: 8rpx;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 20rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-home-status {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  min-width: 156rpx;
+  box-sizing: border-box;
+  padding: 14rpx 15rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.34);
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.14);
+  text-align: center;
+}
+
+.driver-home-status:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.driver-home-status strong,
+.driver-home-status text {
+  display: block;
+}
+
+.driver-home-status strong {
+  font-size: 25rpx;
+  line-height: 1.2;
+}
+
+.driver-home-status text {
+  margin-top: 6rpx;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 17rpx;
+}
+
+.driver-home-status.pending { background: rgba(246, 173, 50, 0.23); }
+.driver-home-status.active { background: rgba(48, 207, 185, 0.25); }
+.driver-home-status.completed { background: rgba(82, 196, 124, 0.25); }
+.driver-home-status.idle { background: rgba(255, 255, 255, 0.12); }
+
+.driver-home-hero-bottom {
+  align-items: stretch;
+  margin-top: 20rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.2);
+}
+
+.driver-home-task-total {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.driver-home-task-total strong { font-size: 38rpx; line-height: 1; }
+.driver-home-task-total text { color: rgba(255, 255, 255, 0.78); font-size: 18rpx; }
+
+.driver-home-flow {
+  flex: 1;
+  text-align: right;
+}
+
+.driver-home-flow strong,
+.driver-home-flow text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-home-flow strong { font-size: 19rpx; }
+.driver-home-flow text { margin-top: 4rpx; color: rgba(255, 255, 255, 0.7); font-size: 16rpx; }
+
+.driver-home-change {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 7rpx 10rpx;
+  border-radius: 999rpx;
+  color: #7c3900;
+  background: #ffe3a8;
+  font-size: 17rpx;
+  font-weight: 800;
+}
+
+.driver-home-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10rpx;
+}
+
+.driver-home-shortcut {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 17rpx 7rpx 14rpx;
+  border: 1rpx solid #dce8f0;
+  border-radius: 20rpx;
+  background: #fff;
+  box-shadow: 0 7rpx 18rpx rgba(31, 63, 90, 0.06);
+  text-align: center;
+}
+
+.driver-home-shortcut:active { transform: scale(0.97); background: #f6fafc; }
+
+.driver-home-shortcut-icon {
+  width: 54rpx;
+  height: 54rpx;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 9rpx;
+  border-radius: 17rpx;
+  color: #fff;
+  background: #2d73c8;
+  font-size: 25rpx;
+  font-weight: 900;
+}
+
+.driver-home-shortcut.acceptance .driver-home-shortcut-icon { background: #95631d; }
+.driver-home-shortcut.report .driver-home-shortcut-icon { background: #128e82; }
+.driver-home-shortcut.provisional .driver-home-shortcut-icon { background: #c96d1c; }
+
+.driver-home-shortcut strong,
+.driver-home-shortcut text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-home-shortcut strong { color: #173651; font-size: 19rpx; }
+.driver-home-shortcut text { margin-top: 5rpx; color: #758b9c; font-size: 15rpx; }
+
+.driver-home-shortcut-badge {
+  position: absolute;
+  top: 8rpx;
+  right: 8rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  box-sizing: border-box;
+  padding: 0 7rpx;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #d64242;
+  font-size: 16rpx;
+  font-weight: 900;
+  line-height: 30rpx;
+}
+
+.driver-home-tasks {
+  overflow: hidden;
+  border: 1rpx solid #dbe7f0;
+  border-radius: 23rpx;
+  background: #fff;
+  box-shadow: 0 9rpx 23rpx rgba(28, 60, 84, 0.06);
+}
+
+.driver-home-tasks-head { padding: 21rpx 22rpx 17rpx; }
+.driver-home-tasks-head strong,
+.driver-home-tasks-head text { display: block; }
+.driver-home-tasks-head strong { color: #183851; font-size: 28rpx; }
+.driver-home-tasks-head text { margin-top: 4rpx; color: #7b8fa0; font-size: 17rpx; }
+
+.driver-home-all-tasks {
+  flex: 0 0 auto;
+  padding: 9rpx 13rpx;
+  border-radius: 999rpx;
+  color: #176ca6;
+  background: #edf7fd;
+  font-size: 17rpx;
+  font-weight: 800;
+}
+
+.driver-home-change-note {
+  margin: 0 20rpx 13rpx;
+  padding: 11rpx 14rpx;
+  border-radius: 13rpx;
+  color: #87510c;
+  background: #fff5d9;
+  font-size: 17rpx;
+  line-height: 1.35;
+}
+
+.driver-home-task {
+  display: grid;
+  grid-template-columns: 78rpx minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13rpx;
+  min-width: 0;
+  padding: 17rpx 20rpx;
+  border-top: 1rpx solid #edf2f6;
+}
+
+.driver-home-task:active { background: #f2f8fb; }
+.driver-home-task.active { border-left: 7rpx solid #14a195; }
+.driver-home-task.completed { border-left: 7rpx solid #57ae78; }
+.driver-home-task.exception { border-left: 7rpx solid #d84e4e; background: #fff7f7; }
+.driver-home-task.adjusted,
+.driver-home-task.added { border-left: 7rpx solid #d9962d; background: #fffaf0; }
+
+.driver-home-task-time {
+  color: #173d5a;
+  font-size: 25rpx;
+  font-weight: 900;
+  text-align: center;
+}
+
+.driver-home-task-route {
+  overflow: hidden;
+  color: #18364f;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-home-task-meta {
+  margin-top: 5rpx;
+  overflow: hidden;
+  color: #7b8d9d;
+  font-size: 16rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-home-task-alert {
+  margin-top: 7rpx;
+  color: #b4650b;
+  font-size: 16rpx;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.driver-home-task-status {
+  max-width: 112rpx;
+  padding: 7rpx 10rpx;
+  border-radius: 999rpx;
+  color: #216d9e;
+  background: #edf7fd;
+  font-size: 16rpx;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.driver-home-task.active .driver-home-task-status { color: #fff; background: #128e82; }
+.driver-home-task.completed .driver-home-task-status { color: #176c48; background: #e2f5e9; }
+.driver-home-task.exception .driver-home-task-status { color: #a82c31; background: #ffe4e4; }
+
+.driver-home-empty {
+  display: flex;
+  min-height: 210rpx;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 25rpx;
+  border-top: 1rpx solid #edf2f6;
+  text-align: center;
+}
+
+.driver-home-empty strong { color: #4a6173; font-size: 24rpx; }
+.driver-home-empty text { margin-top: 9rpx; color: #8798a5; font-size: 18rpx; }
+
+@media (max-width: 360px) {
+  .driver-home-hero { padding: 21rpx; }
+  .driver-home-name { font-size: 33rpx; }
+  .driver-home-status { min-width: 142rpx; padding: 12rpx 10rpx; }
+  .driver-home-shortcuts { gap: 7rpx; }
+  .driver-home-shortcut { padding-left: 4rpx; padding-right: 4rpx; }
+  .driver-home-shortcut strong { font-size: 17rpx; }
+  .driver-home-shortcut text { font-size: 14rpx; }
+  .driver-home-task { grid-template-columns: 70rpx minmax(0, 1fr) auto; gap: 9rpx; padding-left: 14rpx; padding-right: 14rpx; }
+  .driver-home-task-status { max-width: 96rpx; font-size: 15rpx; }
+}

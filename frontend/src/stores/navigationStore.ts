@@ -6,6 +6,7 @@ export type PageKey =
   | "parser"
   | "orders"
   | "dispatch"
+  | "provisional-orders"
   | "fixed-tours"
   | "auction"
   | "calendar"
@@ -37,6 +38,7 @@ function pageFromHash(): PageKey {
     "parser",
     "orders",
     "dispatch",
+    "provisional-orders",
     "fixed-tours",
     "auction",
     "calendar",

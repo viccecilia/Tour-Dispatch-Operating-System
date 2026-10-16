@@ -3,6 +3,7 @@
 const HOME_HIDDEN_RESOURCE_VEHICLE_TAILS = ['7721', '3724', '7728'];
 const RESOURCE_VEHICLE_REMINDER_DAYS = 30;
 const RESOURCE_DRIVER_HEALTH_REMINDER_DAYS = 30;
+const DRIVER_TODAY_WORKBENCH_FLAG_KEY = 'driver_today_workbench_v1';
 const HIDDEN_DRIVER_NAMES = [
   '刘明海',
   '劉明海',
@@ -41,6 +42,34 @@ Page({
     canDriverTasks: false,
     isOperationsManager: false,
     isDriverTheme: false,
+    isCarrierAdmin: false,
+    provisionalPendingCount: 0,
+    provisionalMyCount: 0,
+    provisionalHint: '暂无待处理',
+    driverTodayWorkbenchEnabled: true,
+    driverTodayView: {
+      dateText: '',
+      driverName: '-',
+      driverCode: '',
+      vehicleText: '车辆待确认',
+      stateLabel: '今日待开始',
+      stateTone: 'pending',
+      nextStepLabel: '办理出库',
+      nextStepTarget: 'depart',
+      flowSummary: '出库 --:-- · 入库 --:--',
+      orderCount: 0,
+      activeCount: 0,
+      completedCount: 0,
+      changeCount: 0,
+      changes: [],
+      orders: [],
+      outbound: { done: false, label: '未出库', detail: '进入原任务页完成出库点呼' },
+      inbound: { done: false, label: '未入库', detail: '完成今日任务后办理入库' },
+      report: { submitted: false, label: '日报未提交', detail: '可继续保存草稿' },
+      documents: { available: false, count: 0, fileUrl: '' }
+    },
+    expandedDriverTodayOrderId: '',
+    expandedDriverChangeId: '',
     canViewDriverWorkload: false,
     operationsStatus: { label: '运行监控中', hint: '车辆点检、车检、司机证件和今日任务异常会在这里汇总。', tone: 'normal' },
     operationsOverview: {
@@ -157,6 +186,7 @@ Page({
   onShow() {
     api.syncEnvironmentBaseUrl();
     api.setActiveTab('/package_dispatch/pages/home/index');
+    this.setData({ driverTodayWorkbenchEnabled: this.resolveDriverTodayWorkbenchFlag() });
     const session = api.getSession();
     this.setSessionState(session);
     this.refreshTabBar();
@@ -167,6 +197,7 @@ Page({
         hasToken: !!(this.data.session && this.data.session.token)
       });
       this.loadDashboard();
+      this.loadProvisionalSummary();
       return;
     }
     console.warn('[dispatch home missing session]', {
@@ -230,6 +261,7 @@ Page({
     const labels = { admin: '管理', dispatcher: '调度', operations_manager: '运行管理', driver: '司机' };
     const dispatcher = (session && session.dispatcher) || {};
     const user = (session && session.user) || {};
+    const scope = user.account_scope || (role === 'driver' ? 'driver' : 'carrier');
     const heroName = dispatcher.dispatcher_name || user.name || user.username || '统一账号登录';
     const heroCode = dispatcher.dispatcher_code || user.account_code || user.code || '';
     const roleLabel = labels[role] || '账号';
@@ -245,8 +277,38 @@ Page({
       canDriverTasks: role === 'driver',
       isOperationsManager: role === 'operations_manager',
       isDriverTheme: role === 'driver',
+      isCarrierAdmin: role === 'admin' && scope === 'carrier',
       canViewDriverWorkload: ['admin', 'dispatcher'].indexOf(role) >= 0
     });
+  },
+
+  loadProvisionalSummary() {
+    const role = api.getRole(this.data.session);
+    if (role === 'driver') {
+      api.driverProvisionalTasks()
+        .then((result) => {
+          const tasks = Array.isArray(result && result.tasks) ? result.tasks : [];
+          const needsInformation = tasks.filter((item) => item.status === 'needs_information').length;
+          const pending = tasks.filter((item) => item.status === 'pending_company_confirmation').length;
+          const drafts = tasks.filter((item) => item.status === 'draft').length;
+          const actionable = needsInformation + pending + drafts;
+          this.setData({
+            provisionalMyCount: actionable,
+            provisionalHint: needsInformation
+              ? `需补充 ${needsInformation} 件`
+              : (pending ? `待确认 ${pending} 件` : (drafts ? `草稿 ${drafts} 件` : '暂无待处理'))
+          });
+        })
+        .catch(() => this.setData({ provisionalMyCount: 0, provisionalHint: '暂时无法读取' }));
+      return;
+    }
+    if (this.data.isCarrierAdmin) {
+      api.companyProvisionalTasks()
+        .then((result) => this.setData({
+          provisionalPendingCount: (result.tasks || []).filter((item) => item.status === 'pending_company_confirmation').length
+        }))
+        .catch(() => this.setData({ provisionalPendingCount: 0 }));
+    }
   },
 
   refreshTabBar() {
@@ -305,6 +367,7 @@ Page({
     const canViewOperations = role === 'operations_manager';
     const canViewResources = role !== 'driver';
     const driverId = session.user && session.user.profile_id ? session.user.profile_id : 0;
+    const driverBusinessDate = this.formatDate(new Date());
     const notificationTask = role === 'driver' && driverId
       ? api.driverNotifications(driverId).catch(() => ({ notifications: [] }))
       : api.notifications().catch(() => ({ notifications: [] }));
@@ -312,11 +375,24 @@ Page({
       ? api.driverAssignments(driverId).catch(() => ({ assignments: [] }))
       : Promise.resolve({ assignments: [] });
     const workbenchTask = role === 'driver' && driverId
-      ? api.driverWorkbench(driverId).catch(() => ({}))
+      ? Promise.all([
+        api.driverWorkbench(driverId).catch(() => ({})),
+        api.driverWorkflowEvents(driverBusinessDate).catch(() => ({ events: [] }))
+      ]).then(([workbench, workflow]) => Object.assign({}, workbench || {}, {
+        workflow_events: Array.isArray(workflow && workflow.events)
+          ? workflow.events
+          : (Array.isArray(workbench && workbench.workflow_events) ? workbench.workflow_events : [])
+      }))
       : Promise.resolve({});
     const profileTask = role === 'driver' && driverId
       ? api.driverProfile(driverId).catch(() => ({ driver: null }))
       : Promise.resolve({ driver: null });
+    const dailyReportTask = role === 'driver' && driverId
+      ? api.driverDailyReport(driverBusinessDate).catch(() => ({ report: null }))
+      : Promise.resolve({ report: null });
+    const runDocumentsTask = role === 'driver' && driverId
+      ? api.driverRunDocuments().catch(() => ({ documents: [] }))
+      : Promise.resolve({ documents: [] });
     const vehicleTask = (canViewOperations || this.data.canDispatch)
       ? api.vehicles().catch(() => ({ vehicles: [] }))
       : Promise.resolve({ vehicles: [] });
@@ -350,10 +426,12 @@ Page({
       : Promise.resolve({ alerts: [] });
 
     return Promise.all([
-      api.dashboard().catch((err) => {
-        console.warn('[dispatch-mobile dashboard failed]', err);
-        return emptyDashboard;
-      }),
+      role === 'driver'
+        ? Promise.resolve(emptyDashboard)
+        : api.dashboard().catch((err) => {
+          console.warn('[dispatch-mobile dashboard failed]', err);
+          return emptyDashboard;
+        }),
       notificationTask,
       (canViewDriverWorkload || canViewOperations) ? api.assignments().catch(() => ({ assignments: [] })) : Promise.resolve({ assignments: [] }),
       (canViewDriverWorkload || canViewOperations) ? api.drivers().catch(() => ({ drivers: [] })) : Promise.resolve({ drivers: [] }),
@@ -364,7 +442,9 @@ Page({
       unassignedTask,
       dispatchDraftTask,
       resourceTask,
-      resourceReminderTask
+      resourceReminderTask,
+      dailyReportTask,
+      runDocumentsTask
     ])
       .then((results) => {
         const dashboard = results && results[0];
@@ -379,6 +459,8 @@ Page({
         const dispatchDrafts = results && results[9];
         const resourceLibrary = results && results[10];
         const resourceReminders = results && results[11];
+        const dailyReport = results && results[12];
+        const runDocuments = results && results[13];
         const safeDashboard = dashboard || emptyDashboard;
         const allAssignments = Array.isArray(assignments && assignments.assignments) ? assignments.assignments : [];
         const allDrivers = Array.isArray(drivers && drivers.drivers) ? drivers.drivers : [];
@@ -465,6 +547,9 @@ Page({
         const operationsDetail = role === 'operations_manager' && this.data.operationsSection === 'notifications'
           ? this.buildOperationsNotificationDetail(notificationRows)
           : operations.detail;
+        const driverTodayView = role === 'driver'
+          ? this.buildDriverTodayView(todayRows, driverRows, workbench || {}, profile.driver || {}, notificationRows, dailyReport || {}, runDocuments || {})
+          : this.data.driverTodayView;
         this.setData({
           dashboard: nextDashboard,
           driverAssignments: driverRows,
@@ -476,6 +561,7 @@ Page({
           allOrderChipCount: this.data.canDispatch ? dispatchAllRows.length : driverRows.length,
           driverOrderChipAlert: false,
           notifications: notificationRows,
+          driverTodayView,
           opsNotificationRows: unreadRows,
           statusLabel: status.label,
           statusHint: status.hint,
@@ -908,6 +994,224 @@ Page({
       const right = `${b.order_date || ''} ${b.start_time || ''} ${b.assignment_id || b.id || ''}`;
       return left.localeCompare(right, 'zh-Hans-CN');
     });
+  },
+
+  resolveDriverTodayWorkbenchFlag() {
+    const stored = wx.getStorageSync(DRIVER_TODAY_WORKBENCH_FLAG_KEY);
+    if (stored === false || stored === 0 || stored === '0' || stored === 'false' || stored === 'legacy') return false;
+    return true;
+  },
+
+  buildDriverTodayView(todayRows, allRows, workbench, driver, notifications, dailyReportResponse, runDocumentsResponse) {
+    const today = this.formatDate(new Date());
+    const rows = Array.isArray(todayRows) ? todayRows : [];
+    const current = workbench.current_assignment || rows.find((item) => !['completed', 'returned', 'cancelled', 'canceled'].includes(String(item.rawStatus || ''))) || rows[0] || {};
+    const events = (Array.isArray(workbench.workflow_events) ? workbench.workflow_events : [])
+      .filter((item) => String(item.event_status || 'submitted') === 'submitted');
+    const outboundEvent = this.latestDriverWorkflowEvent(events, ['depart_yard', 'roll_call_out', 'vehicle_check_out']);
+    const inboundEvent = this.latestDriverWorkflowEvent(events, ['return_yard', 'roll_call_in', 'vehicle_check_in']);
+    const hasOutbound = !!outboundEvent;
+    const hasInbound = !!inboundEvent;
+    const completedCount = rows.filter((item) => ['completed', 'returned'].includes(String(item.rawStatus || ''))).length;
+    const activeCount = rows.filter((item) => ['confirmed', 'departed', 'arrived', 'in_service'].includes(String(item.rawStatus || ''))).length;
+    const report = dailyReportResponse.report || {};
+    const documents = (Array.isArray(runDocumentsResponse.documents) ? runDocumentsResponse.documents : [])
+      .filter((item) => !item.business_date || String(item.business_date).slice(0, 10) === today);
+    const unreadChanges = (Array.isArray(notifications) ? notifications : [])
+      .filter((item) => item.rawStatus !== 'read')
+      .map((item) => this.decorateDriverChange(item));
+    const state = this.driverTodayState(rows, hasOutbound, hasInbound);
+    const outboundTime = this.driverWorkflowEventTime(outboundEvent);
+    const inboundTime = this.driverWorkflowEventTime(inboundEvent);
+    const nextStepTarget = !rows.length
+      ? 'tasks'
+      : (!hasOutbound ? 'depart' : (!hasInbound && completedCount >= rows.length ? 'return' : (hasInbound ? 'return' : 'tasks')));
+    const nextStepLabel = {
+      depart: '办理出库',
+      return: hasInbound ? '查看入库记录' : '办理入库',
+      tasks: rows.length ? '查看今日任务' : '查看任务页'
+    }[nextStepTarget];
+    return {
+      dateText: this.driverReadableDate(today),
+      driverName: driver.name || driver.driver_name || this.data.heroName || '-',
+      driverCode: driver.driver_code || '',
+      vehicleText: current.plate_number || current.vehicle_plate || '车辆待确认',
+      stateLabel: state.label,
+      stateTone: state.tone,
+      nextStepLabel,
+      nextStepTarget,
+      flowSummary: `出库 ${outboundTime || '--:--'} · 入库 ${inboundTime || '--:--'}`,
+      orderCount: rows.length,
+      activeCount,
+      completedCount,
+      changeCount: unreadChanges.length,
+      changes: unreadChanges,
+      orders: rows.map((item) => this.decorateDriverTodayOrder(item)),
+      outbound: {
+        done: hasOutbound,
+        label: hasOutbound ? '已出库' : '未出库',
+        detail: hasOutbound ? `${outboundTime || '--:--'} 完成` : '进入原任务页完成出库点呼'
+      },
+      inbound: {
+        done: hasInbound,
+        label: hasInbound ? '已入库' : '未入库',
+        detail: hasInbound ? `${inboundTime || '--:--'} 完成` : '完成今日任务后办理入库'
+      },
+      report: {
+        submitted: report.status === 'submitted',
+        label: report.status === 'submitted' ? '日报已提交' : (report.id ? '日报草稿' : '日报未填写'),
+        detail: report.status === 'submitted' ? `${report.assignment_count || rows.length} 单已汇总` : '在原任务页保存或提交'
+      },
+      documents: {
+        available: documents.length > 0,
+        count: documents.length,
+        fileUrl: documents[0] ? documents[0].file_url || '' : ''
+      }
+    };
+  },
+
+  latestDriverWorkflowEvent(events, eventTypes) {
+    return (events || [])
+      .filter((item) => eventTypes.indexOf(String(item.event_type || '')) >= 0)
+      .slice()
+      .sort((a, b) => String(a.event_time || a.created_at || '').localeCompare(String(b.event_time || b.created_at || '')))
+      .pop() || null;
+  },
+
+  driverWorkflowEventTime(event) {
+    const value = String(event && (event.event_time || event.created_at) || '');
+    const match = value.match(/(?:T|\s)(\d{2}:\d{2})/);
+    return match ? match[1] : '';
+  },
+
+  driverReadableDate(dateText) {
+    const value = String(dateText || '');
+    const parts = value.split('-');
+    if (parts.length !== 3) return value;
+    const dateValue = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const week = ['日', '一', '二', '三', '四', '五', '六'][dateValue.getDay()];
+    return `${Number(parts[1])}月${Number(parts[2])}日 周${week}`;
+  },
+
+  driverTodayState(rows, hasOutbound, hasInbound) {
+    if (!rows.length) return { label: '今日无任务', tone: 'idle' };
+    if (hasInbound) return { label: '已入库', tone: 'completed' };
+    if (hasOutbound) return { label: '运行中', tone: 'active' };
+    return { label: '未出库', tone: 'pending' };
+  },
+
+  decorateDriverTodayOrder(item) {
+    const status = String(item.rawStatus || item.execution_status || item.status || 'assigned').toLowerCase();
+    let tone = 'pending';
+    let statusText = this.statusText(status);
+    let statusMark = '';
+    if (['completed', 'returned'].includes(status)) {
+      tone = 'completed';
+      statusMark = '✓';
+    } else if (['confirmed', 'departed', 'arrived', 'in_service'].includes(status)) {
+      tone = 'active';
+    } else if (['cancelled', 'canceled'].includes(status)) {
+      tone = 'canceled';
+      statusText = '已取消';
+    } else if (['incident', 'exception', 'delayed', 'failed'].includes(status)) {
+      tone = 'exception';
+      statusText = '异常';
+    } else if (status === 'new' || item.is_new) {
+      tone = 'added';
+      statusText = '新增';
+    } else if (item.has_changes || item.change_status === 'adjusted') {
+      tone = 'adjusted';
+      statusText = '调整';
+    }
+    return Object.assign({}, item, {
+      todayTone: tone,
+      todayStatusText: statusText,
+      todayStatusMark: statusMark,
+      todayTypeText: this.driverTaskTypeText(item),
+      todayAlertText: item.change_notice || item.change_note || item.adjustment_note
+        || (item.has_changes || item.change_status === 'adjusted' ? '内容有更新，请重新确认' : ''),
+      todayTimeText: this.assignmentTimeText(item),
+      todayRouteText: this.assignmentRouteText(item)
+    });
+  },
+
+  driverTaskTypeText(item) {
+    const type = String(item.order_type || item.service_type || item.task_type || '').toLowerCase();
+    if (type.indexOf('airport') >= 0 || type.indexOf('transfer') >= 0) return '机场接送';
+    if (type.indexOf('charter') >= 0 || type.indexOf('tour') >= 0) return '包车';
+    if (type.indexOf('provisional') >= 0 || type.indexOf('temporary') >= 0) return '临时业务';
+    return item.order_type_label || item.service_type_label || '接送任务';
+  },
+
+  decorateDriverChange(item) {
+    const raw = item.raw || {};
+    const haystack = `${raw.notification_type || ''} ${item.title || ''} ${item.body || ''}`.toLowerCase();
+    let tone = 'added';
+    let tag = '新增';
+    if (haystack.indexOf('cancel') >= 0 || haystack.indexOf('取消') >= 0) {
+      tone = 'canceled';
+      tag = '取消';
+    } else if (haystack.indexOf('delay') >= 0 || haystack.indexOf('异常') >= 0 || haystack.indexOf('迟延') >= 0) {
+      tone = 'exception';
+      tag = '异常';
+    } else if (haystack.indexOf('更新') >= 0 || haystack.indexOf('変更') >= 0 || haystack.indexOf('调整') >= 0 || haystack.indexOf('時刻') >= 0 || haystack.indexOf('地点') >= 0) {
+      tone = 'adjusted';
+      tag = '调整';
+    }
+    return Object.assign({}, item, { changeTone: tone, changeTag: tag });
+  },
+
+  toggleDriverTodayOrder(e) {
+    const id = String((e.currentTarget.dataset || {}).id || '');
+    this.setData({ expandedDriverTodayOrderId: this.data.expandedDriverTodayOrderId === id ? '' : id });
+  },
+
+  toggleDriverChange(e) {
+    const id = String((e.currentTarget.dataset || {}).id || '');
+    this.setData({ expandedDriverChangeId: this.data.expandedDriverChangeId === id ? '' : id });
+  },
+
+  acknowledgeDriverChange(e) {
+    const index = Number((e.currentTarget.dataset || {}).index || 0);
+    const item = (this.data.driverTodayView.changes || [])[index];
+    if (!item || !item.notificationId) return;
+    api.markDriverNotificationRead(0, item.notificationId)
+      .then(() => {
+        wx.showToast({ title: '已标记收到', icon: 'success' });
+        this.setData({ expandedDriverChangeId: '' });
+        this.loadDashboard();
+      })
+      .catch(() => wx.showToast({ title: '同步失败，请重试', icon: 'none' }));
+  },
+
+  openDriverHomeShortcut(e) {
+    const target = String((e.currentTarget.dataset || {}).target || 'task');
+    if (target === 'provisional') {
+      this.openProvisionalTasks();
+      return;
+    }
+    if ((target === 'instruction' || target === 'acceptance') && this.data.driverTodayView.documents.fileUrl) {
+      wx.showLoading({ title: '打开 PDF' });
+      api.downloadAndOpenDocument(this.data.driverTodayView.documents.fileUrl)
+        .then(() => wx.hideLoading())
+        .catch(() => {
+          wx.hideLoading();
+          wx.showToast({ title: '文件打开失败', icon: 'none' });
+        });
+      return;
+    }
+    if (target === 'report') wx.setStorageSync('driver_task_report_focus', true);
+    this.goTask();
+  },
+
+  openDriverHeroAction() {
+    const target = String(this.data.driverTodayView.nextStepTarget || 'tasks');
+    if (target === 'depart' || target === 'return') wx.setStorageSync('driver_task_yard_focus', target);
+    this.goTask();
+  },
+
+  openDriverTodayTask() {
+    this.goTask();
   },
 
   buildDispatchOverview(assignments, drivers, vehicles, unassignedRows) {
@@ -2541,6 +2845,10 @@ Page({
 
   goTask() {
     wx.reLaunch({ url: '/package_dispatch/pages/task/index' });
+  },
+
+  openProvisionalTasks() {
+    wx.navigateTo({ url: '/package_dispatch/pages/provisional/index' });
   },
 
   notificationTypeText(type) {

@@ -24,6 +24,72 @@ export type AuthUser = {
   };
 };
 
+export type ProvisionalTaskEvent = {
+  id: number;
+  event_type: string;
+  actor_name?: string;
+  actor_role?: string;
+  reason?: string | null;
+  created_at?: string;
+};
+
+export type ProvisionalTask = {
+  id: number;
+  provisional_task_id: string;
+  display_number: string;
+  business_date: string;
+  driver_id: number;
+  vehicle_id: number;
+  service_kind?: string | null;
+  service_source?: string | null;
+  authorization_source?: string | null;
+  authorization_evidence?: string | null;
+  actual_pickup_location?: string | null;
+  actual_pickup_at?: string | null;
+  actual_dropoff_location?: string | null;
+  actual_dropoff_at?: string | null;
+  odometer_km?: number | null;
+  pickup_odometer_km?: number | null;
+  dropoff_odometer_km?: number | null;
+  note?: string | null;
+  status: string;
+  revision: number;
+  linked_order_id?: number | null;
+  review_reason?: string | null;
+  events?: ProvisionalTaskEvent[];
+};
+
+export type ProvisionalFormalOrder = {
+  order_id: number;
+  oid?: string;
+  price_jpy?: number | null;
+  driver_salary_jpy?: number | null;
+  driver_settlement_amount?: number | null;
+  driver_settlement_status?: string | null;
+};
+
+export type ProvisionalFinanceSummary = {
+  company: {
+    formal_order_count?: number;
+    completed_order_count?: number;
+    priced_order_count?: number;
+    unknown_price_count?: number;
+    known_business_amount_jpy?: number;
+    driver_salary_jpy?: number;
+    driver_settlement_amount_jpy?: number;
+  };
+  drivers: Array<{
+    driver_id: number;
+    driver_name?: string;
+    formal_order_count?: number;
+    completed_order_count?: number;
+    unknown_price_count?: number;
+    driver_salary_jpy?: number;
+    driver_settlement_amount_jpy?: number;
+  }>;
+  accounting_note?: string;
+};
+
 export type TenantOption = {
   id: number;
   name: string;

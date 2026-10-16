@@ -21,6 +21,7 @@
         "pages/task/index",
         "pages/expense/index",
         "pages/profile/index",
+        "pages/provisional/index",
         "pages/flow-demo/index"
       ]
     },

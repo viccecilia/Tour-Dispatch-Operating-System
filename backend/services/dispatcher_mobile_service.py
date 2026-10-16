@@ -20,6 +20,9 @@ from backend.config import WECHAT_MINIAPP_APPID
 from backend.services.wechat_auth_service import WechatAuthError, bind_principal_wechat
 
 
+DISPATCH_MOBILE_LOGIN_ROLES = {"admin", "dispatcher", "operations_manager", "driver"}
+
+
 def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
     username = str(payload.get("username") or "").strip()
     company_code, phone_part = split_company_account(username)
@@ -40,7 +43,7 @@ def login_dispatcher(payload: dict[str, Any]) -> dict[str, Any] | None:
         return result
 
     user = result["user"]
-    if user.get("role") not in {"admin", "dispatcher", "operations_manager"}:
+    if user.get("role") not in DISPATCH_MOBILE_LOGIN_ROLES:
         return None
     if not username_is_phone and payload.get("client_type") in {"dispatch_miniapp", "miniapp_dispatch", "company_lite"}:
         try:
@@ -86,7 +89,7 @@ def login_dispatcher_by_wechat(payload: dict[str, Any]) -> dict[str, Any] | None
     if result.get("error"):
         return result
     user = result["user"]
-    if user.get("role") not in {"admin", "dispatcher", "operations_manager"}:
+    if user.get("role") not in DISPATCH_MOBILE_LOGIN_ROLES:
         return None
     dispatcher = _dispatcher_from_user(user)
     return {
@@ -515,7 +518,7 @@ def _load_dispatcher(dispatcher_id: int, tenant_id: int) -> dict[str, Any]:
             FROM users u
             LEFT JOIN operator_profiles p ON p.user_id = u.id AND p.tenant_id = u.tenant_id
             WHERE u.id = ? AND u.tenant_id = ? AND u.is_active = 1
-              AND u.role IN ('admin', 'dispatcher', 'operations_manager')
+              AND u.role IN ('admin', 'dispatcher', 'operations_manager', 'driver')
             """,
             (dispatcher_id, tenant_id),
         ).fetchone()

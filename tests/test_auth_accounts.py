@@ -278,14 +278,31 @@ class SupabaseIdentityTest(unittest.TestCase):
             )
         self.assertEqual(str(error.exception), "wechat_binding_conflict")
 
-    def test_dispatch_client_rejects_driver_role(self):
+    def test_unified_dispatch_client_accepts_driver_role(self):
         principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
-        with self.assertRaises(wechat_auth_service.WechatAuthError) as error:
+        self.assertEqual(
             wechat_auth_service.bind_principal_wechat(
                 principal,
                 {"wx_openid": "dispatch-driver", "wx_unionid": "", "wx_appid": "app", "wx_client_type": "dispatch_miniapp"},
+            ),
+            "bound",
+        )
+
+    def test_dispatch_mobile_login_accepts_driver_and_preserves_driver_role(self):
+        principal = auth_account_service.resolve_authenticated_principal("auth-driver-a")
+        auth_result = {"token": "driver-token", "user": principal}
+        with patch.object(dispatcher_mobile_service, "authenticate_phone", return_value=auth_result):
+            result = dispatcher_mobile_service.login_dispatcher(
+                {
+                    "phone": "08000000001",
+                    "password": "not-read-by-mock",
+                    "client_type": "dispatch_miniapp",
+                }
             )
-        self.assertEqual(str(error.exception), "client_role_forbidden")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["user"]["role"], "driver")
+        self.assertEqual(result["dispatcher"]["dispatcher_role"], "driver")
+        self.assertEqual(result["dispatcher"]["dispatcher_id"], 11)
 
     def test_driver_client_rejects_agency_role(self):
         principal = auth_account_service.resolve_authenticated_principal("auth-owner-a")

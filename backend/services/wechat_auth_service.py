@@ -228,7 +228,13 @@ def _assert_principal_client(principal: dict[str, Any], client_type: str) -> Non
     scope = str(principal.get("account_scope") or "")
     allowed = (
         (client in DRIVER_CLIENTS and role == "driver" and scope == "driver")
-        or (client in DISPATCH_CLIENTS and role in DISPATCH_ROLES and scope in {"carrier", "platform"})
+        or (
+            client in DISPATCH_CLIENTS
+            and (
+                (role in DISPATCH_ROLES and scope in {"carrier", "platform"})
+                or (role == "driver" and scope == "driver")
+            )
+        )
         or (client in AGENCY_CLIENTS and role in AGENCY_ROLES and scope == "agency")
     )
     if not allowed:

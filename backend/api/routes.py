@@ -140,6 +140,24 @@ from backend.services.driver_service import (
     upload_driver_evidence,
     upload_driver_profile_document,
 )
+from backend.services.driver_route_actual_service import (
+    DriverRouteActualError,
+    get_driver_day_workbench,
+    save_driver_route_node_actual,
+)
+from backend.services.driver_provisional_service import (
+    DriverProvisionalError,
+    create_driver_provisional_task,
+    get_company_provisional_finance_summary,
+    get_company_provisional_task,
+    get_driver_provisional_task,
+    list_company_provisional_tasks,
+    list_driver_provisional_tasks,
+    price_company_provisional_task,
+    review_company_provisional_task,
+    submit_driver_provisional_task,
+    update_driver_provisional_task,
+)
 from backend.services.finance_service import (
     export_finance_csv,
     get_driver_income_summary,
@@ -967,6 +985,44 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/driver/assignments":
             self.send_json({"assignments": list_driver_assignments(self.driver_id(params))})
+            return
+        if path == "/api/driver/day-workbench":
+            try:
+                self.send_json(get_driver_day_workbench(self.current_user(), params))
+            except DriverRouteActualError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        if path == "/api/driver/provisional-tasks":
+            try:
+                self.send_json(list_driver_provisional_tasks(self.current_user(), params))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        driver_provisional_id = self._match_prefixed_id(path, "/api/driver/provisional-tasks/")
+        if driver_provisional_id:
+            try:
+                self.send_json(get_driver_provisional_task(self.current_user(), driver_provisional_id))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        if path == "/api/company/provisional-tasks":
+            try:
+                self.send_json(list_company_provisional_tasks(self.current_user(), params))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        if path == "/api/company/provisional-finance-summary":
+            try:
+                self.send_json(get_company_provisional_finance_summary(self.current_user()))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        company_provisional_id = self._match_prefixed_id(path, "/api/company/provisional-tasks/")
+        if company_provisional_id:
+            try:
+                self.send_json(get_company_provisional_task(self.current_user(), company_provisional_id))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
             return
         if path == "/api/driver/run-documents":
             user = self.require_role({"admin", "dispatcher", "operations_manager", "driver"})
@@ -2237,6 +2293,55 @@ class ApiHandler(BaseHTTPRequestHandler):
                 summary=f"Driver report {payload.get('report_type')} for assignment {payload.get('assignment_id')}",
             )
             self.send_json(result)
+            return
+        if path == "/api/driver/route-node-actual":
+            try:
+                self.send_json(save_driver_route_node_actual(self.current_user(), payload))
+            except DriverRouteActualError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        if path == "/api/driver/provisional-tasks":
+            try:
+                self.send_json(create_driver_provisional_task(self.current_user(), payload), HTTPStatus.CREATED)
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        driver_provisional_update_id = self._match_action_path(path, "/api/driver/provisional-tasks/", "/update")
+        if driver_provisional_update_id:
+            try:
+                self.send_json(update_driver_provisional_task(self.current_user(), driver_provisional_update_id, payload))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        driver_provisional_submit_id = self._match_action_path(path, "/api/driver/provisional-tasks/", "/submit")
+        if driver_provisional_submit_id:
+            try:
+                self.send_json(submit_driver_provisional_task(self.current_user(), driver_provisional_submit_id, payload))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+            return
+        for provisional_action in ("approve-create", "approve-link", "needs-info", "reject"):
+            company_provisional_id = self._match_action_path(
+                path, "/api/company/provisional-tasks/", f"/{provisional_action}"
+            )
+            if company_provisional_id:
+                try:
+                    self.send_json(
+                        review_company_provisional_task(
+                            self.current_user(), company_provisional_id, provisional_action, payload
+                        )
+                    )
+                except DriverProvisionalError as exc:
+                    self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
+                return
+        company_provisional_price_id = self._match_action_path(path, "/api/company/provisional-tasks/", "/pricing")
+        if company_provisional_price_id:
+            try:
+                self.send_json(price_company_provisional_task(
+                    self.current_user(), company_provisional_price_id, payload
+                ))
+            except DriverProvisionalError as exc:
+                self.send_json({"error": exc.code, **exc.details}, HTTPStatus(exc.status))
             return
         if path == "/api/driver/daily-report":
             self.send_json(save_driver_daily_report(payload))

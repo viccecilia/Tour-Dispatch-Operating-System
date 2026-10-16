@@ -1,246 +1,127 @@
 <view class="page task-page driver-theme">
-  <view class="panel yard-panel preflight-panel">
-    <view class="panel-header-lite">
-      <view>
-        <view class="panel-title">点呼出库</view>
-        <view class="muted">确认车辆、证件、睡眠和酒精状态后，开始执行今日任务。</view>
+  <view class="task-hero {{pageHero.stateTone}}">
+    <view class="task-hero-top">
+      <view class="task-hero-copy">
+        <view class="task-hero-kicker">{{pageHero.dateText}}</view>
+        <view class="task-hero-title">{{pageHero.stateLabel}}</view>
+        <view class="task-hero-meta">{{pageHero.driverText}} · {{pageHero.vehicleText}}</view>
       </view>
-      <view class="soft-count">{{vehicleStatusText}}</view>
+      <view class="task-hero-count"><text>当天任务</text><strong>{{pageHero.progressText}}</strong></view>
     </view>
-
-    <view class="form-grid">
-      <view class="form-field">
-        <text class="form-label">睡眠时间</text>
-        <input class="form-input" value="{{departForm.sleep_hours}}" data-key="sleep_hours" type="digit" bindinput="onDepartInput" placeholder="例：7.0" />
-      </view>
-      <view class="form-field">
-        <text class="form-label">出库时间</text>
-        <input class="form-input" value="{{departForm.depart_time}}" data-key="depart_time" bindinput="onDepartInput" placeholder="HH:mm" />
-      </view>
+    <view class="task-hero-bottom">
+      <text>{{pageHero.flowText}}</text>
+      <button data-target="{{pageHero.actionTarget}}" bindtap="focusHeroAction">{{pageHero.actionLabel}}</button>
     </view>
-
-    <view class="check-list">
-      <view wx:for="{{preflightItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onTogglePreflight">
-        <view class="check-dot {{preflightChecked[item.key] ? 'checked' : ''}}"></view>
-        <view>{{item.label}}</view>
-      </view>
-    </view>
-
-    <view class="yard-material-list">
-      <view class="yard-material-row">
-        <view>
-          <view class="yard-material-title">酒精测试结果</view>
-          <view class="yard-material-file">{{departMaterials.alcohol.file_name || '出库前拍照上传'}}</view>
-        </view>
-        <view class="yard-material-actions">
-          <view class="yard-material-upload" data-section="depart" data-key="alcohol" bindtap="chooseYardMaterial">{{departMaterials.alcohol.file_name ? '重选' : '上传'}}</view>
-          <view wx:if="{{departMaterials.alcohol.file_name}}" class="yard-material-clear" data-section="depart" data-key="alcohol" bindtap="clearYardMaterial">清除</view>
-        </view>
-      </view>
-    </view>
-
-    <button class="task-primary" loading="{{submitting}}" bindtap="submitDepart">{{departSubmitted ? '保存出库修改' : '确认出库'}}</button>
   </view>
 
   <view class="panel calendar-panel">
     <view class="calendar-head">
-      <view>
-        <picker mode="date" fields="month" value="{{selectedDate}}" bindchange="onPickMonth">
-          <view class="calendar-month-title">{{monthLabel}} <text class="month-pick-hint">选择</text></view>
-        </picker>
-      </view>
-      <view class="calendar-actions">
-        <button class="month-toggle" bindtap="toggleMonth">{{showMonth ? '周历' : '月历'}}</button>
-      </view>
+      <picker mode="date" fields="month" value="{{selectedDate}}" bindchange="onPickMonth">
+        <view class="calendar-month-title">{{monthLabel}} <text class="month-pick-hint">选择</text></view>
+      </picker>
+      <view class="calendar-actions"><button class="month-toggle" bindtap="toggleMonth">{{showMonth ? '周历' : '月历'}}</button></view>
     </view>
-
     <scroll-view wx:if="{{!showMonth}}" scroll-x class="week-strip" enable-flex enhanced show-scrollbar="{{false}}" scroll-into-view="{{selectedDayAnchor}}" scroll-with-animation>
       <view class="week-row">
-        <view
-          wx:for="{{weekDays}}"
-          wx:key="date"
-          id="{{item.anchor}}"
-          class="day-pill {{item.selected ? 'active' : ''}} {{item.today ? 'today' : ''}} {{item.holiday ? 'holiday' : ''}}"
-          data-date="{{item.date}}"
-          bindtap="onSelectDate"
-        >
-          <view class="day-week">周{{item.week}}</view>
-          <view class="day-num">{{item.day}}</view>
-          <view wx:if="{{item.count}}" class="day-count">{{item.count}}</view>
+        <view wx:for="{{weekDays}}" wx:key="date" id="{{item.anchor}}" class="day-pill {{item.selected ? 'active' : ''}} {{item.today ? 'today' : ''}} {{item.holiday ? 'holiday' : ''}}" data-date="{{item.date}}" bindtap="onSelectDate">
+          <view class="day-week">周{{item.week}}</view><view class="day-num">{{item.day}}</view><view wx:if="{{item.count}}" class="day-count">{{item.count}}</view>
         </view>
       </view>
     </scroll-view>
-
     <view wx:if="{{showMonth}}" class="month-grid">
       <view wx:for="{{weekLabels}}" wx:key="*this" class="month-week-label {{index === 0 || index === 6 ? 'holiday' : ''}}">周{{item}}</view>
-      <view
-        wx:for="{{monthDays}}"
-        wx:key="date"
-        class="month-day {{item.empty ? 'empty' : ''}} {{item.selected ? 'active' : ''}} {{item.count ? 'has-task' : ''}} {{item.holiday ? 'holiday' : ''}}"
-        data-date="{{item.date}}"
-        bindtap="onSelectDate"
-      >
-        <text wx:if="{{!item.empty}}" class="month-day-number">{{item.day}}</text>
-        <text wx:if="{{!item.empty && item.count}}" class="month-dot">{{item.count}}</text>
+      <view wx:for="{{monthDays}}" wx:key="date" class="month-day {{item.empty ? 'empty' : ''}} {{item.selected ? 'active' : ''}} {{item.count ? 'has-task' : ''}} {{item.holiday ? 'holiday' : ''}}" data-date="{{item.date}}" bindtap="onSelectDate">
+        <text wx:if="{{!item.empty}}" class="month-day-number">{{item.day}}</text><text wx:if="{{!item.empty && item.count}}" class="month-dot">{{item.count}}</text>
       </view>
     </view>
   </view>
 
-  <view class="panel daily-report-panel">
-    <view class="panel-header-lite">
-      <view>
-        <view class="panel-title">当日司机日报</view>
-        <view class="muted">已预填本人 {{dailyReport.assignment_count || 0}} 单已发布任务。</view>
-      </view>
-      <view class="soft-count">{{dailyReport.status === 'submitted' ? '已提交' : '草稿'}}</view>
+  <view id="driver-depart" class="panel yard-panel preflight-panel {{departSubmitted ? 'yard-complete' : ''}}">
+    <view class="yard-summary" data-section="depart" bindtap="toggleYardSection">
+      <view class="yard-summary-main"><view class="yard-status-mark {{departSubmitted ? 'done' : ''}}">{{departSubmitted ? '✓' : '出'}}</view><view><view class="panel-title">点呼出库</view><view class="muted">{{departSubmitted ? ((departRecord.time || '--:--') + ' 完成 · 点击查看记录') : '车辆、证件、睡眠和酒测检查后出库'}}</view></view></view>
+      <view class="yard-summary-status">{{departSubmitted ? '已完成' : '待办理'}} <text wx:if="{{departSubmitted}}">{{departExpanded ? '⌃' : '⌄'}}</text></view>
     </view>
-    <view class="daily-report-card">
-      <textarea class="form-textarea" value="{{dailyReport.summary}}" data-key="summary" bindinput="onDailyReportInput" placeholder="记录实际行程、异常、代收或需跟进事项"></textarea>
-      <view class="form-field daily-report-rest">
-        <text class="form-label">休息时长（小时，可手填）</text>
-        <input class="form-input" value="{{dailyReport.rest_hours}}" data-key="rest_hours" type="digit" bindinput="onDailyReportInput" placeholder="例：8.0" />
+    <view wx:if="{{departExpanded}}" class="yard-expanded">
+      <view wx:if="{{departSubmitted && !departEditing}}" class="yard-record">
+        <view class="yard-record-grid"><view><text>实际时间</text><strong>{{departRecord.time || '-'}}</strong></view><view><text>睡眠时间</text><strong>{{departRecord.hours ? departRecord.hours + ' 小时' : '-'}}</strong></view><view><text>确认项目</text><strong>{{departRecord.checks.length}} 项</strong></view><view><text>酒测材料</text><strong>{{departRecord.attachmentName || '已随记录保存'}}</strong></view></view>
+        <button wx:if="{{canWriteSelectedDate}}" class="yard-edit-link" data-section="depart" bindtap="editYardRecord">修改记录</button>
       </view>
-      <view class="daily-report-actions">
-        <button class="task-secondary" loading="{{dailyReportSaving}}" data-submit="false" bindtap="saveDailyReport">保存草稿</button>
-        <button class="task-primary compact" loading="{{dailyReportSaving}}" data-submit="true" bindtap="saveDailyReport">提交日报</button>
-      </view>
+      <block wx:elif="{{canWriteSelectedDate}}">
+        <view class="form-grid"><view class="form-field"><text class="form-label">睡眠时间</text><input class="form-input" value="{{departForm.sleep_hours}}" data-key="sleep_hours" type="digit" bindinput="onDepartInput" placeholder="例：7.0" /></view><view class="form-field"><text class="form-label">出库时间</text><input class="form-input" value="{{departForm.depart_time}}" data-key="depart_time" bindinput="onDepartInput" placeholder="HH:mm" /></view></view>
+        <view class="check-list"><view wx:for="{{preflightItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onTogglePreflight"><view class="check-dot {{preflightChecked[item.key] ? 'checked' : ''}}"></view><view>{{item.label}}</view></view></view>
+        <view class="yard-material-list"><view class="yard-material-row"><view><view class="yard-material-title">酒精测试结果</view><view class="yard-material-file">{{departMaterials.alcohol.file_name || '出库前拍照上传'}}</view></view><view class="yard-material-actions"><view class="yard-material-upload" data-section="depart" data-key="alcohol" bindtap="chooseYardMaterial">{{departMaterials.alcohol.file_name ? '重选' : '上传'}}</view><view wx:if="{{departMaterials.alcohol.file_name}}" class="yard-material-clear" data-section="depart" data-key="alcohol" bindtap="clearYardMaterial">清除</view></view></view></view>
+        <button class="task-primary" loading="{{submitting}}" bindtap="submitDepart">{{departSubmitted ? '保存出库修改' : '确认出库'}}</button>
+      </block>
+      <view wx:else class="future-readonly">未来日期只显示计划，不能提前填写点呼实绩。</view>
     </view>
+  </view>
+
+  <view id="driver-tasks" class="panel task-main-panel">
+    <view class="panel-header-lite"><view><view class="panel-title">{{selectedDate === today ? '今日任务' : selectedLabel + ' 任务'}}</view><view class="muted">点开每单，原位填写两列三行六项实绩。</view></view><view class="soft-count">{{assignments.length}} 单</view></view>
+    <view wx:if="{{actualPendingCount}}" class="actual-pending-banner" bindtap="retryPendingActuals"><view><strong>{{actualPendingCount}} 条实际记录尚未同步</strong><text>保留原请求号，点此安全重试</text></view><view class="retry">重试</view></view>
+    <view wx:if="{{loadState === 'loading'}}" class="task-loading">正在读取所选日期的任务与实绩…</view>
+    <view wx:elif="{{loadState === 'error'}}" class="empty-state"><view class="empty-title">任务加载失败</view><view class="muted">请检查网络后重新进入，不会使用演示数据替代。</view></view>
+    <view wx:else class="task-list">
+      <view wx:for="{{assignments}}" wx:key="assignment_id" class="task-card {{item.isExpanded ? 'expanded' : 'collapsed'}}">
+        <view class="task-card-head" data-id="{{item.assignment_id || item.id}}" bindtap="toggleTask"><view class="task-main"><view class="task-time">{{item.timeText}}</view><view class="task-route-head">{{item.routeText}}</view><view class="task-order-no">{{item.orderNoText || item.oid || item.order_id || '任务'}}</view></view><view class="task-status {{item.orderStatusClass}}">{{item.orderStatusText}}</view></view>
+        <view wx:if="{{item.isExpanded}}" class="task-detail">
+          <view class="detail-row"><text>司机</text><text>{{item.driver_name || '-'}}</text></view><view class="detail-row"><text>车辆</text><text>{{item.plate_number || item.vehicle_plate || '-'}}</text></view>
+          <view class="actual-editor">
+            <view class="actual-editor-head"><view><strong>本单实际</strong><text>计划值仅作提示，未确认不会写成实际</text></view><view class="actual-sync">{{item.actualSyncText}}</view></view>
+            <view wx:if="{{item.canEditActual}}" class="actual-grid">
+              <label><text>到着場所</text><input data-id="{{item.assignment_id || item.id}}" data-key="pickup_location" value="{{item.actualEditor.form.pickup_location}}" placeholder="{{item.actualEditor.pickupPlannedLocation || '实际地点'}}" bindinput="onActualInput" /></label>
+              <label><text>出発時刻</text><input data-id="{{item.assignment_id || item.id}}" data-key="pickup_departure_at" value="{{item.actualEditor.form.pickup_departure_at}}" placeholder="{{item.actualEditor.pickupPlannedTime || 'YYYY-MM-DD HH:mm'}}" bindinput="onActualInput" /></label>
+              <label><text>到着時刻</text><input data-id="{{item.assignment_id || item.id}}" data-key="dropoff_arrival_at" value="{{item.actualEditor.form.dropoff_arrival_at}}" placeholder="{{item.actualEditor.dropoffPlannedTime || 'YYYY-MM-DD HH:mm'}}" bindinput="onActualInput" /></label>
+              <label><text>降車場所</text><input data-id="{{item.assignment_id || item.id}}" data-key="dropoff_location" value="{{item.actualEditor.form.dropoff_location}}" placeholder="{{item.actualEditor.dropoffPlannedLocation || '实际地点'}}" bindinput="onActualInput" /></label>
+              <label><text>到着時メーター</text><input type="digit" data-id="{{item.assignment_id || item.id}}" data-key="pickup_odometer" value="{{item.actualEditor.form.pickup_odometer}}" placeholder="km" bindinput="onActualInput" /></label>
+              <label><text>降車時メーター</text><input type="digit" data-id="{{item.assignment_id || item.id}}" data-key="dropoff_odometer" value="{{item.actualEditor.form.dropoff_odometer}}" placeholder="km" bindinput="onActualInput" /></label>
+            </view>
+            <button wx:if="{{item.canEditActual}}" class="actual-save" data-id="{{item.assignment_id || item.id}}" loading="{{item.actualEditor.saving}}" bindtap="saveActualFields">保存本单实际</button>
+            <view wx:else class="actual-unavailable">{{canWriteSelectedDate ? '尚无可写的已发布稳定节点；不会写入未发布或已失效计划。' : '未来日期仅可查看计划。'}}</view>
+          </view>
+        </view>
+        <button wx:if="{{item.canConfirm}}" class="task-confirm" data-id="{{item.assignment_id || item.id}}" loading="{{submitting}}" bindtap="confirmTask">确认接单</button>
+      </view>
+      <view wx:if="{{!assignments.length}}" class="empty-state"><view class="empty-title">当天没有任务</view><view class="muted">调度派车后，这里会显示司机自己的已发布任务。</view></view>
+    </view>
+  </view>
+
+  <view id="driver-return" class="panel yard-panel return-panel {{returnSubmitted ? 'yard-complete' : ''}}">
+    <view class="yard-summary" data-section="return" bindtap="toggleYardSection"><view class="yard-summary-main"><view class="yard-status-mark {{returnSubmitted ? 'done' : ''}}">{{returnSubmitted ? '✓' : '入'}}</view><view><view class="panel-title">点呼入库</view><view class="muted">{{returnSubmitted ? ((returnRecord.time || '--:--') + ' 完成 · 点击查看记录') : '今日任务完成后，完成清扫、点检和酒测'}}</view></view></view><view class="yard-summary-status">{{returnSubmitted ? '已完成' : '待办理'}} <text wx:if="{{returnSubmitted}}">{{returnExpanded ? '⌃' : '⌄'}}</text></view></view>
+    <view wx:if="{{returnExpanded}}" class="yard-expanded">
+      <view wx:if="{{returnSubmitted && !returnEditing}}" class="yard-record"><view class="yard-record-grid"><view><text>实际时间</text><strong>{{returnRecord.time || '-'}}</strong></view><view><text>休息时间</text><strong>{{returnRecord.hours ? returnRecord.hours + ' 小时' : '-'}}</strong></view><view><text>确认项目</text><strong>{{returnRecord.checks.length}} 项</strong></view><view><text>酒测材料</text><strong>{{returnRecord.attachmentName || '已随记录保存'}}</strong></view></view><button wx:if="{{canWriteSelectedDate}}" class="yard-edit-link" data-section="return" bindtap="editYardRecord">修改记录</button></view>
+      <block wx:elif="{{canWriteSelectedDate}}">
+        <view class="form-grid"><view class="form-field"><text class="form-label">休息时间</text><input class="form-input" value="{{returnForm.rest_hours}}" data-key="rest_hours" type="digit" bindinput="onReturnInput" placeholder="例：1.5" /></view><view class="form-field"><text class="form-label">入库时间</text><input class="form-input" value="{{returnForm.return_time}}" data-key="return_time" bindinput="onReturnInput" placeholder="HH:mm" /></view></view>
+        <view class="check-list"><view wx:for="{{returnItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onToggleReturn"><view class="check-dot {{returnChecked[item.key] ? 'checked' : ''}}"></view><view>{{item.label}}</view></view></view>
+        <view class="yard-material-list"><view class="yard-material-row"><view><view class="yard-material-title">酒精测试结果</view><view class="yard-material-file">{{returnMaterials.alcohol.file_name || '入库时拍照上传'}}</view></view><view class="yard-material-actions"><view class="yard-material-upload" data-section="return" data-key="alcohol" bindtap="chooseYardMaterial">{{returnMaterials.alcohol.file_name ? '重选' : '上传'}}</view><view wx:if="{{returnMaterials.alcohol.file_name}}" class="yard-material-clear" data-section="return" data-key="alcohol" bindtap="clearYardMaterial">清除</view></view></view></view>
+        <view class="paper-report-removed">无需上传纸质司机日报照片；酒测、车辆点检和入库点呼仍为必填。</view>
+        <button class="task-primary return" loading="{{submitting}}" bindtap="submitReturn">{{returnSubmitted ? '保存入库修改' : '确认入库'}}</button>
+      </block>
+      <view wx:else class="future-readonly">未来日期只显示计划，不能提前填写点呼实绩。</view>
+    </view>
+  </view>
+
+  <view id="driver-report" class="panel report-status-panel {{returnSubmitted && dailyReport.status === 'submitted' ? 'completed' : (returnSubmitted ? 'pending' : 'locked')}}">
+    <view class="report-status-kicker">{{returnSubmitted ? (dailyReport.status === 'submitted' ? '✓ 当日工作闭环' : '最后一步 · 无需纸质日报') : '日报整理'}}</view>
+    <view class="report-status-title">{{returnSubmitted ? (dailyReport.status === 'submitted' ? '今日工作已完成' : '运行结束，日报待提交') : '完成入库后整理日报'}}</view>
+    <view class="muted">{{returnSubmitted ? (dailyReport.status === 'submitted' ? '出库、任务、入库和日报提交均已完成。' : '根据真实任务及点呼记录整理后正式提交。') : '入库成功不会自动提交日报。'}}</view>
+    <view wx:if="{{returnSubmitted}}" class="report-status-meta">{{dailyReport.status === 'submitted' ? ('状态：已提交 ' + (dailyReport.submitted_at || '')) : ('状态：' + (dailyReport.status === 'draft' ? '草稿' : dailyReport.status))}}</view>
+    <button wx:if="{{returnSubmitted}}" class="report-open" bindtap="toggleReportEditor">{{dailyReport.status === 'submitted' ? '查看日报记录' : '整理・提出司机日报'}}</button>
+    <view wx:if="{{reportEditorOpen}}" class="daily-report-card">
+      <view class="daily-report-prefill">已关联本人 {{dailyReport.assignment_count || 0}} 单已发布任务，任务实绩无需逐单重写。</view>
+      <textarea class="form-textarea" disabled="{{dailyReport.status === 'submitted'}}" value="{{dailyReport.summary}}" data-key="summary" bindinput="onDailyReportInput" placeholder="记录异常或其他需跟进事项（选填）"></textarea>
+      <view class="form-field daily-report-rest"><text class="form-label">休息时长（小时，可手填）</text><input class="form-input" disabled="{{dailyReport.status === 'submitted'}}" value="{{dailyReport.rest_hours}}" data-key="rest_hours" type="digit" bindinput="onDailyReportInput" placeholder="例：8.0" /></view>
+      <view wx:if="{{dailyReport.status !== 'submitted'}}" class="daily-report-actions"><button class="task-secondary" loading="{{dailyReportSaving}}" data-submit="false" bindtap="saveDailyReport">保存草稿</button><button class="task-primary compact" loading="{{dailyReportSaving}}" data-submit="true" bindtap="saveDailyReport">正式提交</button></view>
+      <view wx:else class="submitted-report-note">已提交记录为只读；后续正式修订应保留原版本和修订历史。</view>
+    </view>
+    <view class="daily-pdf-gap">正式司机日报 PDF 尚未实施，因此本页不显示虚假的生成、下载或打印按钮。</view>
   </view>
 
   <view wx:if="{{runDocuments.length}}" class="panel run-doc-panel">
-    <view class="panel-header-lite">
-      <view>
-        <view class="panel-title">运行文件</view>
-        <view class="muted">运行指示书与运行引受书，可下载或打印。</view>
-      </view>
-      <view class="soft-count">{{runDocuments.length}} 份</view>
-    </view>
-    <view class="run-doc-list">
-      <view wx:for="{{runDocuments}}" wx:key="id" class="run-doc-row" data-url="{{item.file_url}}" bindtap="openRunDocument">
-        <view><view class="run-doc-title">{{item.title}}</view><view class="muted">{{item.meta}}</view></view>
-        <view class="run-doc-open">PDF</view>
-      </view>
-    </view>
+    <view class="panel-header-lite"><view><view class="panel-title">运行文书</view><view class="muted">这是已发布的运行指示/引受文书，不是司机日报 PDF。</view></view><view class="soft-count">{{runDocuments.length}} 份</view></view>
+    <view class="run-doc-list"><view wx:for="{{runDocuments}}" wx:key="id" class="run-doc-row" data-url="{{item.file_url}}" bindtap="openRunDocument"><view><view class="run-doc-title">{{item.title}}</view><view class="muted">{{item.meta}}</view></view><view class="run-doc-open">打开</view></view></view>
   </view>
 
-  <view wx:if="{{readyAssignments.length}}" class="panel ready-panel">
-    <view class="panel-header-lite">
-      <view>
-        <view class="panel-title">已确认待出库任务</view>
-        <view class="muted">司机确认后的任务会先在这里等待出库点呼。</view>
-      </view>
-      <view class="soft-count">{{readyAssignments.length}} 单</view>
-    </view>
-    <view class="ready-list">
-      <view wx:for="{{readyAssignments}}" wx:key="assignment_id" class="ready-card">
-        <view class="ready-time">{{item.timeText}}</view>
-        <view class="ready-route">{{item.routeText}}</view>
-        <view class="task-order-no">{{item.orderNoText || item.oid || item.order_id || '任务'}}</view>
-      </view>
-    </view>
-  </view>
-
-  <view class="panel">
-    <view class="panel-header-lite">
-      <view>
-        <view class="panel-title">{{selectedLabel}} 任务</view>
-        <view class="muted">选中日历日期后，这里显示当天任务。</view>
-      </view>
-      <view class="soft-count">{{assignments.length}} 单</view>
-    </view>
-
-    <view class="task-list">
-      <view wx:for="{{assignments}}" wx:key="assignment_id" class="task-card {{item.isExpanded ? 'expanded' : 'collapsed'}}">
-        <view class="task-card-head" data-id="{{item.assignment_id || item.id}}" bindtap="toggleTask">
-          <view class="task-main">
-            <view class="task-time">{{item.timeText}}</view>
-            <view class="task-route-head">{{item.routeText}}</view>
-            <view class="task-order-no">{{item.orderNoText || item.oid || item.order_id || '任务'}}</view>
-          </view>
-          <view class="task-status {{item.orderStatusClass}}">{{item.orderStatusText}}</view>
-        </view>
-
-        <view wx:if="{{item.isExpanded}}" class="task-detail">
-          <view class="task-route">{{item.routeText}}</view>
-          <view class="detail-row">
-            <text>司机</text>
-            <text>{{item.driver_name || '-'}}</text>
-          </view>
-          <view class="detail-row">
-            <text>车辆</text>
-            <text>{{item.plate_number || item.vehicle_plate || '-'}}</text>
-          </view>
-        </view>
-
-        <button
-          wx:if="{{item.canConfirm}}"
-          class="task-confirm"
-          data-id="{{item.assignment_id || item.id}}"
-          loading="{{submitting}}"
-          bindtap="confirmTask"
-        >确认接单</button>
-      </view>
-
-      <view wx:if="{{!assignments.length && !loading}}" class="empty-state">
-        <view class="empty-title">当天没有任务</view>
-        <view class="muted">调度派车后，这里会显示司机自己的任务。</view>
-      </view>
-    </view>
-  </view>
-
-  <view class="panel yard-panel return-panel">
-    <view class="panel-header-lite">
-      <view>
-        <view class="panel-title">点呼入库</view>
-        <view class="muted">今日任务完成后，填写休息时间和入库确认。</view>
-      </view>
-      <view class="soft-count">{{vehicleStatusText}}</view>
-    </view>
-
-    <view class="form-grid">
-      <view class="form-field">
-        <text class="form-label">休息时间</text>
-        <input class="form-input" value="{{returnForm.rest_hours}}" data-key="rest_hours" type="digit" bindinput="onReturnInput" placeholder="例：1.5" />
-      </view>
-      <view class="form-field">
-        <text class="form-label">入库时间</text>
-        <input class="form-input" value="{{returnForm.return_time}}" data-key="return_time" bindinput="onReturnInput" placeholder="HH:mm" />
-      </view>
-    </view>
-
-    <view class="check-list">
-      <view wx:for="{{returnItems}}" wx:key="key" class="check-row" data-key="{{item.key}}" bindtap="onToggleReturn">
-        <view class="check-dot {{returnChecked[item.key] ? 'checked' : ''}}"></view>
-        <view>{{item.label}}</view>
-      </view>
-    </view>
-
-    <view class="yard-material-list">
-      <view class="yard-material-row">
-        <view>
-          <view class="yard-material-title">酒精测试结果</view>
-          <view class="yard-material-file">{{returnMaterials.alcohol.file_name || '入库时拍照上传'}}</view>
-        </view>
-        <view class="yard-material-actions">
-          <view class="yard-material-upload" data-section="return" data-key="alcohol" bindtap="chooseYardMaterial">{{returnMaterials.alcohol.file_name ? '重选' : '上传'}}</view>
-          <view wx:if="{{returnMaterials.alcohol.file_name}}" class="yard-material-clear" data-section="return" data-key="alcohol" bindtap="clearYardMaterial">清除</view>
-        </view>
-      </view>
-      <view class="yard-material-row">
-        <view>
-          <view class="yard-material-title">司机日报</view>
-          <view class="yard-material-file">{{returnMaterials.daily_report.file_name || '入库日报拍照上传'}}</view>
-        </view>
-        <view class="yard-material-actions">
-          <view class="yard-material-upload" data-section="return" data-key="daily_report" bindtap="chooseYardMaterial">{{returnMaterials.daily_report.file_name ? '重选' : '上传'}}</view>
-          <view wx:if="{{returnMaterials.daily_report.file_name}}" class="yard-material-clear" data-section="return" data-key="daily_report" bindtap="clearYardMaterial">清除</view>
-        </view>
-      </view>
-    </view>
-
-    <button class="task-primary return" loading="{{submitting}}" bindtap="submitReturn">{{returnSubmitted ? '保存入库修改' : '确认入库，今日收工'}}</button>
-  </view>
-
-  <view wx:if="{{message}}" class="panel muted">{{message}}</view>
+  <view wx:if="{{message}}" class="panel message-panel">{{message}}</view>
   <custom-tab-bar />
 </view>

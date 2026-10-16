@@ -44,6 +44,8 @@ ROUTE_NODE_ACTUAL_CONTRACT = {
         "actual_arrival_at", "actual_departure_at", "odometer_km", "actual_location",
         "actual_node_status", "change_reason", "entered_by", "entered_at",
     ),
+    "source_binding": ("source_document_version_id", "source_sha256"),
+    "concurrency": ("revision", "client_request_id", "expected_revision"),
 }
 DAILY_INSPECTION_CONTRACT = {
     "required": ("inspection_id", "vehicle_id", "business_date", "driver_id", "run_group_id"),

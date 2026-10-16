@@ -40,6 +40,9 @@ import type {
   OrgOverview,
   ManagedAccount,
   PlatformAuthSettings,
+  ProvisionalFinanceSummary,
+  ProvisionalFormalOrder,
+  ProvisionalTask,
   ReminderSettings,
   ResourceAlert,
   ResourceLibraryResponse,
@@ -206,6 +209,22 @@ function searchFrom(input: unknown, allowedKeys: string[]) {
 export const api = {
   baseUrl: API_BASE_URL,
   ping: () => request<{ ok: boolean; message?: string }>("/api/ping"),
+  companyProvisionalTasks: (status = "") =>
+    request<{ tasks: ProvisionalTask[] }>(`/api/company/provisional-tasks${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  companyProvisionalTask: (taskId: string) =>
+    request<{ task: ProvisionalTask; formal_order: ProvisionalFormalOrder | null }>(`/api/company/provisional-tasks/${taskId}`),
+  reviewCompanyProvisionalTask: (taskId: string, action: "approve-create" | "approve-link" | "needs-info" | "reject", payload: Record<string, unknown>) =>
+    request<{ task: ProvisionalTask; formal_order: ProvisionalFormalOrder | null }>(`/api/company/provisional-tasks/${taskId}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  priceCompanyProvisionalTask: (taskId: string, payload: Record<string, unknown>) =>
+    request<{ task: ProvisionalTask; formal_order: ProvisionalFormalOrder | null; settlement_adjustment_required?: boolean; settled_delta_jpy?: number | null }>(`/api/company/provisional-tasks/${taskId}/pricing`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  companyProvisionalFinanceSummary: () =>
+    request<ProvisionalFinanceSummary>("/api/company/provisional-finance-summary"),
   agencies: async (params?: { keyword?: string; status?: string }) => {
     const search = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {

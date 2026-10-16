@@ -26,6 +26,7 @@ const CARRIER_ADMIN_PAGES = new Set<PageKey>([
   "parser",
   "orders",
   "dispatch",
+  "provisional-orders",
   "fixed-tours",
   "auction",
   "calendar",

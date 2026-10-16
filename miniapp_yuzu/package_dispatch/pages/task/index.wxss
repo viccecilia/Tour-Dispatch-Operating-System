@@ -1,5 +1,9 @@
 @import "../../../app.wxss";
 
+.actual-pending-banner { display:flex; align-items:center; justify-content:space-between; gap:16rpx; color:#92400e; background:#fff7ed; border-color:#fed7aa; }
+.actual-pending-banner>view:first-child{display:flex;flex-direction:column;gap:4rpx}.actual-pending-banner strong{font-size:24rpx}.actual-pending-banner text{font-size:20rpx}.actual-pending-banner .retry{font-size:22rpx;font-weight:900;color:#c2410c;}
+.actual-editor{margin-top:18rpx;padding:18rpx;border-radius:20rpx;background:#f7fbfd;border:1rpx solid #d5e3ea;}.actual-editor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12rpx}.actual-editor-head>view:first-child{display:flex;flex-direction:column;gap:4rpx}.actual-editor-head strong{font-size:24rpx;color:#173f4d}.actual-editor-head text{font-size:19rpx;color:#718793}.actual-sync{color:#0f766e;font-size:19rpx;font-weight:800;white-space:nowrap}.actual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12rpx;margin-top:16rpx}.actual-grid label{display:flex;flex-direction:column;gap:6rpx;min-width:0}.actual-grid label>text{font-size:19rpx;font-weight:800;color:#4f6774}.actual-grid input{width:100%;box-sizing:border-box;padding:14rpx 12rpx;border:1rpx solid #c8d8e1;border-radius:14rpx;background:#fff;font-size:21rpx;color:#173945}.actual-save{margin-top:16rpx;width:100%;color:#fff;background:#0f8a7b;border-radius:16rpx;font-size:23rpx;font-weight:900}.actual-unavailable{margin-top:14rpx;padding:14rpx;border-radius:14rpx;background:#eef2f6;color:#64748b;font-size:20rpx;line-height:1.45}
+
 .task-page {
   padding-bottom: 150rpx;
 }
@@ -654,4 +658,109 @@
 
 .yard-mini-panel.return-mini .yard-mini-title {
   color: #155e75;
+}
+
+/* Driver Task Page UI V2: hero -> calendar -> outbound -> tasks -> inbound -> report. */
+.task-page {
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding-bottom: calc(170rpx + env(safe-area-inset-bottom));
+}
+
+.task-hero {
+  margin: 20rpx 20rpx 0;
+  padding: 30rpx 28rpx 24rpx;
+  border-radius: 34rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #0b6f73, #119d8d);
+  box-shadow: 0 18rpx 42rpx rgba(15, 118, 110, .2);
+}
+
+.task-hero.pending { background: linear-gradient(135deg, #17546b, #177f81); }
+.task-hero.active { background: linear-gradient(135deg, #0d6f80, #0f9a91); }
+.task-hero.report { background: linear-gradient(135deg, #0b7377, #0ca790); }
+.task-hero.completed { background: linear-gradient(135deg, #08736c, #0d998b); }
+
+.task-hero-top,
+.task-hero-bottom,
+.yard-summary,
+.yard-summary-main {
+  display: flex;
+  align-items: center;
+}
+
+.task-hero-top { justify-content: space-between; gap: 20rpx; }
+.task-hero-copy { min-width: 0; flex: 1; }
+.task-hero-kicker { font-size: 21rpx; font-weight: 800; opacity: .82; }
+.task-hero-title { margin-top: 8rpx; font-size: 42rpx; line-height: 1.2; font-weight: 950; overflow-wrap: anywhere; }
+.task-hero-meta { margin-top: 10rpx; font-size: 23rpx; opacity: .9; overflow-wrap: anywhere; }
+.task-hero-count { flex: 0 0 132rpx; min-height: 112rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2rpx solid rgba(255,255,255,.22); border-radius: 24rpx; background: rgba(255,255,255,.12); }
+.task-hero-count text { font-size: 20rpx; opacity: .85; }
+.task-hero-count strong { margin-top: 4rpx; font-size: 40rpx; line-height: 1; }
+.task-hero-bottom { justify-content: space-between; gap: 16rpx; margin-top: 24rpx; padding-top: 20rpx; border-top: 2rpx solid rgba(255,255,255,.2); font-size: 21rpx; }
+.task-hero-bottom text { min-width: 0; flex: 1; }
+.task-hero-bottom button { flex: 0 0 auto; width: auto; min-width: 126rpx; height: 54rpx; margin: 0; padding: 0 18rpx; border: 2rpx solid rgba(255,255,255,.32); border-radius: 16rpx; color: #fff; background: rgba(255,255,255,.13); font-size: 21rpx; font-weight: 900; line-height: 50rpx; }
+.task-hero-bottom button::after { border: 0; }
+
+.calendar-panel { margin-top: 18rpx; }
+.yard-panel,
+.task-main-panel,
+.report-status-panel,
+.run-doc-panel,
+.message-panel { margin-top: 18rpx; }
+
+.yard-summary { justify-content: space-between; gap: 16rpx; }
+.yard-summary-main { min-width: 0; flex: 1; gap: 16rpx; }
+.yard-status-mark { flex: 0 0 66rpx; height: 66rpx; display: flex; align-items: center; justify-content: center; border-radius: 20rpx; color: #0f766e; background: #e6f7f3; font-size: 28rpx; font-weight: 950; }
+.yard-status-mark.done { color: #047857; background: #dcfce7; }
+.yard-summary-status { flex: 0 0 auto; color: #0f766e; font-size: 21rpx; font-weight: 900; white-space: nowrap; }
+.yard-expanded { margin-top: 22rpx; padding-top: 20rpx; border-top: 1rpx solid #e2e8f0; }
+.yard-complete { padding-top: 22rpx; padding-bottom: 22rpx; }
+
+.yard-record-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12rpx; }
+.yard-record-grid > view { min-width: 0; padding: 16rpx; border-radius: 16rpx; background: #f7fafc; }
+.yard-record-grid text { display: block; color: #718096; font-size: 19rpx; }
+.yard-record-grid strong { display: block; margin-top: 6rpx; color: #173f4d; font-size: 22rpx; overflow-wrap: anywhere; }
+.yard-edit-link { width: 100%; height: 58rpx; margin-top: 16rpx; border: 1rpx solid #b7ddd7; border-radius: 16rpx; color: #0f766e; background: #fff; font-size: 21rpx; font-weight: 850; line-height: 56rpx; }
+.yard-edit-link::after { border: 0; }
+.future-readonly,
+.paper-report-removed,
+.submitted-report-note,
+.daily-pdf-gap,
+.daily-report-prefill,
+.task-loading { padding: 16rpx; border-radius: 16rpx; font-size: 20rpx; line-height: 1.55; }
+.future-readonly { color: #64748b; background: #f1f5f9; }
+.paper-report-removed { margin-top: 16rpx; color: #0f766e; background: #ecfdf5; }
+.task-loading { color: #64748b; text-align: center; background: #f8fafc; }
+
+.task-main-panel .actual-pending-banner { margin: 18rpx 0 0; padding: 16rpx; border: 1rpx solid #fed7aa; border-radius: 16rpx; }
+.task-card { overflow: hidden; }
+.task-route-head,
+.task-time,
+.task-order-no { overflow-wrap: anywhere; }
+.actual-grid input { min-width: 0; }
+
+.report-status-panel { border-color: #b7e7df; background: #f7fffd; }
+.report-status-panel.locked { border-color: #dbe4eb; background: #fff; }
+.report-status-panel.completed { border-color: #a7e0d5; background: #f0fdfa; }
+.report-status-kicker { color: #0f766e; font-size: 20rpx; font-weight: 900; }
+.report-status-title { margin: 8rpx 0; color: #173f4d; font-size: 32rpx; font-weight: 950; }
+.report-status-meta { margin-top: 12rpx; color: #0f766e; font-size: 20rpx; font-weight: 800; overflow-wrap: anywhere; }
+.report-open { width: 100%; height: 72rpx; margin-top: 20rpx; border-radius: 18rpx; color: #fff; background: #0f9b8e; font-size: 24rpx; font-weight: 900; line-height: 72rpx; }
+.report-open::after { border: 0; }
+.report-status-panel .daily-report-card { margin-top: 18rpx; padding: 18rpx; border: 1rpx solid #d8e8e5; border-radius: 20rpx; background: #fff; }
+.daily-report-prefill { margin-bottom: 14rpx; color: #476675; background: #f0f7f8; }
+.submitted-report-note { margin-top: 14rpx; color: #476675; background: #f1f5f9; }
+.daily-pdf-gap { margin-top: 16rpx; color: #64748b; background: rgba(255,255,255,.72); }
+.message-panel { color: #92400e; background: #fff7ed; }
+
+@media (max-width: 360px) {
+  .task-hero { margin-left: 14rpx; margin-right: 14rpx; padding-left: 22rpx; padding-right: 22rpx; }
+  .task-hero-title { font-size: 36rpx; }
+  .task-hero-count { flex-basis: 112rpx; }
+  .task-hero-bottom { align-items: flex-start; flex-direction: column; }
+  .task-hero-bottom button { width: 100%; }
+  .actual-grid { gap: 8rpx; }
+  .actual-grid input { padding-left: 8rpx; padding-right: 8rpx; font-size: 19rpx; }
+  .yard-record-grid { grid-template-columns: 1fr; }
 }

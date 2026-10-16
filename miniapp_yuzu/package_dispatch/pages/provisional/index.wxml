@@ -1,0 +1,106 @@
+<view class="page provisional-page">
+  <view class="provisional-hero">
+    <view class="eyebrow">TEMPORARY BUSINESS</view>
+    <view class="title">{{isDriver ? '临时业务记录' : '临时订单审批'}}</view>
+    <view class="subtitle">{{isDriver ? '只记录本人实际事实；正式订单由所属车公司管理员确认。' : '同租户管理员确认真实性、正式订单关联及价格。'}}</view>
+  </view>
+
+  <view wx:if="{{isCarrierAdmin && financeSummary}}" class="summary-grid">
+    <view><strong>{{financeSummary.company.formal_order_count || 0}}</strong><text>正式订单</text></view>
+    <view><strong>{{financeSummary.company.completed_order_count || 0}}</strong><text>已完成</text></view>
+    <view class="warn"><strong>{{financeSummary.company.unknown_price_count || 0}}</strong><text>价格待定</text></view>
+    <view><strong>¥{{financeSummary.company.known_business_amount_jpy || 0}}</strong><text>已知营业额</text></view>
+  </view>
+
+  <view wx:if="{{isDriver}}" class="toolbar">
+    <button class="primary" bindtap="newTask">＋ 临时业务を記録</button>
+    <view wx:if="{{localUnsynced}}" class="unsynced">本机未同步</view>
+  </view>
+
+  <view wx:if="{{message}}" class="message {{localUnsynced ? 'warning' : ''}}">{{message}}</view>
+
+  <view wx:if="{{!editorOpen}}" class="task-list">
+    <view wx:for="{{tasks}}" wx:key="provisional_task_id" class="task-card" data-id="{{item.provisional_task_id}}" bindtap="openTask">
+      <view class="task-head">
+        <view><strong>{{item.display_number}}</strong><text>{{item.business_date}}</text></view>
+        <view class="status status-{{item.status}}">{{item.statusLabel}}</view>
+      </view>
+      <view class="route">{{item.routeText}}</view>
+      <view class="meta">V{{item.revision}} · {{item.service_kind || 'other'}}<text wx:if="{{item.review_reason}}"> · {{item.review_reason}}</text></view>
+    </view>
+    <view wx:if="{{!tasks.length && !loading}}" class="empty">暂无临时业务记录</view>
+  </view>
+
+  <view wx:if="{{editorOpen}}" class="editor">
+    <view class="editor-head">
+      <view>
+        <strong>{{selectedTask ? selectedTask.display_number : '新建临时业务'}}</strong>
+        <text wx:if="{{selectedTask}}">{{selectedTask.statusLabel}} · V{{selectedTask.revision}}</text>
+      </view>
+      <view class="close" bindtap="closeEditor">关闭</view>
+    </view>
+
+    <block wx:if="{{isDriver}}">
+      <view class="form-grid">
+        <label><text>业务日期</text><picker mode="date" value="{{form.business_date}}" bindchange="onDateChange"><view class="input">{{form.business_date}}</view></picker></label>
+        <label><text>业务类型</text><input class="input" data-key="service_kind" value="{{form.service_kind}}" bindinput="onFormInput" /></label>
+        <label><text>业务来源</text><input class="input" data-key="service_source" value="{{form.service_source}}" bindinput="onFormInput" placeholder="公司电话/现场追加" /></label>
+        <label><text>授权来源</text><input class="input" data-key="authorization_source" value="{{form.authorization_source}}" bindinput="onFormInput" placeholder="公司管理员电话等" /></label>
+        <label class="wide"><text>授权依据</text><input class="input" data-key="authorization_evidence" value="{{form.authorization_evidence}}" bindinput="onFormInput" placeholder="联络记录或说明" /></label>
+        <label><text>实际上车地点</text><input class="input" data-key="actual_pickup_location" value="{{form.actual_pickup_location}}" bindinput="onFormInput" /></label>
+        <label><text>实际出发时间</text><input class="input" data-key="actual_pickup_at" value="{{form.actual_pickup_at}}" bindinput="onFormInput" placeholder="2026-10-15T13:20:00+09:00" /></label>
+        <label><text>实际下车地点</text><input class="input" data-key="actual_dropoff_location" value="{{form.actual_dropoff_location}}" bindinput="onFormInput" /></label>
+        <label><text>实际到达时间</text><input class="input" data-key="actual_dropoff_at" value="{{form.actual_dropoff_at}}" bindinput="onFormInput" placeholder="2026-10-15T14:20:00+09:00" /></label>
+        <label><text>到着时仪表</text><input class="input" type="digit" data-key="pickup_odometer_km" value="{{form.pickup_odometer_km}}" bindinput="onFormInput" /></label>
+        <label><text>降车时仪表</text><input class="input" type="digit" data-key="dropoff_odometer_km" value="{{form.dropoff_odometer_km}}" bindinput="onFormInput" /></label>
+        <label class="wide"><text>补充说明</text><textarea class="textarea" data-key="note" value="{{form.note}}" bindinput="onFormInput" /></label>
+      </view>
+      <view wx:if="{{selectedTask && selectedTask.events.length}}" class="history">
+        <view class="section-title">追加历史</view>
+        <view wx:for="{{selectedTask.events}}" wx:key="id" class="event"><strong>{{item.event_type}}</strong><text>{{item.actor_name}} · {{item.created_at}}</text><text wx:if="{{item.reason}}">{{item.reason}}</text></view>
+      </view>
+      <view wx:if="{{!selectedTask || selectedTask.canEdit}}" class="actions sticky-actions">
+        <button class="secondary" loading="{{saving}}" bindtap="saveDraft">保存草稿</button>
+        <button class="primary" loading="{{saving}}" bindtap="submitTask">提交公司确认</button>
+      </view>
+      <view wx:else class="readonly-note">记录已提交或终结，只读保留。后续变化通过历史追溯。</view>
+    </block>
+
+    <block wx:if="{{isCarrierAdmin}}">
+      <view class="fact-sheet">
+        <view><text>司机事实</text><strong>{{selectedTask.actual_pickup_location || '-'}} → {{selectedTask.actual_dropoff_location || '-'}}</strong></view>
+        <view><text>实际时间</text><strong>{{selectedTask.actual_pickup_at || '-'}} / {{selectedTask.actual_dropoff_at || '-'}}</strong></view>
+        <view><text>仪表读数</text><strong>{{selectedTask.pickup_odometer_km === null ? '-' : selectedTask.pickup_odometer_km}} / {{selectedTask.dropoff_odometer_km === null ? (selectedTask.odometer_km === null ? '-' : selectedTask.odometer_km) : selectedTask.dropoff_odometer_km}} km</strong></view>
+        <view><text>授权依据</text><strong>{{selectedTask.authorization_source || '-'}} · {{selectedTask.authorization_evidence || '-'}}</strong></view>
+        <view><text>原始编号</text><strong>{{selectedTask.provisional_task_id}}</strong></view>
+      </view>
+      <view class="history">
+        <view class="section-title">不可覆盖的变更历史</view>
+        <view wx:for="{{selectedTask.events}}" wx:key="id" class="event"><strong>{{item.event_type}}</strong><text>{{item.actor_name}} · {{item.created_at}}</text><text wx:if="{{item.reason}}">{{item.reason}}</text></view>
+      </view>
+
+      <view wx:if="{{selectedTask.pending}}" class="review-box">
+        <label><text>审核说明</text><textarea class="textarea" value="{{reviewReason}}" bindinput="onReviewReason" placeholder="要求补充或驳回时必填" /></label>
+        <label><text>关联已有订单ID/OID</text><input class="input" value="{{linkedOrderId}}" bindinput="onLinkedOrder" placeholder="仅关联时填写" /></label>
+        <view class="review-actions">
+          <button data-action="needs-info" loading="{{saving}}" bindtap="reviewTask">要求补充</button>
+          <button data-action="reject" class="danger" loading="{{saving}}" bindtap="reviewTask">驳回</button>
+          <button data-action="approve-link" loading="{{saving}}" bindtap="reviewTask">关联已有</button>
+          <button data-action="approve-create" class="primary" loading="{{saving}}" bindtap="reviewTask">确认新建正式单</button>
+        </view>
+      </view>
+
+      <view wx:if="{{selectedTask.approved && formalOrder}}" class="pricing-box">
+        <view class="section-title">正式订单 {{formalOrder.oid || formalOrder.order_id}} 定价</view>
+        <view class="unknown-note">空值表示价格未知，不自动填0；此处不代表实际已收款。</view>
+        <view class="form-grid">
+          <label><text>正式订单价格 JPY</text><input class="input" type="digit" data-key="price_jpy" value="{{priceForm.price_jpy}}" bindinput="onPriceInput" placeholder="待定可留空" /></label>
+          <label><text>司机应得 JPY</text><input class="input" type="digit" data-key="driver_salary_jpy" value="{{priceForm.driver_salary_jpy}}" bindinput="onPriceInput" placeholder="待定可留空" /></label>
+          <label><text>司机结算金额 JPY</text><input class="input" type="digit" data-key="driver_settlement_amount" value="{{priceForm.driver_settlement_amount}}" bindinput="onPriceInput" placeholder="待定可留空" /></label>
+          <label><text>司机结算状态</text><picker range="{{settlementLabels}}" value="{{settlementStatusIndex}}" bindchange="onSettlementStatus"><view class="input">{{settlementLabels[settlementStatusIndex]}}</view></picker></label>
+        </view>
+        <button class="primary full" loading="{{saving}}" bindtap="savePricing">保存价格与司机金额</button>
+      </view>
+    </block>
+  </view>
+</view>

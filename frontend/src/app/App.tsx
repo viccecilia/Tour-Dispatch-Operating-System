@@ -23,6 +23,7 @@ import { MapPage } from "@/pages/MapPage";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { OrdersPage } from "@/pages/OrdersPage";
 import { ParserPage } from "@/pages/ParserPage";
+import { ProvisionalTasksPage } from "@/pages/ProvisionalTasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SystemMaintenancePage } from "@/pages/SystemMaintenancePage";
 import { VehiclesPage } from "@/pages/VehiclesPage";
@@ -100,6 +101,7 @@ export function App() {
     parser: <ParserPage />,
     orders: <OrdersPage />,
     dispatch: <DispatchPage />,
+    "provisional-orders": <ProvisionalTasksPage />,
     "fixed-tours": <FixedToursPage currentUser={user} />,
     auction: <AuctionHallPage />,
     calendar: <CalendarPage currentUser={user} />,
