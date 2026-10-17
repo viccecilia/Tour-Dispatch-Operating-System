@@ -132,28 +132,67 @@
       <view wx:for="{{dailyStatusOptions}}" wx:key="value" class="daily-status-tab {{dailyStatusFilter === item.value ? 'active' : ''}}" data-status="{{item.value}}" bindtap="selectDailyStatus">{{item.label}}</view>
     </view>
 
-    <view class="daily-group-list">
-      <view wx:for="{{dailyRunGroups}}" wx:key="key" class="daily-run-card {{item.selected ? 'selected' : ''}}">
-        <view class="daily-run-head">
-          <view class="daily-check {{item.selected ? 'checked' : ''}}" data-key="{{item.key}}" bindtap="toggleDailyGroupSelection">{{item.selected ? '✓' : ''}}</view>
-          <view class="daily-run-identity">
-            <view class="daily-run-driver">{{item.driver}} <text>{{item.vehicle}}</text></view>
-            <view class="daily-run-meta">{{item.orders.length}} 单 · {{item.vehicleFull}}</view>
-            <view wx:if="{{item.areaWarningCount}}" class="daily-area-warning">⚠ {{item.areaWarningCount}}单区域待确认</view>
+    <view class="daily-group-list daily-v2-list">
+      <view wx:for="{{dailyRunGroups}}" wx:key="key" wx:for-item="group" class="daily-run-card daily-v2-card {{group.active ? 'active' : ''}}" data-key="{{group.key}}" bindtap="activateDailyGroup">
+        <view class="daily-v2-vehicle-head">
+          <view class="daily-v2-vehicle-main">
+            <view class="daily-run-driver">{{group.driver}} <text>{{group.vehicleFull}}</text></view>
+            <view class="daily-run-meta">{{group.officeText}} · {{group.vehicleTypeText}} · {{group.orders.length}}单</view>
           </view>
-          <view class="daily-run-state {{item.status}}">{{item.statusText}}</view>
+          <view class="daily-v2-whole-edit" data-key="{{group.key}}" catchtap="toggleDailyWholeEditor">整体修改</view>
         </view>
-        <view class="daily-run-orders">
-          <view wx:for="{{item.visibleOrders}}" wx:key="assignmentId" wx:for-item="order" class="daily-run-order">
-            <text class="daily-run-time">{{order.time}}</text>
-            <text class="daily-run-route">{{order.route}}</text>
+        <view class="daily-v2-vehicle-facts">
+          <text>营业区域 {{group.permitAreaText}}</text>
+          <text>运管 {{group.managerText}}</text>
+        </view>
+        <view wx:if="{{group.wholeEditorOpen}}" class="daily-v2-whole-panel" catchtap="noop">
+          <view><text>运行日期</text><strong>{{group.business_date}}</strong></view>
+          <view class="daily-v2-whole-picker-row">
+            <text>司机</text>
+            <picker range="{{drivers}}" range-key="displayName" value="{{dailyWholeForm.driverIndex}}" bindchange="onDailyWholeDriverChange"><strong>{{dailyWholeForm.driverText}} ›</strong></picker>
           </view>
-          <view wx:if="{{item.hiddenCount}}" class="daily-more">+{{item.hiddenCount}} 单</view>
+          <view class="daily-v2-whole-picker-row">
+            <text>车辆</text>
+            <picker range="{{vehicles}}" range-key="plate_number" value="{{dailyWholeForm.vehicleIndex}}" bindchange="onDailyWholeVehicleChange"><strong>{{dailyWholeForm.vehicleText}} ›</strong></picker>
+          </view>
+          <view><text>所属／车型</text><strong>{{group.officeText}}／{{group.vehicleTypeText}}</strong></view>
+          <view class="daily-v2-help">只可选择真实司机与车辆。保存后将重新读取车辆档案，并重新核对营业所、车型、许可区域、报价及冲突。</view>
+          <view class="daily-v2-whole-actions"><view catchtap="cancelDailyWholeEditor">取消</view><view class="primary" catchtap="saveDailyWholeEditor">{{dailyWholeSaving ? '保存中…' : '保存整体修改'}}</view></view>
         </view>
-        <view class="daily-run-actions">
-          <view class="daily-primary-action" data-key="{{item.key}}" bindtap="openDailyPdf">{{dailyPdfLoadingKey === item.key ? '加载中…' : (item.workflowStatus === 'published' ? '查看PDF' : '核对文书')}}</view>
+        <view class="daily-v2-auto-summary">
+          <view><text class="daily-v2-auto-kicker">自动核对</text><strong>{{group.autoCheckText}}</strong><text>{{group.statusText}}</text></view>
+          <view class="daily-run-state {{group.status}}">{{group.checkPillText}}</view>
         </view>
-        <view wx:if="{{item.documentStatusText}}" class="daily-doc-state">{{item.documentStatusText}}</view>
+        <view class="daily-v2-orders">
+          <view wx:for="{{group.orders}}" wx:key="orderId" wx:for-item="order" wx:for-index="orderIndex" id="daily-order-{{order.orderId}}" class="daily-v2-order {{order.checkStatus}}" catchtap="noop">
+            <view class="daily-v2-order-row">
+              <view class="daily-v2-order-number">{{orderIndex + 1}}</view>
+              <view class="daily-v2-order-body">
+                <view class="daily-v2-order-top"><strong>{{order.time}}</strong><text wx:if="{{order.displayPrice}}">¥{{order.displayPrice}}</text><text wx:else>金额待定</text></view>
+                <view class="daily-v2-order-route">{{order.route}}</view>
+                <view class="daily-v2-order-status {{order.checkStatus}}">{{order.checkLabel}}<text wx:if="{{order.checkIssuesText}}"> · {{order.checkIssuesText}}</text></view>
+              </view>
+              <view class="daily-v2-order-edit" data-key="{{group.key}}" data-order-id="{{order.orderId}}" catchtap="openDailyInlineEditor">{{order.inlineOpen ? '收起' : '修改'}}</view>
+            </view>
+            <view wx:if="{{order.inlineOpen}}" class="daily-v2-inline-editor">
+              <view class="daily-v2-form-grid">
+                <view class="daily-v2-field"><text>运行日期</text><picker mode="date" value="{{dailyInlineForm.order_date}}" data-field="order_date" bindchange="onDailyInlineDate"><view>{{dailyInlineForm.order_date || '选择日期'}}</view></picker></view>
+                <view class="daily-v2-field"><text>配车时间</text><picker mode="time" value="{{dailyInlineForm.start_time}}" data-field="start_time" bindchange="onDailyInlineTime"><view>{{dailyInlineForm.start_time || '选择时间'}}</view></picker></view>
+                <view class="daily-v2-field wide"><text>上车地点</text><input value="{{dailyInlineForm.pickup_location}}" data-field="pickup_location" bindinput="onDailyInlineInput" /></view>
+                <view class="daily-v2-field wide"><text>下车地点</text><input value="{{dailyInlineForm.dropoff_location}}" data-field="dropoff_location" bindinput="onDailyInlineInput" /></view>
+                <view class="daily-v2-field"><text>到达日期</text><picker mode="date" value="{{dailyInlineForm.end_date}}" data-field="end_date" bindchange="onDailyInlineDate"><view>{{dailyInlineForm.end_date || '选择日期'}}</view></picker></view>
+                <view class="daily-v2-field"><text>到达时间</text><picker mode="time" value="{{dailyInlineForm.end_time}}" data-field="end_time" bindchange="onDailyInlineTime"><view>{{dailyInlineForm.end_time || '选择时间'}}</view></picker></view>
+                <view class="daily-v2-field wide"><text>金额 JPY</text><input type="number" value="{{dailyInlineForm.price}}" data-field="price" bindinput="onDailyInlineInput" /></view>
+              </view>
+              <view class="daily-v2-more-toggle" catchtap="toggleDailyInlineMore">{{dailyInlineMoreOpen ? '收起更多文书项目' : '更多文书项目'}}</view>
+              <view wx:if="{{dailyInlineMoreOpen}}" class="daily-v2-more-fields">
+                <view class="daily-v2-field wide"><text>营业区域</text><input value="{{dailyInlineForm.operations_business_area}}" data-field="operations_business_area" bindinput="onDailyInlineInput" /></view>
+                <view class="daily-v2-document-fields" catchtap="openDailyMoreDocumentFields">打开申请人、联系方式、费用内訳及安全事项</view>
+              </view>
+              <view class="daily-v2-inline-actions"><view catchtap="closeDailyInlineEditor">取消</view><view class="primary" catchtap="saveDailyInlineOrder">{{dailyInlineSaving ? '保存中…' : '保存修改'}}</view></view>
+            </view>
+          </view>
+        </view>
       </view>
       <view wx:if="{{!dailyRunGroups.length}}" class="daily-empty">
         <view class="daily-empty-title">当天暂无已派订单</view>
@@ -161,10 +200,9 @@
       </view>
     </view>
 
-    <view wx:if="{{dailySelectedGroupKeys.length}}" class="daily-release-bar">
-      <view><strong>{{dailySelectedGroupKeys.length}}</strong><text>车已选</text></view>
-      <view class="daily-release-pdf" bindtap="openDailyPdf">PDF</view>
-      <view class="daily-release-button" bindtap="publishSelectedDailyGroups">确认发布</view>
+    <view wx:if="{{dailyActiveGroupKey && !dailyInlineOrderId}}" class="daily-release-bar daily-v2-release-bar">
+      <view class="daily-release-pdf" bindtap="previewActiveDailyDocuments">预览双文书</view>
+      <view class="daily-release-button" bindtap="confirmAndPublishActiveDailyGroup">{{dailyPublishing ? '服务器核对中…' : '发布司机'}}</view>
     </view>
 
     <view wx:if="{{dailyImportOpen}}" class="daily-fullscreen">
@@ -221,10 +259,10 @@
         <view class="daily-review-fields">
           <view class="daily-review-field"><text>日期</text><picker disabled="{{!dailyReviewEdit}}" mode="date" value="{{dailyReviewForm.order_date}}" bindchange="onDailyReviewDate"><view class="daily-picker-value">{{dailyReviewForm.order_date}}</view></picker></view>
           <view class="daily-review-field"><text>时间</text><picker disabled="{{!dailyReviewEdit}}" mode="time" value="{{dailyReviewForm.start_time}}" bindchange="onDailyReviewTime"><view class="daily-picker-value">{{dailyReviewForm.start_time}}</view></picker></view>
-          <view class="daily-review-field"><text>营业区域</text><picker disabled="{{!dailyReviewEdit}}" mode="selector" range="{{dailyBusinessAreas}}" bindchange="onDailyReviewArea"><view class="daily-picker-value">{{dailyReviewForm.business_area}}</view></picker></view>
-          <view class="daily-review-field"><text>类型</text><picker disabled="{{!dailyReviewEdit}}" mode="selector" range="{{dailyOrderTypes}}" bindchange="onDailyReviewType"><view class="daily-picker-value">{{dailyReviewForm.order_type}}</view></picker></view>
+          <view class="daily-review-field"><text>营业区域</text><picker disabled="{{!dailyReviewEdit}}" mode="selector" range="{{dailyBusinessAreas}}" bindchange="onDailyReviewArea"><view class="daily-picker-value">{{dailyReviewForm.business_area}}</view></picker><text wx:if="{{dailyReviewOrder.businessAreaSuggested}}" class="daily-auto-reference">车辆资料自动建议，保存后才视为人工核对</text><text wx:if="{{dailyReviewOrder.affiliationNeedsReview}}" class="daily-review-warning">{{dailyReviewOrder.affiliationMessage}}</text></view>
+          <view class="daily-review-field"><text>类型</text><picker disabled="{{!dailyReviewEdit}}" mode="selector" range="{{dailyOrderTypes}}" bindchange="onDailyReviewType"><view class="daily-picker-value">{{dailyReviewForm.order_type}}</view></picker><text class="daily-auto-reference">自动识别：{{dailyReviewOrder.tariffCategoryLabel}}</text></view>
           <view class="daily-review-field wide"><text>接送地点</text><input disabled="{{!dailyReviewEdit}}" data-field="pickup_location" value="{{dailyReviewForm.pickup_location}}" bindinput="onDailyReviewField" placeholder="上车地点" /><input disabled="{{!dailyReviewEdit}}" data-field="dropoff_location" value="{{dailyReviewForm.dropoff_location}}" bindinput="onDailyReviewField" placeholder="下车地点" /></view>
-          <view class="daily-review-field"><text>金额</text><input disabled="{{!dailyReviewEdit}}" data-field="price" value="{{dailyReviewForm.price}}" bindinput="onDailyReviewField" /><text wx:if="{{dailyReviewOrder.recommended_price}}" class="daily-price-reference">参考 ¥{{dailyReviewOrder.recommended_price}} · {{dailyReviewOrder.recommended_price_label}}</text></view>
+          <view class="daily-review-field"><text>金额</text><input disabled="{{!dailyReviewEdit}}" data-field="price" value="{{dailyReviewForm.price}}" bindinput="onDailyReviewField" /><text wx:if="{{dailyReviewOrder.recommended_price}}" class="daily-price-reference">参考 ¥{{dailyReviewOrder.recommended_price}} · {{dailyReviewOrder.recommended_price_label}}</text><text wx:if="{{dailyReviewOrder.tariffStatusText}}" class="daily-auto-reference">{{dailyReviewOrder.tariffStatusText}}{{dailyReviewOrder.tariffRuleVersion ? ' · ' + dailyReviewOrder.tariffRuleVersion : ''}}</text></view>
         </view>
         <view class="daily-doc-preview">
           <view class="daily-doc-head">运行文件预览</view>
@@ -235,7 +273,7 @@
       </scroll-view>
       <view class="daily-review-footer">
         <view class="daily-review-nav {{dailyReviewOrderIndex <= 0 ? 'disabled' : ''}}" bindtap="previousDailyReviewOrder">上一单</view>
-        <view class="daily-review-confirm" bindtap="confirmDailyReview">保存草稿</view>
+        <view class="daily-review-confirm" bindtap="confirmDailyReview">保存并确认本单</view>
         <view class="daily-review-nav {{dailyReviewOrderIndex + 1 >= dailyReviewGroup.orders.length ? 'disabled' : ''}}" bindtap="nextDailyReviewOrder">下一单</view>
       </view>
     </view>
@@ -243,20 +281,43 @@
 
   <!-- Shared daily/fixed document workbench.  The body is a data-driven paper,
        not a PDF image or a field list. -->
-  <view wx:if="{{dailyPdfReviewOpen}}" class="daily-fullscreen daily-document-workbench">
-    <view class="daily-fullscreen-head document-workbench-head">
-      <view class="daily-back" bindtap="closeDailyPdfReview">关闭</view>
+  <view wx:if="{{dailyPdfReviewOpen}}" class="daily-fullscreen daily-document-workbench" bindtap="onDocumentWorkbenchBackdropTap">
+    <view class="daily-fullscreen-head document-workbench-head" catchtap="noop">
+      <view class="daily-back" bindtap="requestCloseDailyPdfReview">‹ 返回</view>
       <view class="daily-fullscreen-title">{{dailyPdfReviewGroup.driver_name || dailyPdfReviewGroup.driver}} · {{dailyPdfReviewGroup.vehicle || dailyPdfReviewGroup.plate_number || dailyPdfReviewGroup.vehicleFull}} · {{dailyPdfReviewGroup.business_date}}</view>
       <view class="daily-review-edit {{dailyPdfReviewDocument && dailyPdfReviewDocument.file_url ? '' : 'muted'}}" bindtap="openGeneratedDailyPdf">下载打印</view>
     </view>
-    <view class="document-workbench-toolbar">
+    <view class="document-workbench-toolbar" catchtap="noop">
       <view class="daily-doc-tabs"><view class="{{dailyPdfDocumentTab === 'acceptance' ? 'active' : ''}}" data-tab="acceptance" bindtap="switchDailyPdfDocumentTab">運送引受書</view><view class="{{dailyPdfDocumentTab === 'dispatch' ? 'active' : ''}}" data-tab="dispatch" bindtap="switchDailyPdfDocumentTab">運行指示書</view></view>
       <view class="document-zoom"><text data-delta="-25" bindtap="changeDailyDocumentZoom">－</text><text data-reset="1" bindtap="changeDailyDocumentZoom">{{dailyPdfZoom}}%</text><text data-delta="25" bindtap="changeDailyDocumentZoom">＋</text></view>
     </view>
     <scroll-view scroll-y scroll-x enhanced show-scrollbar="{{false}}" scroll-into-view="{{dailyPdfScrollAnchor}}" class="document-workbench-scroll" bindscroll="rememberDailyDocumentScroll">
+      <view wx:if="{{!dailyPdfDraftOnly}}" class="document-workflow-card" catchtap="noop">
+        <view class="document-workflow-title">发布流程</view>
+        <view class="document-workflow-steps">
+          <view class="document-workflow-step {{dailyPdfFlow.orderState}}"><text class="step-number">1</text><view><strong>订单核对与确认</strong><text>{{dailyPdfFlow.orderText}}</text></view></view>
+          <view class="document-workflow-step {{dailyPdfFlow.generateState}}"><text class="step-number">2</text><view><strong>生成最新PDF</strong><text>{{dailyPdfFlow.generateText}}</text></view></view>
+          <view class="document-workflow-step {{dailyPdfFlow.reviewState}}"><text class="step-number">3</text><view><strong>确认最新PDF</strong><text>{{dailyPdfFlow.reviewText}}</text></view></view>
+          <view class="document-workflow-step {{dailyPdfFlow.publishState}}"><text class="step-number">4</text><view><strong>发布司机</strong><text>{{dailyPdfFlow.publishText}}</text></view></view>
+        </view>
+      </view>
+      <view wx:if="{{dailyPdfOrderIssues.length || dailyPdfValidationIssues.length}}" id="document-blocking-issues" class="document-blocking-issues {{dailyPdfIssuesExpanded ? 'expanded' : ''}}" catchtap="noop">
+        <view class="document-blocking-title-row" bindtap="toggleDailyPdfIssues">
+          <view><text class="document-blocking-title">{{dailyPdfOrderIssues.length || dailyPdfBlockingIssues.length ? '发布前必须处理' : '文书核对提示（不阻止生成）'}}</text><text class="document-blocking-count">{{dailyPdfOrderIssues.length + dailyPdfValidationRaw.length}} 项</text></view>
+          <text class="document-blocking-toggle">{{dailyPdfIssuesExpanded ? '收起 ▲' : '展开 ▼'}}</text>
+        </view>
+        <scroll-view wx:if="{{dailyPdfIssuesExpanded}}" scroll-y enhanced show-scrollbar="{{true}}" class="document-blocking-scroll">
+          <view wx:for="{{dailyPdfOrderIssues}}" wx:key="order_id" class="document-blocking-row" data-order-id="{{item.order_id}}" bindtap="goDailyPdfOrderIssue">
+            <view><strong>第{{item.sequence}}单</strong><text>{{item.route}}</text><text>{{item.detail}}</text></view><text class="document-blocking-link">去处理 ›</text>
+          </view>
+          <view wx:for="{{dailyPdfValidationIssues}}" wx:key="code" class="document-blocking-row" data-field-id="{{item.field_id}}" data-order-id="{{item.order_id}}" bindtap="openDocumentIssue">
+            <view><strong>{{item.category}}</strong><text>{{item.message}}</text></view><text class="document-blocking-link">{{item.order_id ? '去处理 ›' : '请核对'}}</text>
+          </view>
+        </scroll-view>
+      </view>
       <view wx:if="{{dailyPdfPreviewUnavailable}}" class="daily-pdf-issues">当前后端版本未返回文书正文，不能安全编辑。请连接与本次小程序代码匹配的后端后重试；已生成文件仍可下载。</view>
       <view wx:if="{{dailyPdfVisiblePages && dailyPdfVisiblePages.length}}" class="document-paper-stage zoom-{{dailyPdfZoom}}">
-        <view wx:for="{{dailyPdfVisiblePages}}" wx:key="page_index" class="document-paper" id="document-page-{{item.page_index}}">
+        <view wx:for="{{dailyPdfVisiblePages}}" wx:key="page_index" class="document-paper" id="document-page-{{item.page_index}}" catchtap="noop">
           <view class="document-paper-title">{{dailyPdfActiveView.title}}</view>
           <view class="document-paper-meta"><text>{{dailyPdfActiveView.business_date}}</text><text>第 {{item.page_index}} / {{item.page_total}} 页</text></view>
 
@@ -296,29 +357,40 @@
         </view>
       </view>
     </scroll-view>
-    <view class="document-workbench-bottom">
-      <view class="document-issue-compact" bindtap="toggleDailyPdfIssues">待核对 {{dailyPdfValidationRaw.length}} 项 · {{dailyPdfIssuesExpanded ? '收起' : '定位查看'}}</view>
-      <view wx:if="{{dailyPdfIssuesExpanded}}" class="document-issue-list"><view wx:for="{{dailyPdfValidationIssues}}" wx:key="code" data-field-id="{{item.field_id}}" data-order-id="{{item.order_id}}" bindtap="openDocumentIssue">{{item.message}}</view></view>
-      <view class="document-workbench-actions"><view class="secondary" bindtap="saveDocumentDraft">保存草稿</view><view class="primary" bindtap="confirmGenerateDocument">{{dailyPdfGenerating ? '生成中…' : '确认生成'}}</view></view>
+    <view class="document-workbench-bottom" catchtap="noop">
+      <view class="document-issue-compact" bindtap="focusDailyPdfIssues">{{dailyPdfOrderIssues.length || dailyPdfBlockingIssues.length ? '待处理' : '核对提示'}} {{dailyPdfOrderIssues.length + dailyPdfValidationRaw.length}} 项 · 定位查看</view>
+      <view class="document-workbench-actions">
+        <view class="secondary" bindtap="saveDocumentDraft">保存草稿</view>
+        <view wx:if="{{dailyPdfDraftOnly || dailyPdfFlow.nextAction === 'generate'}}" class="primary" bindtap="confirmGenerateDocument">{{dailyPdfGenerating ? '生成中…' : (dailyPdfDraftOnly ? '确认生成' : dailyPdfFlow.nextLabel)}}</view>
+        <view wx:elif="{{dailyPdfFlow.nextAction === 'orders'}}" class="primary" bindtap="goFirstDailyPdfOrderIssue">{{dailyPdfFlow.nextLabel}}</view>
+        <view wx:elif="{{dailyPdfFlow.nextAction === 'review'}}" class="primary" bindtap="confirmDailyPdfReview">{{dailyPdfFlow.nextLabel}}</view>
+        <view wx:elif="{{dailyPdfFlow.nextAction === 'publish'}}" class="primary" bindtap="publishCurrentDailyGroup">{{dailyPdfFlow.nextLabel}}</view>
+        <view wx:elif="{{dailyPdfFlow.nextAction === 'blocked'}}" class="primary warning" bindtap="focusDailyPdfIssues">{{dailyPdfFlow.nextLabel}}</view>
+        <view wx:else class="primary" bindtap="requestCloseDailyPdfReview">{{dailyPdfFlow.nextLabel}}</view>
+      </view>
       <view wx:if="{{dailyPdfReviewDocument}}" class="document-version-state">打印版 V{{dailyPdfReviewDocument.version}} · {{dailyPdfReviewDocument.page_count}}页{{dailyPdfDocumentStale ? ' · 已落后于当前草稿' : ''}}</view>
     </view>
-    <view wx:if="{{dailyTaskEditorOpen}}" class="daily-node-editor-mask" catchtouchmove="noop">
-      <scroll-view scroll-y class="document-task-editor">
-        <view class="daily-node-editor-head"><view>{{dailyTaskEditor.title}}</view><view bindtap="closeDocumentTaskEditor">关闭</view></view>
-        <view class="document-task-editor-route">{{dailyTaskEditor.route_text}}</view>
-        <view wx:if="{{dailyPdfDraftOnly}}" class="document-route-edit-entry" bindtap="editCurrentCharterRoute">调整本次包车路线、节点顺序与日期 ›</view>
-        <view wx:for="{{dailyTaskEditor.fields}}" wx:key="field_id" class="document-task-editor-field {{item.field_id === dailyTaskEditorFocusFieldId ? 'focused' : ''}}"><view class="daily-node-editor-label">{{item.label}}</view><input class="daily-node-editor-input" type="{{item.input_type === 'number' ? 'digit' : 'text'}}" value="{{item.value}}" data-field-id="{{item.field_id}}" bindinput="onDocumentTaskFieldInput" placeholder="待填写"/></view>
-        <view wx:if="{{dailyTaskEditor.apply_options.length}}" class="document-apply-panel">
-          <view class="document-apply-title">应用到其他订单（默认不选）</view>
-          <view class="document-apply-help">只有勾选的订单会在本次保存中同步；任一项失败则全部不写入。</view>
-          <view wx:for="{{dailyTaskEditor.apply_options}}" wx:key="order_id" class="document-apply-option {{item.selected ? 'selected' : ''}}" data-order-id="{{item.order_id}}" bindtap="toggleDocumentApplyTarget">
-            <text class="document-apply-check">{{item.selected ? '✓' : ''}}</text>
-            <view><strong>第{{item.sequence}}单</strong><text>{{item.route_text}}</text><text>当前：{{item.current_value === '' ? '未填写' : item.current_value}}</text></view>
+    <view wx:if="{{dailyTaskEditorOpen}}" class="daily-node-editor-mask" catchtouchmove="noop" catchtap="onDocumentEditorMaskTap">
+      <view class="document-task-editor" catchtap="noop">
+        <view class="document-task-editor-head daily-node-editor-head"><view>{{dailyTaskEditor.title}}</view><view bindtap="closeDocumentTaskEditor">关闭</view></view>
+        <scroll-view scroll-y enhanced show-scrollbar="{{false}}" class="document-task-editor-scroll" catchtap="noop">
+          <view class="document-task-editor-content">
+            <view class="document-task-editor-route">{{dailyTaskEditor.route_text}}</view>
+            <view wx:if="{{dailyPdfDraftOnly}}" class="document-route-edit-entry" bindtap="editCurrentCharterRoute">调整本次包车路线、节点顺序与日期 ›</view>
+            <view wx:for="{{dailyTaskEditor.fields}}" wx:key="field_id" class="document-task-editor-field {{item.field_id === dailyTaskEditorFocusFieldId ? 'focused' : ''}}"><view class="daily-node-editor-label">{{item.label}}</view><input class="daily-node-editor-input" type="{{item.input_type === 'number' ? 'digit' : 'text'}}" value="{{item.value}}" data-field-id="{{item.field_id}}" bindinput="onDocumentTaskFieldInput" adjust-position="{{true}}" cursor-spacing="150" placeholder="待填写"/></view>
+            <view wx:if="{{dailyTaskEditor.apply_options.length}}" class="document-apply-panel">
+              <view class="document-apply-title">应用到其他订单（默认不选）</view>
+              <view class="document-apply-help">只有勾选的订单会在本次保存中同步；任一项失败则全部不写入。</view>
+              <view wx:for="{{dailyTaskEditor.apply_options}}" wx:key="order_id" class="document-apply-option {{item.selected ? 'selected' : ''}}" data-order-id="{{item.order_id}}" bindtap="toggleDocumentApplyTarget">
+                <text class="document-apply-check">{{item.selected ? '✓' : ''}}</text>
+                <view><strong>第{{item.sequence}}单</strong><text>{{item.route_text}}</text><text>当前：{{item.current_value === '' ? '未填写' : item.current_value}}</text></view>
+              </view>
+            </view>
+            <view class="daily-node-editor-help">一次保存本单修改；两种文书同步。保存草稿不会生成PDF。</view>
           </view>
-        </view>
-        <view class="daily-node-editor-help">一次保存本单修改；两种文书同步。保存草稿不会生成PDF。</view>
-        <view class="daily-node-editor-actions"><view bindtap="closeDocumentTaskEditor">取消</view><view class="primary" bindtap="saveDocumentTaskEdits">保存修改</view></view>
-      </scroll-view>
+        </scroll-view>
+        <view class="document-task-editor-actions daily-node-editor-actions"><view bindtap="closeDocumentTaskEditor">取消</view><view class="primary" bindtap="saveDocumentTaskEdits">保存修改</view></view>
+      </view>
     </view>
   </view>
 

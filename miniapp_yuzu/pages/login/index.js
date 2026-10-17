@@ -65,7 +65,10 @@ Page({
     password: '',
     loading: false,
     message: '',
-    showHelp: false
+    showHelp: false,
+    authSettingsLoaded: false,
+    wechatAutoLoginEnabled: false,
+    wechatBindingRequired: false
   },
 
   onLoad(query = {}) {
@@ -77,6 +80,7 @@ Page({
       meta: PORT_META[port] || PORT_META.agency
     });
     this.autoLoginTried = false;
+    this.authSettingsPromise = this.loadAuthSettings();
   },
 
   onShow() {
@@ -90,8 +94,41 @@ Page({
       }
     }
     if (!this.autoLoginTried && !wx.getStorageSync(this.data.port === 'agency' ? 'agency_manual_logout' : 'dispatch_manual_logout')) {
-      this.tryWechatAutoLogin();
+      this.ensureAuthSettings().then((settings) => {
+        if (settings.wechat_auto_login_enabled) this.tryWechatAutoLogin();
+      });
     }
+  },
+
+  loadAuthSettings() {
+    return api.appConfig()
+      .then((config) => {
+        const settings = (config && config.settings) || config || {};
+        const normalized = {
+          wechat_auto_login_enabled: !!settings.wechat_auto_login_enabled,
+          wechat_binding_required: !!settings.wechat_binding_required
+        };
+        this.setData({
+          authSettingsLoaded: true,
+          wechatAutoLoginEnabled: normalized.wechat_auto_login_enabled,
+          wechatBindingRequired: normalized.wechat_binding_required
+        });
+        return normalized;
+      })
+      .catch((error) => {
+        console.warn('[yozi auth settings failed]', error);
+        const defaults = {
+          wechat_auto_login_enabled: false,
+          wechat_binding_required: false
+        };
+        this.setData({ authSettingsLoaded: true });
+        return defaults;
+      });
+  },
+
+  ensureAuthSettings() {
+    if (!this.authSettingsPromise) this.authSettingsPromise = this.loadAuthSettings();
+    return this.authSettingsPromise;
   },
 
   getWechatLoginCode() {
@@ -206,20 +243,15 @@ Page({
     this.setData({ loading: true, message: '' });
     try {
       console.info('[yozi login submit]', { port: this.data.port, baseUrl: api.getBaseUrl(), loginCode });
-      let payload;
-      try {
-        const wxCode = await this.getWechatLoginCode();
-        payload = this.data.port === 'agency'
-          ? await api.loginAgency(loginCode, password, wxCode)
-          : await api.loginDispatch(loginCode, password, wxCode);
-      } catch (wechatError) {
-        if (!this.isDispatchDevtools() || !this.isWechatCodeUnavailable(wechatError)) {
-          throw wechatError;
-        }
-        // Development Tools cannot always exchange a real Mini Program code.
-        // This is intentionally a one-time password-only retry for dispatch only.
-        payload = await api.loginDispatch(loginCode, password);
+      const authSettings = await this.ensureAuthSettings();
+      const bindingRequired = !!authSettings.wechat_binding_required;
+      let wxCode = '';
+      if (bindingRequired) {
+        wxCode = await this.getWechatLoginCode();
       }
+      const payload = this.data.port === 'agency'
+        ? await api.loginAgency(loginCode, password, wxCode)
+        : await api.loginDispatch(loginCode, password, wxCode);
       console.info('[yozi login success]', {
         port: this.data.port,
         role: payload && payload.user ? payload.user.role : payload.role,

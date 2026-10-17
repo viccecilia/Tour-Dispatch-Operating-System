@@ -6,6 +6,7 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, quote, urlparse
 
 from backend.services.auth_service import (
@@ -226,7 +227,9 @@ from backend.services.resource_service import (
 )
 from backend.services.resource_library_service import list_resource_library, resolve_resource_pdf, update_driver_health_check_date, update_driver_resource_status, update_vehicle_inspection_date, update_vehicle_resource_status, upload_vehicle_resource_document
 from backend.services.run_document_service import (
+    DailyGroupPreflightError,
     DriverAccountPreflightError,
+    confirm_and_publish_daily_group,
     confirm_order as confirm_run_order,
     generate_run_document,
     get_run_document_preview,
@@ -235,6 +238,7 @@ from backend.services.run_document_service import (
     mark_order_changed as mark_run_order_changed,
     patch_run_document_draft,
     publish_run_documents,
+    reassign_daily_group,
     review_and_publish_run_document,
     review_run_document,
     resolve_run_document,
@@ -264,6 +268,8 @@ from backend.services.fixed_tour_service import (
 from backend.services.settings_service import (
     get_platform_auth_settings,
     get_reminder_settings,
+    is_wechat_auto_login_enabled,
+    is_wechat_binding_required,
     update_platform_auth_settings,
     update_reminder_settings,
 )
@@ -308,6 +314,31 @@ from backend.services.workflow_service import create_rule, list_rules, list_runs
 ROOT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
 UPLOAD_DIR = ROOT_DIR / "runtime" / "uploads"
+
+MINIAPP_PASSWORD_CLIENTS = {
+    "driver_miniapp",
+    "miniapp_driver",
+    "dispatch_miniapp",
+    "miniapp_dispatch",
+    "company_lite",
+    "agency_miniapp",
+    "miniapp_agency",
+}
+
+
+def apply_password_login_wechat_policy(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Apply the saved account strategy before any password login can bind WeChat."""
+    normalized = dict(payload)
+    miniapp_client = str(normalized.get("client_type") or "") in MINIAPP_PASSWORD_CLIENTS
+    if not is_wechat_binding_required():
+        for key in ("wx_code", "wx_openid", "wx_unionid", "openid", "unionid"):
+            normalized.pop(key, None)
+        if miniapp_client:
+            normalized["client_type"] = "web"
+        return normalized, None
+    if miniapp_client and not normalized.get("wx_code") and not normalized.get("wx_openid"):
+        return normalized, "wx_code_required"
+    return normalized, None
 
 CORE_ORDER_UPDATE_FIELDS = {
     "order_date",
@@ -1153,6 +1184,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         params = self.query_params(parsed.query)
         payload = self.read_json()
         if path == "/api/auth/wechat-login":
+            if not is_wechat_auto_login_enabled():
+                self.send_json({"error": "wechat_auto_login_disabled"}, HTTPStatus.FORBIDDEN)
+                return
             try:
                 result = login_with_wechat_code(payload.get("wx_code"), payload.get("client_type", ""))
             except WechatAuthError as exc:
@@ -1161,8 +1195,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.send_json(result)
             return
         if path == "/api/agency-portal/login":
-            if payload.get("client_type") in {"agency_miniapp", "miniapp_agency"} and not payload.get("wx_code"):
-                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+            payload, policy_error = apply_password_login_wechat_policy(payload)
+            if policy_error:
+                self.send_json({"error": policy_error}, HTTPStatus.BAD_REQUEST)
                 return
             if payload.get("wx_code"):
                 try:
@@ -1217,8 +1252,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             self.safe_agency(lambda: upload_agency_payment_receipt(self.agency_token(), agency_payment_receipt_id, payload), HTTPStatus.CREATED)
             return
         if path == "/api/dispatch-mobile/login":
-            if payload.get("client_type") in {"dispatch_miniapp", "miniapp_dispatch", "company_lite"} and not payload.get("wx_code"):
-                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+            payload, policy_error = apply_password_login_wechat_policy(payload)
+            if policy_error:
+                self.send_json({"error": policy_error}, HTTPStatus.BAD_REQUEST)
                 return
             if payload.get("wx_code") and not payload.get("wx_openid"):
                 try:
@@ -1306,8 +1342,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/auth/login-phone":
             phone_login_value = payload.get("phone") or payload.get("username") or payload.get("account") or ""
-            if payload.get("client_type") in {"driver_miniapp", "miniapp_driver", "dispatch_miniapp", "miniapp_dispatch", "company_lite", "agency_miniapp", "miniapp_agency"} and not payload.get("wx_code"):
-                self.send_json({"error": "wx_code_required"}, HTTPStatus.BAD_REQUEST)
+            payload, policy_error = apply_password_login_wechat_policy(payload)
+            if policy_error:
+                self.send_json({"error": policy_error}, HTTPStatus.BAD_REQUEST)
                 return
             if payload.get("wx_code") and not payload.get("wx_openid"):
                 try:
@@ -2096,6 +2133,29 @@ class ApiHandler(BaseHTTPRequestHandler):
             record_audit("run_document_generate", "run_document", document.get("id"), after=document, actor=self.actor_label(), source_path=path, summary=f"Generated run document V{document.get('version')}")
             self.send_json({"document": document})
             return
+        if path == "/api/dispatch-mobile/run-documents/reassign-group":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                result = reassign_daily_group(payload.get("group_key"), payload, user)
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            if not result.get("success"):
+                self.send_json(result, HTTPStatus.CONFLICT)
+                return
+            record_audit(
+                "daily_group_reassign",
+                "assignment",
+                ",".join(str(item) for item in result.get("new_assignment_ids") or result.get("updated_order_ids") or []),
+                after=result,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Reassigned daily group to {result.get('group_key')}",
+            )
+            self.send_json(result)
+            return
         if path == "/api/dispatch-mobile/run-documents/preview":
             user = self.require_role({"admin", "dispatcher", "operations_manager"})
             if not user:
@@ -2192,6 +2252,39 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             document = result.get("document") or {}
             record_audit("run_document_review_publish", "run_document", document.get("id"), after=result, actor=self.actor_label(), source_path=path, summary=f"Reviewed and published run document V{document.get('version')}")
+            self.send_json(result)
+            return
+        if path == "/api/dispatch-mobile/run-documents/confirm-publish":
+            user = self.require_role({"admin", "dispatcher", "operations_manager"})
+            if not user:
+                return
+            try:
+                result = confirm_and_publish_daily_group(payload.get("group_key"), user)
+            except DailyGroupPreflightError as exc:
+                self.send_json(
+                    {"error": str(exc), "issues": exc.issues},
+                    HTTPStatus.CONFLICT,
+                )
+                return
+            except DriverAccountPreflightError as exc:
+                self.send_json(
+                    {"error": str(exc), "blocked_drivers": exc.blocked},
+                    HTTPStatus.CONFLICT,
+                )
+                return
+            except (ValueError, TypeError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            document = result.get("document") or {}
+            record_audit(
+                "daily_group_confirm_publish",
+                "run_document",
+                document.get("id"),
+                after=result,
+                actor=self.actor_label(),
+                source_path=path,
+                summary=f"Confirmed and published daily group V{document.get('version')}",
+            )
             self.send_json(result)
             return
         if path == "/api/dispatch-mobile/run-documents/publish":

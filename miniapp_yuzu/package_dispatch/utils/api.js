@@ -147,8 +147,19 @@ function errorMessage(err) {
   if (code === 'network_failed') return '连接服务器失败，请检查网络后重试';
   if (code === 'driver_account_preflight_failed') {
     const blocked = Array.isArray(err && err.blocked_drivers) ? err.blocked_drivers : [];
-    const names = blocked.map((item) => item.driver_name).filter(Boolean).slice(0, 3).join('、');
-    return `${names || '所选司机'}的登录账号尚未就绪，请先创建或正确关联司机账号`;
+    const reasonMessages = {
+      driver_not_found: '司机档案不存在',
+      driver_account_missing: '尚未创建司机登录账号',
+      driver_account_inactive: '司机登录账号已停用',
+      driver_account_role_mismatch: '登录账号不是司机角色',
+      driver_account_profile_mismatch: '登录账号关联了其他司机档案',
+      driver_supabase_identity_missing: '云端登录身份尚未建立'
+    };
+    const details = blocked.slice(0, 3).map((item) => {
+      const name = item.driver_name || `司机#${item.driver_id || '?'}`;
+      return `${name}：${reasonMessages[item.reason] || '司机账号未就绪'}`;
+    }).join('；');
+    return `${details || '所选司机的登录账号尚未就绪'}。请到设置→账号管理启用或正确关联该司机账号后再发布。`;
   }
   const fixedTourMessages = {
     fixed_tour_requires_two_stops: '行程至少需要两个地点',
@@ -198,6 +209,14 @@ function normalizeApiError(body, statusCode, path = '') {
   if (payload.statusCode === 404 && payload.backendError === 'not_found' && path.indexOf('/fixed-tour/') >= 0) {
     payload.backendError = 'fixed_tour_service_unavailable';
     payload.error = payload.backendError;
+  }
+  if (payload.statusCode === 404 && payload.backendError === 'not_found' && path === '/api/dispatch-mobile/run-documents/confirm-publish') {
+    payload.backendError = 'daily_confirm_publish_service_unavailable';
+    payload.error = payload.backendError;
+  }
+  if (payload.backendError === 'daily_confirm_publish_service_unavailable') {
+    payload.userMessage = '当前 Trial 后端尚未启用“直接发布司机”接口。订单和文书未发布；请先更新 Trial 后端服务，然后重试。';
+    return payload;
   }
   payload.userMessage = errorMessage(payload);
   return payload;
@@ -463,6 +482,7 @@ module.exports = {
   assignments: () => request('/api/dispatch-mobile/assignments'),
   runGroups: (date) => request(`/api/dispatch-mobile/run-groups${toQuery({ date })}`),
   confirmRunOrder: (data) => request('/api/dispatch-mobile/run-confirm', { method: 'POST', data: withDispatcher(data) }),
+  reassignDailyGroup: (data) => request('/api/dispatch-mobile/run-documents/reassign-group', { method: 'POST', data: withDispatcher(data) }),
   generateRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/generate', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   runDocumentPreview: (groupKey) => request('/api/dispatch-mobile/run-documents/preview', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   patchRunDocumentDraft: (data) => request('/api/dispatch-mobile/run-documents/draft-patch', { method: 'POST', data: withDispatcher(data) }),
@@ -470,6 +490,7 @@ module.exports = {
   updateRunDocumentField: (data) => request('/api/dispatch-mobile/run-documents/field', { method: 'POST', data: withDispatcher(data) }),
   reviewRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   reviewAndPublishRunDocument: (groupKey) => request('/api/dispatch-mobile/run-documents/review-publish', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
+  confirmAndPublishDailyGroup: (groupKey) => request('/api/dispatch-mobile/run-documents/confirm-publish', { method: 'POST', data: withDispatcher({ group_key: groupKey }) }),
   publishRunDocuments: (groupKeys) => request('/api/dispatch-mobile/run-documents/publish', { method: 'POST', data: withDispatcher({ group_keys: groupKeys }) }),
   driverRunDocuments: () => request('/api/driver/run-documents'),
   auctionListings: () => request('/api/auction/listings?status=all'),

@@ -43,6 +43,11 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         set_current_tenant_id(1)
         self.actor = {"id": 11, "tenant_id": 1, "username": "ops", "display_name": "运行管理", "role": "operations_manager"}
         with closing(database.get_connection()) as conn:
+            vehicle_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vehicles)").fetchall()}
+            if "office" not in vehicle_columns:
+                conn.execute("ALTER TABLE vehicles ADD COLUMN office TEXT")
+            if "permitted_business_area" not in vehicle_columns:
+                conn.execute("ALTER TABLE vehicles ADD COLUMN permitted_business_area TEXT")
             conn.execute("INSERT INTO tenants (id, name, slug) VALUES (1, '柚子旅行', 'yuzu-test')")
             conn.execute("INSERT INTO drivers (id, tenant_id, name, driver_code, office, status, driver_status) VALUES (1, 1, '胡东锴', 'HDK', '大阪营业所', 'available', 'available')")
             conn.execute("INSERT INTO drivers (id, tenant_id, name, driver_code, office, status, driver_status) VALUES (2, 1, '李成志', 'LCZ', '京都营业所', 'available', 'available')")
@@ -50,8 +55,8 @@ class RunDocumentWorkflowTest(unittest.TestCase):
             conn.execute("INSERT INTO users (id, tenant_id, username, password_hash, role, display_name, phone, profile_type, profile_id, account_scope, is_active) VALUES (102, 1, 'driver-2', 'test', 'driver', '李成志', '08000000002', 'driver', 2, 'driver', 1)")
             conn.execute("UPDATE drivers SET user_id = 101 WHERE id = 1")
             conn.execute("UPDATE drivers SET user_id = 102 WHERE id = 2")
-            conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status) VALUES (1, 1, '大阪6832', '大阪 500 あ 6832', 'HiAce', 10, 10, 'available')")
-            conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status) VALUES (2, 1, '京都7011', '京都 300 い 7011', 'Alphard', 7, 7, 'available')")
+            conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status, office, permitted_business_area) VALUES (1, 1, '大阪6832', '大阪 500 あ 6832', 'HiAce', 10, 10, 'available', '大阪営業所', '大阪市域交通圏')")
+            conn.execute("INSERT INTO vehicles (id, tenant_id, plate_no, plate_number, vehicle_type, seats, seat_count, status, office, permitted_business_area) VALUES (2, 1, '京都7011', '京都 300 い 7011', 'Alphard', 7, 7, 'available', '京都営業所', '京都市域交通圏')")
             conn.execute(
                 """
                 INSERT INTO company_registrations (
@@ -122,6 +127,93 @@ class RunDocumentWorkflowTest(unittest.TestCase):
             conn.commit()
             return cursor.lastrowid
 
+    def test_daily_v2_fixed_kyoto_group_has_two_auto_checks_and_one_area_risk(self):
+        routes = [
+            ("京都ホテル", "KIX"),
+            ("KIX", "神戸"),
+            ("ITM", "京都ホテル"),
+        ]
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE vehicles SET plate_number = '京都 300 あ 3827' WHERE id = 2")
+            for index, (pickup, dropoff) in enumerate(routes, 1):
+                cursor = conn.execute(
+                    """
+                    INSERT INTO orders (
+                        tenant_id, oid, order_date, start_time, end_time,
+                        pickup_location, dropoff_location, order_type, price,
+                        dispatch_status, operations_business_area,
+                        run_confirmation_status
+                    ) VALUES (1, ?, '2026-10-16', ?, ?, ?, ?, '接送', NULL,
+                              'assigned', '', 'pending')
+                    """,
+                    (f"D261016{index:04d}", f"{8 + index:02d}:00", f"{9 + index:02d}:00", pickup, dropoff),
+                )
+                conn.execute(
+                    "INSERT INTO assignments (tenant_id, order_id, driver_id, vehicle_id, status) VALUES (1, ?, 2, 2, 'active')",
+                    (cursor.lastrowid,),
+                )
+            conn.commit()
+        group = service.list_run_groups("2026-10-16", 1)[0]
+        self.assertEqual(group["plate_number"], "京都 300 あ 3827")
+        self.assertEqual(group["auto_checked_count"], 2)
+        self.assertEqual(group["pending_check_count"], 1)
+        self.assertEqual(group["operations_manager"], "朱英心")
+        self.assertEqual([item["daily_check_status"] for item in group["orders"]], ["auto_passed", "area_risk", "auto_passed"])
+        self.assertEqual([item["daily_effective_price"] for item in group["orders"]], [17000, None, 14000])
+        snapshot = service.build_document_snapshot(group, "fixed-kyoto-v2")
+        self.assertEqual([item["money"]["total_jpy"] for item in snapshot["orders"]], [17000, None, 14000])
+        self.assertEqual([item["money"]["fare_jpy"] for item in snapshot["orders"]], [17000, None, 14000])
+        self.assertFalse(snapshot["orders"][0]["money"]["price_confirmed"])
+        with self.assertRaises(service.DailyGroupPreflightError) as captured:
+            service.confirm_and_publish_daily_group(group["key"], self.actor)
+        self.assertEqual(captured.exception.issues[0]["order_index"], 2)
+        self.assertEqual(captured.exception.issues[0]["status"], "area_risk")
+
+    def test_office_defaults_supply_the_confirmed_operations_manager_names(self):
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE company_registrations SET contact_name = '' WHERE tenant_id = 1")
+            conn.commit()
+        self.add_order(driver_id=1, vehicle_id=1, suffix="OSAKA-MANAGER")
+        self.add_order(driver_id=2, vehicle_id=2, suffix="KYOTO-MANAGER", price=None)
+        groups = service.list_run_groups("2026-07-24", 1)
+        by_vehicle = {group["vehicle_id"]: group for group in groups}
+        self.assertEqual(by_vehicle[1]["operations_manager"], "胡東鍇")
+        self.assertEqual(by_vehicle[2]["operations_manager"], "朱英心")
+        self.assertEqual(by_vehicle[1]["operations_manager_source"], "office_default")
+        self.assertEqual(by_vehicle[2]["operations_manager_source"], "office_default")
+
+    def test_daily_v2_whole_edit_reassigns_to_real_resources_as_unpublished_draft(self):
+        order_id = self.add_order(driver_id=2, vehicle_id=2, suffix="WHOLE")
+        original = service.list_run_groups("2026-07-24", 1)[0]
+        result = service.reassign_daily_group(
+            original["key"],
+            {"driver_id": 1, "vehicle_id": 1},
+            self.actor,
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["group_key"], "2026-07-24:1:1")
+        self.assertFalse(result["published"])
+        self.assertFalse(result["driver_notified"])
+        with closing(database.get_connection()) as conn:
+            active = conn.execute(
+                "SELECT driver_id, vehicle_id, execution_status, published_at FROM assignments WHERE order_id = ? AND status = 'active'",
+                (order_id,),
+            ).fetchone()
+            cancelled = conn.execute(
+                "SELECT COUNT(*) FROM assignments WHERE order_id = ? AND status = 'cancelled'",
+                (order_id,),
+            ).fetchone()[0]
+            order = conn.execute(
+                "SELECT run_confirmation_status FROM orders WHERE id = ?",
+                (order_id,),
+            ).fetchone()
+        self.assertEqual((active["driver_id"], active["vehicle_id"]), (1, 1))
+        self.assertEqual(active["execution_status"], "draft")
+        self.assertIsNone(active["published_at"])
+        self.assertEqual(cancelled, 1)
+        self.assertEqual(order["run_confirmation_status"], "pending")
+        self.assertEqual(list_driver_notifications(1), [])
+
     def document_path(self, document):
         return Path(self.temp.name) / "runtime" / "uploads" / "run_documents" / "1" / "2026-07-24" / document["file_name"]
 
@@ -170,6 +262,9 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertIn("20:00", text)
         self.assertNotIn("大阪市内ホテル", text)
         self.assertNotIn("氏名：SPI", text)
+        self.assertNotIn("自動選定ホテルを含む計画案", text)
+        self.assertNotIn("本機作成／押印・実際の交付は別途", text)
+        self.assertNotIn("予定版", text)
         for hotel in city_locations:
             self.assertIn(hotel, text)
         with closing(database.get_connection()) as conn:
@@ -183,7 +278,7 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         second = self.add_order(minute=60, suffix="B")
         group = service.list_run_groups("2026-07-24")[0]
         self.assertEqual((group["confirmed_count"], group["pending_count"]), (0, 2))
-        self.assertEqual(group["orders"][0]["recommended_price"], 12460)
+        self.assertEqual(group["orders"][0]["recommended_price"], 17000)
         draft_document = service.generate_run_document(group["key"], self.actor)
         self.assertEqual((draft_document["version"], draft_document["page_count"]), (1, 2))
         self.assertTrue(draft_document["document_id"].startswith("doc-"))
@@ -230,6 +325,104 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.confirm(first, start_time="09:30")
         updated = service.generate_run_document(group["key"], self.actor)
         self.assertEqual(updated["version"], 3)
+
+    def test_vehicle_affiliation_quote_area_suggestion_and_manual_price_protection(self):
+        order_id = self.add_order(driver_id=2, vehicle_id=2, suffix="KYOTO", price=None)
+        with closing(database.get_connection()) as conn:
+            conn.execute(
+                """
+                UPDATE orders
+                SET pickup_location = '京都市内ホテル', pickup_source_text = '京都',
+                    dropoff_location = '関西国際空港', dropoff_source_text = 'KIX',
+                    operations_business_area = NULL
+                WHERE id = ?
+                """,
+                (order_id,),
+            )
+            conn.commit()
+
+        group = next(item for item in service.list_run_groups("2026-07-24") if item["vehicle_id"] == 2)
+        order = group["orders"][0]
+        self.assertEqual(order["recommended_price"], 17000)
+        self.assertEqual(order["recommended_order_category"], "kix_transfer")
+        self.assertEqual(order["suggested_business_area"], "京都市域交通圏")
+        self.assertEqual(order["vehicle_affiliation"]["office_source"], "vehicle_archive")
+        with closing(database.get_connection()) as conn:
+            stored = conn.execute(
+                "SELECT price, operations_business_area, price_snapshot_json FROM orders WHERE id = ?",
+                (order_id,),
+            ).fetchone()
+        self.assertIsNone(stored["price"])
+        self.assertIsNone(stored["operations_business_area"])
+        self.assertIsNone(stored["price_snapshot_json"])
+
+        self.confirm(order_id, operations_business_area="京都市域交通圏", price=17000)
+        with closing(database.get_connection()) as conn:
+            first_snapshot = json.loads(conn.execute(
+                "SELECT price_snapshot_json FROM orders WHERE id = ?", (order_id,)
+            ).fetchone()["price_snapshot_json"])
+        self.assertEqual(first_snapshot["source"], "tariff_recommendation")
+        self.assertEqual(first_snapshot["rule_key"], "kyoto_kix")
+        self.assertFalse(first_snapshot["financially_confirmed"])
+
+        self.confirm(order_id, price=19500)
+        group = next(item for item in service.list_run_groups("2026-07-24") if item["vehicle_id"] == 2)
+        self.assertEqual(group["orders"][0]["price"], 19500)
+        self.assertEqual(group["orders"][0]["recommended_price"], 17000)
+        with closing(database.get_connection()) as conn:
+            manual_snapshot = json.loads(conn.execute(
+                "SELECT price_snapshot_json FROM orders WHERE id = ?", (order_id,)
+            ).fetchone()["price_snapshot_json"])
+        self.assertEqual(manual_snapshot["source"], "manual_override")
+        self.assertEqual(manual_snapshot["recommended_total_jpy"], 17000)
+
+    def test_route_and_vehicle_office_changes_recalculate_and_stale_existing_pdf(self):
+        order_id = self.add_order(price=19500, suffix="RECALC")
+        self.confirm(order_id)
+        group = service.list_run_groups("2026-07-24")[0]
+        self.assertEqual(group["orders"][0]["recommended_price"], 17000)
+        service.generate_run_document(group["key"], self.actor)
+        self.assertEqual(service.list_run_groups("2026-07-24")[0]["document_status"], "generated")
+
+        self.confirm(
+            order_id,
+            pickup_location="大阪市内ホテル",
+            dropoff_location="京都市内ホテル",
+            order_type="城市间接送",
+            price=19500,
+        )
+        changed_group = service.list_run_groups("2026-07-24")[0]
+        self.assertEqual(changed_group["orders"][0]["recommended_price"], 21000)
+        self.assertEqual(changed_group["orders"][0]["price"], 19500)
+        self.assertEqual(changed_group["document_status"], "stale")
+
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE vehicles SET office = '京都営業所' WHERE id = 1")
+            conn.commit()
+        conflict_group = service.list_run_groups("2026-07-24")[0]
+        self.assertEqual(conflict_group["vehicle_affiliation"]["status"], "conflict")
+        self.assertIsNone(conflict_group["orders"][0]["recommended_price"])
+        self.assertEqual(conflict_group["document_status"], "stale")
+
+    def test_unknown_vehicle_model_never_defaults_to_alphard_and_unknown_amount_stays_null(self):
+        with closing(database.get_connection()) as conn:
+            conn.execute(
+                """
+                INSERT INTO vehicles (
+                    id, tenant_id, plate_no, plate_number, vehicle_type, seats,
+                    seat_count, status, office, permitted_business_area
+                ) VALUES (3, 1, '大阪9999', '大阪 300 あ 9999', '', 7, 7,
+                          'available', '大阪営業所', '大阪市域交通圏')
+                """
+            )
+            conn.commit()
+        order_id = self.add_order(vehicle_id=3, suffix="UNKNOWN", price=None)
+        group = next(item for item in service.list_run_groups("2026-07-24") if item["vehicle_id"] == 3)
+        order = group["orders"][0]
+        self.assertIsNone(order["recommended_price"])
+        self.assertEqual(order["recommended_price_reason"], "vehicle_type_unknown")
+        with closing(database.get_connection()) as conn:
+            self.assertIsNone(conn.execute("SELECT price FROM orders WHERE id = ?", (order_id,)).fetchone()["price"])
 
     def test_draft_pdf_allows_missing_price_but_publish_blocks(self):
         self.add_order(price=None)
@@ -627,6 +820,103 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         published = service.publish_run_documents([key], self.actor)
         self.assertEqual(published[0]["status"], "published")
 
+    def test_blank_driver_name_cannot_publish_an_already_reviewed_preview(self):
+        order_id = self.add_order(suffix="BLANKDRIVER")
+        self.confirm(order_id)
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        service.generate_run_document(key, self.actor)
+        service.review_run_document(key, self.actor)
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE drivers SET name = '' WHERE id = 1")
+            conn.commit()
+        with self.assertRaisesRegex(ValueError, "正式文書名"):
+            service.publish_run_documents([key], self.actor)
+        with closing(database.get_connection()) as conn:
+            status = conn.execute("SELECT status FROM driver_run_documents ORDER BY id DESC LIMIT 1").fetchone()[0]
+        self.assertEqual(status, "reviewed")
+
+    def test_assignment_driver_formal_print_name_precedes_archive_name(self):
+        with closing(database.get_connection()) as conn:
+            conn.execute("ALTER TABLE drivers ADD COLUMN print_name TEXT")
+            conn.execute("UPDATE drivers SET print_name = '正式運転者名' WHERE id = 1")
+            conn.commit()
+        order_id = self.add_order(suffix="PRINTNAME")
+        self.confirm(order_id)
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        document = service.generate_run_document(key, self.actor)
+        pages = pdf_pages_text(self.document_path(document))
+        self.assertTrue(all("正式運転者名" in page for page in pages))
+        self.assertTrue(all("胡东锴" not in page for page in pages))
+
+    def test_preview_marker_is_removed_only_by_formal_publish_and_publication_metadata_is_kept(self):
+        order_id = self.add_order(suffix="MARKER")
+        with closing(database.get_connection()) as conn:
+            conn.execute("UPDATE orders SET guest_contact = '06-0000-0000' WHERE id = ?", (order_id,))
+            conn.commit()
+        self.confirm(order_id)
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        generated = service.generate_run_document(key, self.actor)
+        preview_path = self.document_path(generated)
+        preview_hash = hashlib.sha256(preview_path.read_bytes()).hexdigest()
+        preview_pages = pdf_pages_text(preview_path)
+        self.assertTrue(all("確認用・未発行" in page for page in preview_pages))
+        self.assertNotIn("連絡：", preview_pages[-1])
+        self.assertNotIn("06-0000-0000", preview_pages[-1])
+
+        service.review_run_document(key, self.actor)
+        published = service.publish_run_documents([key], self.actor)[0]
+        published_path = self.document_path(published)
+        published_pages = pdf_pages_text(published_path)
+        self.assertTrue(all("確認用・未発行" not in page for page in published_pages))
+        self.assertNotEqual(preview_path, published_path)
+        self.assertTrue(preview_path.is_file())
+        self.assertEqual(preview_hash, hashlib.sha256(preview_path.read_bytes()).hexdigest())
+        self.assertEqual(published["pdf_sha256"], hashlib.sha256(published_path.read_bytes()).hexdigest())
+        self.assertNotEqual(published["pdf_sha256"], preview_hash)
+        publication_date = str(published["published_at"]).split("T", 1)[0]
+        self.assertIn(publication_date, "\n".join(published_pages))
+        with closing(database.get_connection()) as conn:
+            event = conn.execute(
+                "SELECT actor_name, event_json FROM dispatch_document_events WHERE event_type = 'published' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        event_payload = json.loads(event["event_json"])
+        self.assertEqual(event["actor_name"], self.actor["display_name"])
+        self.assertEqual(event_payload["pdf_sha256"], published["pdf_sha256"])
+        self.assertEqual(event_payload["source_sha256"], published["source_hash"])
+
+    def test_confirm_generate_review_edit_regenerate_review_publish_flow(self):
+        order_id = self.add_order(suffix="FLOW")
+        self.confirm(order_id)
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+
+        first = service.generate_run_document(key, self.actor)
+        reviewed = service.review_run_document(key, self.actor)
+        self.assertEqual(reviewed["status"], "reviewed")
+
+        preview = service.get_run_document_preview(key, self.actor)
+        service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "client_request_id": "flow-edit-after-review",
+            "patches": [
+                {"field_id": f"order:{order_id}:applicant_contact", "value": "06-1111-2222"},
+            ],
+        }, self.actor)
+        changed_group = service.list_run_groups("2026-07-24")[0]
+        self.assertEqual(changed_group["confirmation_status"], "pending")
+        self.assertEqual(changed_group["document_status"], "stale")
+        with self.assertRaisesRegex(ValueError, "PDF"):
+            service.publish_run_documents([key], self.actor)
+
+        self.confirm(order_id)
+        replacement = service.generate_run_document(key, self.actor)
+        self.assertNotEqual(replacement["id"], first["id"])
+        self.assertEqual(replacement["version"], first["version"] + 1)
+        service.review_run_document(key, self.actor)
+        published = service.publish_run_documents([key], self.actor)[0]
+        self.assertEqual(published["id"], replacement["id"])
+        self.assertEqual(published["status"], "published")
+        self.assertEqual(len(list_driver_assignments(1)), 1)
+
     def test_publish_preflight_blocks_missing_driver_account_without_partial_publish(self):
         first = self.add_order(driver_id=1, vehicle_id=1, suffix="P1")
         second = self.add_order(driver_id=2, vehicle_id=2, suffix="P2")
@@ -697,7 +987,11 @@ class RunDocumentWorkflowTest(unittest.TestCase):
             self.assertIn(fixed_value, acceptance_text)
         self.assertNotIn("dispatch@example.invalid", acceptance_text)
         dispatch_text = pages[1]
-        self.assertIn("03-5282-4818", dispatch_text)
+        self.assertNotIn("03-5282-4818", dispatch_text)
+        self.assertNotIn("連絡：", dispatch_text)
+        with closing(database.get_connection()) as conn:
+            contacts = {row[0] for row in conn.execute("SELECT guest_contact FROM orders WHERE id IN ({})".format(",".join("?" for _ in order_ids)), order_ids)}
+        self.assertEqual(contacts, {"03-5282-4818"})
         self.assertIn("4", dispatch_text)
 
     def test_acceptance_applicant_may_be_blank(self):
@@ -739,6 +1033,51 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         snapshot_text = json.dumps(snapshot, ensure_ascii=False)
         self.assertGreaterEqual(snapshot_text.count(stored["pickup_location"]), 2)
         self.assertGreaterEqual(snapshot_text.count(stored["dropoff_location"]), 2)
+
+    def test_document_location_editor_uses_city_pool_preserves_exact_places_and_manual_override(self):
+        order_id = self.add_order(suffix="HOTEL-EDIT")
+        key = service.list_run_groups("2026-07-24")[0]["key"]
+        expected_source_hash = service.get_run_document_preview(key, self.actor)["source_sha256"]
+        observed = {}
+        for index, raw in enumerate(("大阪", "京都", "奈良", "神户"), 1):
+            preview = service.get_run_document_preview(key, self.actor)
+            pickup = next(node for node in preview["nodes"] if node["node_type"] == "pickup")
+            updated = service.patch_run_document_draft(key, {
+                "expected_source_hash": preview["source_sha256"],
+                "client_request_id": f"hotel-city-{index}",
+                "patches": [{"field_id": f"route_node:{pickup['route_node_id']}:planned_location", "value": raw}],
+            }, self.actor)
+            pickup_after = next(node for node in updated["nodes"] if node["route_node_id"] == pickup["route_node_id"])
+            observed[raw] = pickup_after["planned_location"]
+            self.assertNotEqual(pickup_after["planned_location"], raw)
+
+        for index, exact in enumerate(("大阪站", "大阪駅", "KIX"), 1):
+            preview = service.get_run_document_preview(key, self.actor)
+            pickup = next(node for node in preview["nodes"] if node["node_type"] == "pickup")
+            updated = service.patch_run_document_draft(key, {
+                "expected_source_hash": preview["source_sha256"],
+                "client_request_id": f"hotel-exact-{index}",
+                "patches": [{"field_id": f"route_node:{pickup['route_node_id']}:planned_location", "value": exact}],
+            }, self.actor)
+            pickup_after = next(node for node in updated["nodes"] if node["route_node_id"] == pickup["route_node_id"])
+            self.assertEqual(pickup_after["planned_location"], exact)
+
+        manual_hotel = "ホテル日航大阪 正面玄関"
+        preview = service.get_run_document_preview(key, self.actor)
+        pickup = next(node for node in preview["nodes"] if node["node_type"] == "pickup")
+        service.patch_run_document_draft(key, {
+            "expected_source_hash": preview["source_sha256"],
+            "client_request_id": "hotel-manual-override",
+            "patches": [{"field_id": f"route_node:{pickup['route_node_id']}:planned_location", "value": manual_hotel}],
+        }, self.actor)
+        reopened = service.get_run_document_preview(key, self.actor)
+        reopened_pickup = next(node for node in reopened["nodes"] if node["route_node_id"] == pickup["route_node_id"])
+        self.assertEqual(reopened_pickup["planned_location"], manual_hotel)
+        document = service.generate_run_document(key, self.actor)
+        pages = pdf_pages_text(self.document_path(document))
+        self.assertIn(manual_hotel, pages[0])
+        self.assertIn(manual_hotel, pages[1])
+        self.assertNotEqual(expected_source_hash, reopened["source_sha256"])
 
     def test_online_channels_render_only_as_website(self):
         channels = ["WeChat", "LINE", "WhatsApp", "Kakao", "website"]
@@ -832,8 +1171,24 @@ class RunDocumentWorkflowTest(unittest.TestCase):
         self.assertEqual(service._printable_stopovers_from_route_note(order), ["勝尾寺", "奈良"])
 
     def test_area_warning_marker_is_exposed_for_review_but_not_renderer_text(self):
-        order = {"fee_remark": "区域确认：KIX → 京都市域交通圏"}
+        order = {
+            "fee_remark": "区域确认：KIX → 京都市域交通圏",
+            "area_validation_status": "pending",
+            "run_confirmation_status": "pending",
+            "operations_business_area": "京都市域交通圏",
+        }
         self.assertEqual(service._area_review_from_route_note(order), (True, "KIX → 京都市域交通圏"))
+        order["area_validation_status"] = "confirmed"
+        self.assertEqual(service._area_review_from_route_note(order), (False, ""))
+        order["area_validation_status"] = "pending"
+        order["run_confirmation_status"] = "confirmed"
+        self.assertEqual(service._area_review_from_route_note(order), (False, ""))
+
+    def test_order_confirmation_records_area_acknowledgement(self):
+        order_id = self.add_order(suffix="AREA")
+        confirmed = self.confirm(order_id)
+        self.assertEqual(confirmed["run_confirmation_status"], "confirmed")
+        self.assertEqual(confirmed["area_validation_status"], "confirmed")
 
     def test_v014_dispatch_pagination_matrix(self):
         expected_pages = {1: 2, 4: 2, 6: 2, 7: 2, 8: 2, 10: 2, 11: 4, 16: 4, 20: 4, 21: 6}

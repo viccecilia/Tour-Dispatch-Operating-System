@@ -123,7 +123,35 @@ class Phase2C1MiniappContractTest(unittest.TestCase):
         self.assertIn("确认生成", self.page_wxml)
         self.assertIn("document-paper", self.page_wxml)
         self.assertEqual(self.page_wxml.count('wx:if="{{dailyPdfReviewOpen}}"'), 1)
-        self.assertNotIn("确认并发布", self.page_wxml)
+        # Daily Mode V2 adds an explicit server-side final action while the
+        # existing four-stage workbench remains available for detailed review.
+        self.assertIn("发布司机", self.page_wxml)
+        self.assertIn("confirmAndPublishActiveDailyGroup", self.page_wxml)
+        self.assertIn("confirmAndPublishDailyGroup", self.api_js)
+        publish_start = self.page_js.index("confirmAndPublishActiveDailyGroup()")
+        publish_end = self.page_js.index("openDailyReview(e)", publish_start)
+        publish_body = self.page_js[publish_start:publish_end]
+        self.assertNotIn("title: '确认并发布'", publish_body)
+        self.assertIn("showDailyPublishFailure", publish_body)
+        self.assertIn("去修改", publish_body)
+        self.assertIn("Number(order.price || 0) > 0", self.page_js)
+        self.assertIn("order.recommended_price || order.daily_effective_price", self.page_js)
+
+    def test_daily_mode_v2_uses_compact_cards_and_inline_order_editing(self):
+        for label in ("整体修改", "自动核对", "预览双文书", "更多文书项目"):
+            self.assertIn(label, self.page_wxml)
+        for handler in ("openDailyInlineEditor", "saveDailyInlineOrder", "previewActiveDailyDocuments"):
+            self.assertIn(handler, self.page_js)
+        for handler in ("cancelDailyWholeEditor", "saveDailyWholeEditor", "reassignDailyGroup"):
+            self.assertIn(handler, self.page_js + self.api_js)
+        self.assertIn("保存整体修改", self.page_wxml)
+        preview_start = self.page_js.index("previewActiveDailyDocuments()")
+        preview_end = self.page_js.index("confirmAndPublishActiveDailyGroup()", preview_start)
+        preview_body = self.page_js[preview_start:preview_end]
+        self.assertIn("api.generateRunDocument", preview_body)
+        self.assertIn("api.downloadAndOpenDocument", preview_body)
+        self.assertIn("daily-v2-release-bar", self.page_wxml)
+        self.assertIn("env(safe-area-inset-bottom)", self.page_wxss)
 
     def test_document_workbench_requires_preview_and_separates_generate(self):
         self.assertIn("api.runDocumentPreview(key)", self.page_js)
@@ -159,6 +187,63 @@ class Phase2C1MiniappContractTest(unittest.TestCase):
         self.assertIn("documentValidationCellName", self.page_js)
         self.assertIn("order_sequence", self.page_js)
         self.assertIn('data-field-id="{{item.field_id}}"', self.page_wxml)
+
+    def test_document_editor_keeps_header_scroll_body_and_actions_separate(self):
+        self.assertIn('class="document-task-editor-head daily-node-editor-head"', self.page_wxml)
+        self.assertIn('class="document-task-editor-scroll"', self.page_wxml)
+        self.assertIn('class="document-task-editor-actions daily-node-editor-actions"', self.page_wxml)
+        self.assertIn('catchtap="onDocumentEditorMaskTap"', self.page_wxml)
+        self.assertIn('adjust-position="{{true}}"', self.page_wxml)
+        self.assertIn('cursor-spacing="150"', self.page_wxml)
+        self.assertIn(".document-task-editor-scroll", self.page_wxss)
+        self.assertIn(".document-task-editor-actions", self.page_wxss)
+
+    def test_daily_document_flow_exposes_all_four_gates_and_review_action(self):
+        for label in ("订单核对与确认", "生成最新PDF", "确认最新PDF", "发布司机"):
+            self.assertIn(label, self.page_wxml)
+        self.assertIn('bindtap="confirmDailyPdfReview"', self.page_wxml)
+        self.assertIn('bindtap="publishCurrentDailyGroup"', self.page_wxml)
+        self.assertIn('bindtap="goDailyPdfOrderIssue"', self.page_wxml)
+        self.assertIn('>保存并确认本单</view>', self.page_wxml)
+        self.assertIn("pdf_edit: false", self.page_js)
+        self.assertIn("hasOwnProperty.call(order, 'operations_business_area')", self.page_js)
+        self.assertNotIn("pdf_edit: true", self.page_js[self.page_js.index("confirmDailyReview()") : self.page_js.index("openDailyPdf(e)")])
+
+    def test_document_backdrop_and_unsaved_close_protection_are_wired(self):
+        self.assertIn('bindtap="onDocumentWorkbenchBackdropTap"', self.page_wxml)
+        self.assertIn('bindtap="requestCloseDailyPdfReview"', self.page_wxml)
+        self.assertIn('catchtap="noop"', self.page_wxml)
+        self.assertIn("放弃未保存修改？", self.page_js)
+        self.assertIn("this.closeDocumentTaskEditor();", self.page_js)
+
+    def test_document_tabs_remain_side_by_side_and_expose_both_documents(self):
+        self.assertIn('bindtap="switchDailyPdfDocumentTab"', self.page_wxml)
+        self.assertIn("運送引受書", self.page_wxml)
+        self.assertIn("運行指示書", self.page_wxml)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", self.page_wxss)
+        self.assertIn(".document-workbench-toolbar .daily-doc-tabs > view.active", self.page_wxss)
+        self.assertIn(".document-workbench-toolbar {\n  position: relative;\n  z-index: 266;", self.page_wxss)
+        self.assertIn(".document-workbench-scroll {\n  position: absolute;\n  top: 190rpx;", self.page_wxss)
+
+    def test_pending_review_list_is_collapsed_scrolled_and_below_fixed_tabs(self):
+        toolbar = self.page_wxml.index('class="document-workbench-toolbar"')
+        issues = self.page_wxml.index('id="document-blocking-issues"')
+        bottom = self.page_wxml.index('class="document-workbench-bottom"')
+        self.assertLess(toolbar, issues)
+        self.assertLess(issues, bottom)
+        self.assertIn("dailyPdfIssuesExpanded: false", self.page_js)
+        self.assertIn('bindtap="toggleDailyPdfIssues"', self.page_wxml)
+        self.assertIn('wx:if="{{dailyPdfIssuesExpanded}}" scroll-y', self.page_wxml)
+        self.assertIn('class="document-blocking-scroll"', self.page_wxml)
+        self.assertIn(".document-blocking-scroll { width: 100%; max-height: 42vh;", self.page_wxss)
+
+    def test_each_pending_issue_can_locate_its_order_or_document_field(self):
+        self.assertIn('bindtap="goDailyPdfOrderIssue"', self.page_wxml)
+        self.assertIn('bindtap="openDocumentIssue"', self.page_wxml)
+        self.assertIn('data-order-id="{{item.order_id}}"', self.page_wxml)
+        self.assertIn('data-field-id="{{item.field_id}}"', self.page_wxml)
+        self.assertIn("showDailyReviewOrder(group, index)", self.page_js)
+        self.assertIn("this.openDocumentCellEditor", self.page_js)
 
 
 if __name__ == "__main__":

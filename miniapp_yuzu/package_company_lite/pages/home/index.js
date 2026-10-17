@@ -165,7 +165,7 @@ Page({
     const account = String(this.data.username || '').trim();
     const password = String(this.data.password || '');
     const isPhone = /^\+?[\d\s-]{6,}$/.test(account) || /^[A-Za-z0-9]+-[\d\s-]{6,}$/.test(account);
-    const loginWithCode = this.data.wechatAutoLoginEnabled || this.data.wechatBindingRequired;
+    const loginWithCode = this.data.wechatBindingRequired;
     const codeTask = loginWithCode ? this.getWechatLoginCode().catch(() => '') : Promise.resolve('');
     codeTask
       .then((wxCode) => (isPhone ? api.loginPhone(account, password, wxCode) : api.login(account, password, wxCode)))

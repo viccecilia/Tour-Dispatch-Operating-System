@@ -100,6 +100,7 @@ function documentValidationItem(value) {
   else if (/applicant/.test(code)) { category = '申请者'; field = '申请者编号'; }
   else if (/price|fare|fee|advance|tax/.test(code)) { category = '费用'; field = /tax/.test(code) ? '税费状态' : '金额明细'; }
   else if (/area|office/.test(code)) { category = '营业区域'; field = /office/.test(code) ? '营业所' : '营业区域'; }
+  else if (/run_confirmation/.test(code)) { category = '订单确认'; field = '订单'; }
   else if (/safe|operations_manager/.test(code)) { category = '安全与运行管理'; field = /manager/.test(code) ? '运行管理者' : '安全指示'; }
   else if (/driver|vehicle|plate/.test(code)) { category = '司机与车辆'; field = /driver/.test(code) ? '司机' : '车辆'; }
   else if (code === 'invalid_datetime') { category = '行程'; field = '日期或时间'; }
@@ -141,6 +142,109 @@ function buildValidationPresentation(values) {
     detail: [item.missing ? `${item.missing}项缺少值` : '', item.confirmation ? `${item.confirmation}项待确认` : ''].filter(Boolean).join(' · ')
   }));
   return { raw, issues, summary };
+}
+
+const DAILY_CONFIRM_REQUIRED_FIELDS = [
+  ['order_date', '日期'],
+  ['start_time', '时间'],
+  ['operations_business_area', '营业区域'],
+  ['order_type', '任务类型'],
+  ['pickup_location', '上车地点'],
+  ['dropoff_location', '下车地点'],
+  ['price', '运价']
+];
+
+function dailyConfirmValueMissing(field, value) {
+  const text = String(value == null ? '' : value).trim();
+  if (['', '未设定', '未設定', '待确认', '待確認', '地点待补', '地点待補'].indexOf(text) >= 0) return true;
+  if (field === 'price') {
+    const amount = Number(text);
+    return !Number.isFinite(amount) || amount <= 0;
+  }
+  return false;
+}
+
+function buildDailyOrderIssues(group) {
+  return ((group && group.orders) || []).map((order, index) => {
+    const missing = DAILY_CONFIRM_REQUIRED_FIELDS
+      .filter(([field]) => {
+        const value = field === 'operations_business_area'
+          ? (Object.prototype.hasOwnProperty.call(order, 'operations_business_area')
+            ? order.operations_business_area
+            : order.businessArea)
+          : order[field];
+        return dailyConfirmValueMissing(field, value);
+      })
+      .map(([, label]) => label);
+    const confirmed = order.run_confirmation_status === 'confirmed' || order.reviewed === true;
+    if (confirmed && !missing.length) return null;
+    return {
+      order_id: Number(order.order_id || order.orderId || 0),
+      sequence: index + 1,
+      route: order.route || `${order.pickup_location || '待确认'} → ${order.dropoff_location || '待确认'}`,
+      detail: missing.length ? `缺少：${missing.join('、')}` : '订单内容尚未确认'
+    };
+  }).filter(Boolean);
+}
+
+function buildDailyPdfFlow(group, document, stale, previewUnavailable, blockingIssues) {
+  const orderCount = Number(group && (group.order_count || (group.orders || []).length) || 0);
+  const pendingCount = Number(group && group.pending_count || 0);
+  const confirmedCount = Math.max(0, orderCount - pendingCount);
+  const status = String(document && document.status || group && group.document_status || 'none');
+  const currentPdf = !!document && !stale && status !== 'stale';
+  const reviewed = currentPdf && (status === 'reviewed' || status === 'published');
+  const published = currentPdf && status === 'published';
+  const blockers = Array.isArray(blockingIssues) ? blockingIssues.length : 0;
+  let nextAction = 'done';
+  let nextLabel = '返回日配';
+  if (pendingCount > 0) {
+    nextAction = 'orders';
+    nextLabel = `去核对剩余${pendingCount}单`;
+  } else if (blockers > 0 || previewUnavailable) {
+    nextAction = 'blocked';
+    nextLabel = '查看待处理项';
+  } else if (!currentPdf) {
+    nextAction = 'generate';
+    nextLabel = stale ? '重新生成最新PDF' : '生成最新PDF';
+  } else if (!reviewed) {
+    nextAction = 'review';
+    nextLabel = '确认最新PDF';
+  } else if (!published) {
+    nextAction = 'publish';
+    nextLabel = '发布给司机';
+  }
+  return {
+    orderState: pendingCount ? 'active' : 'done',
+    orderText: orderCount ? `已确认 ${confirmedCount}/${orderCount}` : '暂无订单',
+    generateState: currentPdf ? 'done' : (pendingCount ? 'waiting' : 'active'),
+    generateText: currentPdf ? `打印版 V${Number(document.version || 1)} 已生成` : (stale ? '草稿已修改，旧PDF已失效' : '尚未生成最新PDF'),
+    reviewState: reviewed ? 'done' : (currentPdf ? 'active' : 'waiting'),
+    reviewText: reviewed ? '最新PDF已确认' : (currentPdf ? '最新PDF等待运管确认' : '请先生成最新PDF'),
+    publishState: published ? 'done' : (reviewed ? 'active' : 'waiting'),
+    publishText: published ? '已发布给司机' : (reviewed ? '前置检查完成，可以发布' : '等待订单及PDF确认'),
+    nextAction,
+    nextLabel
+  };
+}
+
+function tariffOrderCategoryLabel(value) {
+  return ({
+    kix_transfer: 'KIX机场接送',
+    local_transfer: '市内接送',
+    intercity_transfer: '城市间接送',
+    charter: '包车'
+  })[String(value || '')] || '待识别';
+}
+
+function tariffReasonLabel(value) {
+  return ({
+    matched: '已匹配最新规则',
+    vehicle_office_unknown: '车辆所属营业所待核查',
+    vehicle_type_unknown: '车型待核查',
+    route_or_duration_not_configured: '该方向或时长未配置价格',
+    vehicle_price_not_configured: '该车型价格未配置'
+  })[String(value || '')] || '';
 }
 
 function stripDailyOrdinal(value) {
@@ -855,6 +959,16 @@ Page({
     serverRunGroups: [],
     dailyRunSummary: { vehicles: 0, orders: 0, published: 0, pending: 0 },
     dailySelectedGroupKeys: [],
+    dailyActiveGroupKey: '',
+    dailyWholeEditorKey: '',
+    dailyWholeSaving: false,
+    dailyWholeForm: {},
+    dailyInlineOrderId: 0,
+    dailyInlineGroupKey: '',
+    dailyInlineMoreOpen: false,
+    dailyInlineSaving: false,
+    dailyInlineForm: {},
+    dailyPublishing: false,
     dailyPdfLoadingKey: '',
     dailyPdfReviewOpen: false,
     dailyPdfReviewGroup: null,
@@ -883,6 +997,9 @@ Page({
     dailyPdfScrollAnchor: '',
     dailyPdfDocumentStale: false,
     dailyPdfGenerating: false,
+    dailyPdfFlow: buildDailyPdfFlow(null, null, false, false, []),
+    dailyPdfOrderIssues: [],
+    dailyPdfBlockingIssues: [],
     dailyTaskEditorOpen: false,
     dailyTaskEditor: null,
     dailyTaskEditorFocusFieldId: '',
@@ -909,6 +1026,7 @@ Page({
     dailyReviewGroup: null,
     dailyReviewOrder: null,
     dailyReviewConfirmedCount: 0,
+    dailyReviewReturnToPdf: false,
     dailyReviewForm: blankDailyReviewForm(),
     dailyBusinessAreas: DAILY_BUSINESS_AREAS,
     dailyOrderTypes: DAILY_ORDER_TYPES,
@@ -1735,7 +1853,12 @@ Page({
 
   refreshDailyRunGroups() {
     const result = this.decorateServerRunGroups(this.data.serverRunGroups || []);
-    this.setData({ dailyRunGroups: result.groups, dailyRunSummary: result.summary });
+    const current = String(this.data.dailyActiveGroupKey || '');
+    const activeKey = result.groups.some((item) => item.key === current)
+      ? current
+      : (result.groups[0] && result.groups[0].key || '');
+    const groups = result.groups.map((item) => ({ ...item, active: item.key === activeKey }));
+    this.setData({ dailyRunGroups: groups, dailyRunSummary: result.summary, dailyActiveGroupKey: activeKey });
   },
 
   decorateServerRunGroups(groups) {
@@ -1747,10 +1870,26 @@ Page({
         assignmentId: order.assignment_id,
         time: order.start_time || '--:--',
         route: `${order.pickup_location || '待确认'} → ${order.dropoff_location || '待确认'}`,
-        businessArea: order.operations_business_area || group.driver_office || '未设定',
+        businessArea: order.operations_business_area || order.suggested_business_area || group.suggested_business_area || group.vehicle_office || group.driver_office || '未设定',
+        businessAreaSuggested: !order.operations_business_area && !!(order.suggested_business_area || group.suggested_business_area),
+        tariffCategoryLabel: tariffOrderCategoryLabel(order.recommended_order_category),
+        tariffReason: order.recommended_price_reason || '',
+        tariffStatusText: tariffReasonLabel(order.recommended_price_reason),
+        tariffRuleVersion: order.recommended_price_rule_version || '',
+        affiliationNeedsReview: !!(order.vehicle_affiliation && order.vehicle_affiliation.requires_review),
+        affiliationMessage: order.vehicle_affiliation && order.vehicle_affiliation.message || '',
         areaWarning: Boolean(order.area_warning),
         areaRoute: order.area_route || '',
         reviewed: order.run_confirmation_status === 'confirmed'
+        ,displayPrice: Number(order.daily_effective_price || order.recommended_price || 0) > 0
+          ? String(order.daily_effective_price || order.recommended_price)
+          : '',
+        checkStatus: order.daily_check_status || 'missing',
+        checkLabel: order.daily_check_label || '待核对',
+        checkIssuesText: (order.daily_check_issues || []).join('、'),
+        orderTypeText: order.order_type || '类型待确认',
+        endTimeText: order.end_time || '',
+        inlineOpen: Number(this.data.dailyInlineOrderId || 0) === Number(order.order_id || 0)
       }));
       const workflowStatus = group.workflow_status || 'draft_ready';
       const status = workflowStatus === 'ready' ? 'ready' : (workflowStatus === 'published' ? 'published' : 'pending');
@@ -1759,6 +1898,15 @@ Page({
         driver: group.driver_name || '未定司机',
         vehicle: plateTail(group.plate_number),
         vehicleFull: group.plate_number || '未定车辆',
+        vehicleTypeText: group.vehicle_type || group.vehicle_type_code || '车型待核对',
+        officeText: group.vehicle_office || group.driver_office || '营业所待核对',
+        permitAreaText: group.vehicle_permitted_business_area || group.suggested_business_area || '许可区域待核对',
+        managerText: group.operations_manager || '运管负责人待核对',
+        autoCheckText: group.auto_check_text || `自动核对 ${orders.filter((order) => order.checkStatus === 'auto_passed').length} · 待处理 ${orders.filter((order) => order.checkStatus !== 'auto_passed').length}`,
+        checkPillText: Number(group.pending_check_count || 0) > 0
+          ? `${Number(group.pending_check_count || 0)}项待处理`
+          : (group.document_status === 'published' ? '已发布' : '可预览发布'),
+        wholeEditorOpen: this.data.dailyWholeEditorKey === group.key,
         orders,
         visibleOrders: orders.slice(0, 3),
         hiddenCount: Math.max(0, orders.length - 3),
@@ -1801,10 +1949,266 @@ Page({
     this.setData({ dailySelectedGroupKeys: selected }, () => this.refreshDailyRunGroups());
   },
 
+  activateDailyGroup(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    if (!key) return;
+    this.setData({ dailyActiveGroupKey: key }, () => this.refreshDailyRunGroups());
+  },
+
+  toggleDailyWholeEditor(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    const closing = this.data.dailyWholeEditorKey === key;
+    const group = (this.data.dailyRunGroups || []).find((item) => item.key === key);
+    if (!closing && !group) return;
+    const driverIndex = closing ? -1 : (this.data.drivers || []).findIndex((item) => Number(item.id) === Number(group.driver_id));
+    const vehicleIndex = closing ? -1 : (this.data.vehicles || []).findIndex((item) => Number(item.id) === Number(group.vehicle_id));
+    this.setData({
+      dailyActiveGroupKey: key,
+      dailyWholeEditorKey: closing ? '' : key,
+      dailyWholeForm: closing ? {} : {
+        driver_id: Number(group.driver_id),
+        vehicle_id: Number(group.vehicle_id),
+        driverIndex: Math.max(0, driverIndex),
+        vehicleIndex: Math.max(0, vehicleIndex),
+        driverText: group.driver,
+        vehicleText: group.vehicleFull
+      }
+    }, () => this.refreshDailyRunGroups());
+  },
+
+  onDailyWholeDriverChange(e) {
+    const index = Number(e.detail.value || 0);
+    const driver = (this.data.drivers || [])[index];
+    if (!driver) return;
+    this.setData({
+      'dailyWholeForm.driverIndex': index,
+      'dailyWholeForm.driver_id': Number(driver.id),
+      'dailyWholeForm.driverText': driver.displayName || driver.name || '未定司机'
+    });
+  },
+
+  onDailyWholeVehicleChange(e) {
+    const index = Number(e.detail.value || 0);
+    const vehicle = (this.data.vehicles || [])[index];
+    if (!vehicle) return;
+    this.setData({
+      'dailyWholeForm.vehicleIndex': index,
+      'dailyWholeForm.vehicle_id': Number(vehicle.id),
+      'dailyWholeForm.vehicleText': vehicle.plate_number || vehicle.shortPlate || '未定车辆'
+    });
+  },
+
+  cancelDailyWholeEditor() {
+    if (this.data.dailyWholeSaving) return;
+    this.setData({ dailyWholeEditorKey: '', dailyWholeForm: {} }, () => this.refreshDailyRunGroups());
+  },
+
+  saveDailyWholeEditor() {
+    const key = String(this.data.dailyWholeEditorKey || '');
+    const form = this.data.dailyWholeForm || {};
+    if (!key || !form.driver_id || !form.vehicle_id || this.data.dailyWholeSaving) return;
+    this.setData({ dailyWholeSaving: true, conflictText: '' });
+    api.reassignDailyGroup({
+      group_key: key,
+      driver_id: Number(form.driver_id),
+      vehicle_id: Number(form.vehicle_id)
+    })
+      .then((result) => {
+        if (!result || result.success === false) throw result || new Error('reassign_failed');
+        wx.showToast({ title: result.reused ? '配置未变化' : '本组配置已更新' });
+        this.setData({
+          dailyActiveGroupKey: result.group_key || key,
+          dailyWholeEditorKey: '',
+          dailyWholeForm: {}
+        });
+        return this.loadAll();
+      })
+      .catch((err) => {
+        const conflicts = err && err.conflicts || [];
+        const message = conflicts.length ? '新司机或车辆与现有任务时间冲突' : (api.errorMessage(err) || '本组配置保存失败');
+        this.setData({ conflictText: message });
+        wx.showToast({ title: message, icon: 'none' });
+      })
+      .finally(() => this.setData({ dailyWholeSaving: false }));
+  },
+
+  openDailyInlineEditor(e) {
+    const data = e.currentTarget.dataset || {};
+    const key = String(data.key || '');
+    const orderId = Number(data.orderId || 0);
+    const group = (this.data.dailyRunGroups || []).find((item) => item.key === key);
+    const order = group && (group.orders || []).find((item) => Number(item.order_id) === orderId);
+    if (!group || !order) return;
+    if (Number(this.data.dailyInlineOrderId || 0) === orderId) {
+      this.closeDailyInlineEditor();
+      return;
+    }
+    this.setData({
+      dailyActiveGroupKey: key,
+      dailyInlineGroupKey: key,
+      dailyInlineOrderId: orderId,
+      dailyInlineMoreOpen: false,
+      dailyInlineForm: {
+        order_date: order.order_date || group.business_date || this.data.dailyDate,
+        start_time: order.start_time || '',
+        end_date: order.end_date || order.order_date || group.business_date || this.data.dailyDate,
+        end_time: order.end_time || '',
+        pickup_location: order.pickup_location || '',
+        dropoff_location: order.dropoff_location || '',
+        price: Number(order.price || 0) > 0
+          ? String(order.price)
+          : (Number(order.recommended_price || order.daily_effective_price || 0) > 0
+            ? String(order.recommended_price || order.daily_effective_price)
+            : ''),
+        operations_business_area: order.operations_business_area || order.suggested_business_area || group.suggested_business_area || '',
+        order_type: order.order_type || ''
+      }
+    }, () => this.refreshDailyRunGroups());
+  },
+
+  closeDailyInlineEditor() {
+    if (this.data.dailyInlineSaving) return;
+    this.setData({ dailyInlineOrderId: 0, dailyInlineGroupKey: '', dailyInlineMoreOpen: false, dailyInlineForm: {} }, () => this.refreshDailyRunGroups());
+  },
+
+  onDailyInlineInput(e) {
+    const field = String((e.currentTarget.dataset || {}).field || '');
+    if (field) this.setData({ [`dailyInlineForm.${field}`]: e.detail.value });
+  },
+
+  onDailyInlineDate(e) {
+    const field = String((e.currentTarget.dataset || {}).field || 'order_date');
+    this.setData({ [`dailyInlineForm.${field}`]: e.detail.value });
+  },
+
+  onDailyInlineTime(e) {
+    const field = String((e.currentTarget.dataset || {}).field || 'start_time');
+    this.setData({ [`dailyInlineForm.${field}`]: e.detail.value });
+  },
+
+  toggleDailyInlineMore() {
+    this.setData({ dailyInlineMoreOpen: !this.data.dailyInlineMoreOpen });
+  },
+
+  saveDailyInlineOrder() {
+    const orderId = Number(this.data.dailyInlineOrderId || 0);
+    if (!orderId || this.data.dailyInlineSaving) return;
+    const form = this.data.dailyInlineForm || {};
+    this.setData({ dailyInlineSaving: true, conflictText: '' });
+    api.confirmRunOrder({ order_id: orderId, ...form, pdf_edit: true })
+      .then((result) => {
+        const saved = result && result.order || {};
+        const originalKey = this.data.dailyInlineGroupKey;
+        const parts = originalKey.split(':');
+        const nextKey = `${saved.order_date || form.order_date}:${parts[1] || ''}:${parts[2] || ''}`;
+        this.setData({
+          dailyDate: saved.order_date || form.order_date || this.data.dailyDate,
+          dailyActiveGroupKey: nextKey,
+          dailyInlineOrderId: 0,
+          dailyInlineGroupKey: '',
+          dailyInlineMoreOpen: false,
+          dailyInlineForm: {}
+        });
+        wx.showToast({ title: '已保存，需重新核对', icon: 'success' });
+        return this.loadAll();
+      })
+      .catch((error) => {
+        this.setData({ conflictText: api.errorMessage(error) || '订单保存失败' });
+      })
+      .finally(() => this.setData({ dailyInlineSaving: false }));
+  },
+
+  openDailyMoreDocumentFields() {
+    const key = this.data.dailyInlineGroupKey || this.data.dailyActiveGroupKey;
+    if (key) this.openDailyPdfByKey(key, false);
+  },
+
+  previewActiveDailyDocuments() {
+    const key = this.data.dailyActiveGroupKey;
+    if (!key || this.data.dailyPdfGenerating) return;
+    this.setData({ dailyPdfGenerating: true, dailyPdfLoadingKey: key });
+    api.generateRunDocument(key)
+      .then((result) => {
+        const document = result && result.document;
+        if (!document || !document.file_url) throw new Error('PDF生成结果无效');
+        return api.downloadAndOpenDocument(document.file_url);
+      })
+      .catch((error) => {
+        wx.showModal({
+          title: '双文书预览未打开',
+          content: api.errorMessage(error) || '请检查PDF生成及下载接口。',
+          showCancel: false
+        });
+      })
+      .finally(() => this.setData({ dailyPdfGenerating: false, dailyPdfLoadingKey: '' }));
+  },
+
+  confirmAndPublishActiveDailyGroup() {
+    const key = this.data.dailyActiveGroupKey;
+    if (!key || this.data.dailyPublishing) return;
+    this.setData({ dailyPublishing: true, conflictText: '' });
+    api.confirmAndPublishDailyGroup(key)
+      .then((result) => {
+        wx.showToast({ title: result && result.idempotent ? '已是最新发布版' : '已发布到司机端', icon: 'success' });
+        return this.loadAll();
+      })
+      .catch((error) => this.showDailyPublishFailure(key, error))
+      .finally(() => this.setData({ dailyPublishing: false }));
+  },
+
+  showDailyPublishFailure(key, error) {
+    const issueRows = Array.isArray(error && error.issues) ? error.issues : [];
+    if (issueRows.length) {
+      const visible = issueRows.slice(0, 5);
+      const details = visible.map((item) => {
+        const fields = Array.isArray(item.fields) ? item.fields.filter(Boolean) : [];
+        return `第${item.order_index || '?'}单${item.oid ? `（${item.oid}）` : ''}：${item.label || '需要人工核对'}${fields.length ? '；请修改 ' + fields.join('、') : ''}`;
+      });
+      if (issueRows.length > visible.length) details.push(`另有 ${issueRows.length - visible.length} 单需要处理`);
+      details.push('\n修改并保存后，再点“发布司机”。');
+      wx.showModal({
+        title: '发布前需要修改',
+        content: details.join('\n'),
+        confirmText: '去修改',
+        cancelText: '关闭',
+        success: (modal) => {
+          if (modal.confirm) this.openDailyPublishIssue(key, issueRows[0]);
+        }
+      });
+      return;
+    }
+    const message = api.errorMessage(error) || '服务器核对未通过，订单和文书未发布。';
+    wx.showModal({
+      title: '未能发布',
+      content: message,
+      showCancel: false,
+      confirmText: '我知道了'
+    });
+  },
+
+  openDailyPublishIssue(key, issue) {
+    const group = (this.data.dailyRunGroups || []).find((item) => item.key === key);
+    if (!group) {
+      this.loadAll();
+      return;
+    }
+    const orderId = Number(issue && issue.order_id || 0);
+    const index = Math.max(0, Number(issue && issue.order_index || 1) - 1);
+    const order = (group.orders || []).find((item) => Number(item.order_id) === orderId) || (group.orders || [])[index];
+    if (!order) return;
+    if (Number(this.data.dailyInlineOrderId || 0) !== Number(order.order_id || 0)) {
+      this.openDailyInlineEditor({ currentTarget: { dataset: { key, orderId: order.order_id } } });
+    }
+    setTimeout(() => {
+      wx.pageScrollTo({ selector: `#daily-order-${order.order_id}`, duration: 240, offsetTop: 130 });
+    }, 80);
+  },
+
   openDailyReview(e) {
     const key = String((e.currentTarget.dataset || {}).key || '');
     const group = (this.data.dailyRunGroups || []).find((item) => item.key === key);
     if (!group || !group.orders.length) return;
+    this.setData({ dailyReviewReturnToPdf: false });
     this.showDailyReviewOrder(group, 0);
   },
 
@@ -1822,7 +2226,7 @@ Page({
       dailyReviewForm: {
         order_date: order.order_date || this.data.dailyDate,
         start_time: order.start_time || '',
-        business_area: order.businessArea || '未设定',
+        business_area: order.operations_business_area || order.suggested_business_area || group.suggested_business_area || order.businessArea || '未设定',
         order_type: order.order_type || '',
         pickup_location: order.pickup_location || '',
         dropoff_location: order.dropoff_location || '',
@@ -1832,12 +2236,17 @@ Page({
   },
 
   closeDailyReview() {
+    const returnToPdf = !!this.data.dailyReviewReturnToPdf;
+    const groupKey = this.data.dailyReviewGroupKey;
     this.setData({
       dailyReviewOpen: false,
       dailyReviewEdit: false,
       dailyReviewGroup: null,
       dailyReviewOrder: null,
+      dailyReviewReturnToPdf: false,
       dailyReviewForm: blankDailyReviewForm()
+    }, () => {
+      if (returnToPdf && groupKey) this.openDailyPdfByKey(groupKey, false);
     });
   },
 
@@ -1898,7 +2307,7 @@ Page({
       pickup_location: form.pickup_location,
       dropoff_location: form.dropoff_location,
       price: form.price,
-      pdf_edit: true
+      pdf_edit: false
     };
     let regeneratedGroupKey = this.data.dailyReviewGroupKey;
     this.setData({ loading: true, conflictText: '' });
@@ -1922,13 +2331,15 @@ Page({
           dropoff_location: payload.dropoff_location,
           route: `${payload.pickup_location || '待确认'} → ${payload.dropoff_location || '待确认'}`,
           price: payload.price,
-          reviewed: false
+          reviewed: true,
+          run_confirmation_status: 'confirmed'
         } : item);
         const updatedGroup = { ...group, key: regeneratedGroupKey, business_date: payload.order_date, orders: updatedOrders };
         this.setData({
           loading: false,
           dailyReviewOpen: false,
           dailyReviewEdit: false,
+          dailyReviewReturnToPdf: false,
           dailyReviewGroup: null,
           dailyReviewOrder: null,
           dailyPdfReviewOpen: true,
@@ -1948,9 +2359,8 @@ Page({
           dailyPdfNodesExpanded: false,
           dailyPdfDocumentStale: true
         });
-        wx.showToast({ title: '订单草稿已保存', icon: 'success' });
-        this.openDailyPdfByKey(regeneratedGroupKey, false);
-        this.loadAll();
+        wx.showToast({ title: '订单已核对并确认', icon: 'success' });
+        return this.loadAll().then(() => this.openDailyPdfByKey(regeneratedGroupKey, false));
       })
       .catch((err) => {
         console.warn('[daily review update failed]', err);
@@ -1984,6 +2394,7 @@ Page({
           return !!(view && Array.isArray(view.pages) && view.pages.length);
         });
         const documentStale = !document || group.document_status === 'stale' || (document.source_hash && document.source_hash !== preview.source_sha256);
+        const orderIssues = buildDailyOrderIssues(group);
         this.applyDailyDocumentPreview({
           ...preview,
           validation_issues: [...(group.validation_issues || []), ...(preview.validation_issues || [])]
@@ -1993,7 +2404,7 @@ Page({
           dailyPdfSourceMode: 'daily',
           dailyPdfReviewGroup: group,
           dailyPdfReviewDocument: document,
-          dailyPdfReviewCanConfirm: !!document && !previewUnavailable && document.status !== 'published' && !(preview.validation_issues || []).length,
+          dailyPdfReviewCanConfirm: !!document && !previewUnavailable && document.status === 'generated' && !documentStale && !orderIssues.length && !(group.validation_issues || []).length,
           dailyPdfPreviewUnavailable: previewUnavailable,
           dailyPdfReviewIndex: groupIndex,
           dailyPdfReviewTotal: groups.length,
@@ -2054,6 +2465,9 @@ Page({
       dailyPdfScrollAnchor: '',
       dailyPdfDocumentStale: false,
       dailyPdfGenerating: false,
+      dailyPdfFlow: buildDailyPdfFlow(null, null, false, false, []),
+      dailyPdfOrderIssues: [],
+      dailyPdfBlockingIssues: [],
       dailyTaskEditorOpen: false,
       dailyTaskEditor: null,
       dailyTaskEditorFocusFieldId: '',
@@ -2065,6 +2479,22 @@ Page({
       dailyFieldEditIndex: -1,
       dailyFieldEditForm: null
     });
+  },
+
+  requestCloseDailyPdfReview() {
+    if (this.data.dailyTaskEditorOpen) {
+      this.closeDocumentTaskEditor();
+      return;
+    }
+    this.closeDailyPdfReview();
+  },
+
+  onDocumentWorkbenchBackdropTap() {
+    this.requestCloseDailyPdfReview();
+  },
+
+  onDocumentEditorMaskTap() {
+    this.closeDocumentTaskEditor();
   },
 
   toggleDailyPdfIssues() {
@@ -2105,6 +2535,17 @@ Page({
         field_id: cell && cell.editable ? cell.field_id : ''
       };
     });
+    const group = extra.dailyPdfReviewGroup || this.data.dailyPdfReviewGroup || {};
+    const document = Object.prototype.hasOwnProperty.call(extra, 'dailyPdfReviewDocument')
+      ? extra.dailyPdfReviewDocument
+      : this.data.dailyPdfReviewDocument;
+    const documentStale = Object.prototype.hasOwnProperty.call(extra, 'dailyPdfDocumentStale')
+      ? !!extra.dailyPdfDocumentStale
+      : !!this.data.dailyPdfDocumentStale;
+    const previewUnavailable = Object.prototype.hasOwnProperty.call(extra, 'dailyPdfPreviewUnavailable')
+      ? !!extra.dailyPdfPreviewUnavailable
+      : !!this.data.dailyPdfPreviewUnavailable;
+    const blockingIssues = Array.isArray(group.validation_issues) ? group.validation_issues : [];
     const nodes = (safePreview.nodes || []).map((node) => ({
       ...node,
       type_label: nodeTypeLabel(node.node_type),
@@ -2121,6 +2562,9 @@ Page({
       dailyPdfValidationIssues: validationIssues,
       dailyPdfValidationRaw: validation.raw,
       dailyPdfIssueSummary: validation.summary,
+      dailyPdfOrderIssues: buildDailyOrderIssues(group),
+      dailyPdfBlockingIssues: blockingIssues,
+      dailyPdfFlow: buildDailyPdfFlow(group, document, documentStale, previewUnavailable, blockingIssues),
       ...extra
     });
   },
@@ -2376,20 +2820,58 @@ Page({
       .then((result) => {
         const document = result && result.document;
         if (!document || !document.file_url) throw new Error('PDF生成结果无效');
+        const group = this.data.dailyPdfReviewGroup || {};
+        const blockingIssues = this.data.dailyPdfBlockingIssues || [];
         this.setData({
           dailyPdfReviewDocument: document,
           fixedTourGeneratedDocument: this.data.dailyPdfDraftOnly ? document : this.data.fixedTourGeneratedDocument,
           fixedTourMessage: this.data.dailyPdfDraftOnly ? `PDF草稿已生成 · ${Number(document.page_count || 0)}页` : this.data.fixedTourMessage,
           dailyPdfDocumentStale: false,
-          dailyPdfReviewCanConfirm: document.status !== 'published' && !(this.data.dailyPdfValidationRaw || []).length
+          dailyPdfReviewCanConfirm: document.status === 'generated' && !blockingIssues.length && !(this.data.dailyPdfOrderIssues || []).length,
+          dailyPdfFlow: buildDailyPdfFlow(group, document, false, this.data.dailyPdfPreviewUnavailable, blockingIssues)
         });
         wx.showToast({ title: `PDF草稿已生成 · ${Number(document.page_count || 0)}页`, icon: 'success' });
-        this.loadAll();
+        return this.loadAll();
       })
       .catch((err) => {
         wx.showToast({ title: `草稿已保存，PDF生成失败：${api.errorMessage(err) || '可重试'}`, icon: 'none' });
       })
       .finally(() => this.setData({ dailyPdfGenerating: false, loading: false }));
+  },
+
+  goFirstDailyPdfOrderIssue() {
+    const first = (this.data.dailyPdfOrderIssues || [])[0];
+    if (!first) {
+      this.focusDailyPdfIssues();
+      return;
+    }
+    this.goDailyPdfOrderIssue({ currentTarget: { dataset: { orderId: first.order_id } } });
+  },
+
+  goDailyPdfOrderIssue(e) {
+    const orderId = Number(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.orderId || 0);
+    const group = this.data.dailyPdfReviewGroup;
+    if (!group || !orderId) return;
+    const index = (group.orders || []).findIndex((item) => Number(item.order_id || item.orderId) === orderId);
+    if (index < 0) return;
+    this.setData({
+      dailyPdfReviewOpen: false,
+      dailyReviewReturnToPdf: true
+    }, () => {
+      this.showDailyReviewOrder(group, index);
+      this.setData({ dailyReviewEdit: true });
+    });
+  },
+
+  focusDailyPdfIssues() {
+    this.setData({ dailyPdfIssuesExpanded: true, dailyPdfScrollAnchor: 'document-blocking-issues' });
+    wx.showToast({ title: '请逐项点击“去处理”', icon: 'none' });
+  },
+
+  publishCurrentDailyGroup() {
+    const group = this.data.dailyPdfReviewGroup || {};
+    if (!group.key) return;
+    this.setData({ dailySelectedGroupKeys: [group.key] }, () => this.publishSelectedDailyGroups());
   },
 
   openDocumentIssue(e) {
@@ -2508,8 +2990,10 @@ Page({
   editDailyPdf() {
     const group = this.data.dailyPdfReviewGroup;
     if (!group || !(group.orders || []).length) return;
-    this.showDailyReviewOrder(group, 0);
-    this.setData({ dailyReviewEdit: true });
+    this.setData({ dailyPdfReviewOpen: false, dailyReviewReturnToPdf: true }, () => {
+      this.showDailyReviewOrder(group, 0);
+      this.setData({ dailyReviewEdit: true });
+    });
   },
 
   previousDailyPdfDriver() {
@@ -2546,16 +3030,27 @@ Page({
   confirmDailyPdfReview() {
     const group = this.data.dailyPdfReviewGroup;
     if (!group || !group.key) return;
+    const document = this.data.dailyPdfReviewDocument;
+    if (!document || this.data.dailyPdfDocumentStale) {
+      wx.showToast({ title: '请先生成当前草稿对应的最新PDF', icon: 'none' });
+      return;
+    }
+    if ((this.data.dailyPdfOrderIssues || []).length || (this.data.dailyPdfBlockingIssues || []).length) {
+      this.focusDailyPdfIssues();
+      return;
+    }
     this.setData({ loading: true });
     api.reviewRunDocument(group.key)
       .then((res) => {
+        const reviewed = res.document || null;
         this.setData({
           loading: false,
-          dailyPdfReviewDocument: res.document || null,
-          dailyPdfReviewCanConfirm: false
+          dailyPdfReviewDocument: reviewed,
+          dailyPdfReviewCanConfirm: false,
+          dailyPdfFlow: buildDailyPdfFlow(group, reviewed, false, this.data.dailyPdfPreviewUnavailable, this.data.dailyPdfBlockingIssues || [])
         });
-        wx.showToast({ title: '草稿已确认，未发布', icon: 'success' });
-        this.loadAll();
+        wx.showToast({ title: '最新PDF已确认，尚未发布', icon: 'success' });
+        return this.loadAll();
       })
       .catch((err) => {
         this.setData({ loading: false });
@@ -2608,12 +3103,33 @@ Page({
     const groups = (this.data.serverRunGroups || []).filter((item) => keys.indexOf(item.key) >= 0);
     const pending = groups.reduce((sum, item) => sum + Number(item.pending_count || 0), 0);
     if (pending) {
-      wx.showToast({ title: `还有 ${pending} 单未确认`, icon: 'none' });
+      const firstGroup = groups.find((item) => Number(item.pending_count || 0) > 0);
+      const issues = buildDailyOrderIssues(firstGroup);
+      const lines = issues.slice(0, 4).map((item) => `第${item.sequence}单：${item.detail}`);
+      wx.showModal({
+        title: `还有 ${pending} 单未确认`,
+        content: lines.join('\n') || '请先完成订单核对与确认。',
+        confirmText: '去处理',
+        cancelText: '暂不发布',
+        success: (result) => {
+          if (!result.confirm || !firstGroup || !issues.length) return;
+          this.setData({ dailyPdfReviewGroup: this.decorateServerRunGroups([firstGroup]).allGroups[0] || firstGroup }, () => {
+            this.goDailyPdfOrderIssue({ currentTarget: { dataset: { orderId: issues[0].order_id } } });
+          });
+        }
+      });
       return;
     }
     const notReviewed = groups.filter((item) => item.document_status !== 'reviewed');
     if (notReviewed.length) {
-      wx.showToast({ title: `还有 ${notReviewed.length} 车 PDF 未确认`, icon: 'none' });
+      const firstGroup = notReviewed[0];
+      wx.showModal({
+        title: `还有 ${notReviewed.length} 车PDF未确认`,
+        content: `${firstGroup.driver_name || '当前司机'} · ${firstGroup.plate_number || '当前车辆'}\n请生成最新PDF并完成运管确认。`,
+        confirmText: '去确认',
+        cancelText: '暂不发布',
+        success: (result) => { if (result.confirm) this.openDailyPdfByKey(firstGroup.key, false); }
+      });
       return;
     }
     wx.showModal({
@@ -3444,10 +3960,24 @@ Page({
         const publishedRows = this.decoratePublishedAssignments(assignments);
         const serverRunGroups = runGroupsRes.groups || [];
         const dailyRun = this.decorateServerRunGroups(serverRunGroups);
+        const requestedActiveKey = String(this.data.dailyActiveGroupKey || '');
+        const nextActiveGroupKey = (dailyRun.groups || []).some((item) => item.key === requestedActiveKey)
+          ? requestedActiveKey
+          : (dailyRun.groups[0] && dailyRun.groups[0].key || '');
+        dailyRun.groups = (dailyRun.groups || []).map((item) => ({
+          ...item,
+          active: item.key === nextActiveGroupKey
+        }));
         const activePdfKey = this.data.dailyPdfReviewGroup && this.data.dailyPdfReviewGroup.key;
         const activePdfGroup = activePdfKey && (dailyRun.allGroups || []).find((item) => item.key === activePdfKey);
         const activePdfIndex = activePdfGroup ? (dailyRun.allGroups || []).findIndex((item) => item.key === activePdfKey) : this.data.dailyPdfReviewIndex;
         const activePdfValidation = buildValidationPresentation(activePdfGroup && activePdfGroup.validation_issues || []);
+        const activePdfDocument = activePdfGroup && activePdfGroup.latest_document || this.data.dailyPdfReviewDocument;
+        const activePdfStale = activePdfGroup ? activePdfGroup.document_status === 'stale' : this.data.dailyPdfDocumentStale;
+        const activePdfOrderIssues = activePdfGroup ? buildDailyOrderIssues(activePdfGroup) : this.data.dailyPdfOrderIssues;
+        const activePdfFlow = activePdfGroup
+          ? buildDailyPdfFlow(activePdfGroup, activePdfDocument, activePdfStale, this.data.dailyPdfPreviewUnavailable, activePdfGroup.validation_issues || [])
+          : this.data.dailyPdfFlow;
         const decoratedDrivers = this.decorateDrivers(driversRes.drivers || [], assignments);
         const decoratedVehicles = this.decorateVehicles(vehiclesRes.vehicles || [], assignments);
         console.log('[dispatch resources loaded]', {
@@ -3466,14 +3996,20 @@ Page({
           publishedRows,
           dailyRunGroups: dailyRun.groups,
           dailyRunSummary: dailyRun.summary,
+          dailyActiveGroupKey: nextActiveGroupKey,
           ...(activePdfGroup ? {
             dailyPdfReviewGroup: activePdfGroup,
+            dailyPdfReviewDocument: activePdfDocument,
             dailyPdfReviewIndex: activePdfIndex,
             dailyPdfReviewTotal: (dailyRun.allGroups || []).length,
             dailyPdfValidationIssues: activePdfValidation.issues,
             dailyPdfValidationRaw: activePdfValidation.raw,
             dailyPdfIssueSummary: activePdfValidation.summary,
-            dailyPdfReviewCanConfirm: !this.data.dailyPdfPreviewUnavailable && !!this.data.dailyPdfReviewDocument && this.data.dailyPdfReviewDocument.status !== 'published' && !activePdfValidation.raw.length
+            dailyPdfBlockingIssues: activePdfGroup.validation_issues || [],
+            dailyPdfDocumentStale: activePdfStale,
+            dailyPdfOrderIssues: activePdfOrderIssues,
+            dailyPdfFlow: activePdfFlow,
+            dailyPdfReviewCanConfirm: !this.data.dailyPdfPreviewUnavailable && !!activePdfDocument && activePdfDocument.status === 'generated' && !activePdfStale && !(activePdfGroup.validation_issues || []).length && !activePdfOrderIssues.length
           } : {}),
           dailyOverview: this.buildDailyOverview(this.data.dailyGroups, {
             drivers: decoratedDrivers,

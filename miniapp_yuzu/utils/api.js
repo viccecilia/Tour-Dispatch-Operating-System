@@ -94,10 +94,19 @@ function request(path, options = {}) {
   });
 }
 
+function appConfig() {
+  return request('/api/dispatch-mobile/app-config');
+}
+
 function loginAgency(loginCode, password, wxCode = '') {
   return request('/api/agency-portal/login', {
     method: 'POST',
-    data: { portal_code: loginCode, password, wx_code: wxCode, client_type: 'agency_miniapp' }
+    data: {
+      portal_code: loginCode,
+      password,
+      wx_code: wxCode,
+      client_type: wxCode ? 'agency_miniapp' : 'web'
+    }
   });
 }
 
@@ -132,6 +141,7 @@ module.exports = {
   getRuntimeInfo,
   syncEnvironmentBaseUrl,
   request,
+  appConfig,
   loginAgency,
   loginDispatch,
   loginWechat

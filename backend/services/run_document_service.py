@@ -13,7 +13,7 @@ from backend.app.config import RUNTIME_DIR
 from backend.db.database import get_connection
 from backend.services.notification_service import create_notification
 from backend.services.order_number_service import driver_short_code, normalize_source_code, plate_short_code
-from backend.services.tariff_service import recommend_route_fare
+from backend.services.tariff_service import diagnose_route_fare, price_snapshot
 from backend.services.tenant_context import get_current_tenant_id
 from backend.services.auth_account_service import supabase_enabled
 from backend.services.document_model_service import (
@@ -29,6 +29,8 @@ from backend.services.document_model_service import (
     snapshot_source_sha256,
     upsert_document_batch,
 )
+from backend.services.hotel_pool_service import normalize_city_place
+from backend.services.dispatch_service import reassign_orders
 
 
 class DriverAccountPreflightError(ValueError):
@@ -37,9 +39,17 @@ class DriverAccountPreflightError(ValueError):
         self.blocked = blocked
 
 
+class DailyGroupPreflightError(ValueError):
+    def __init__(self, issues: list[dict[str, Any]]):
+        super().__init__("daily_group_preflight_failed")
+        self.issues = issues
+
+
 EDITABLE_FIELDS = {
     "order_date",
+    "end_date",
     "start_time",
+    "end_time",
     "operations_business_area",
     "order_type",
     "pickup_location",
@@ -51,7 +61,7 @@ JP_FONT_PATH = FONT_DIR / "NotoSansJP-VF.ttf"
 SC_FONT_PATH = FONT_DIR / "NotoSansSC-VF.ttf"
 # Bump this whenever the formal PDF layout or fixed rendering rules change.
 # It prevents a previously generated file from being reused after a template fix.
-DOCUMENT_RENDERER_VERSION = "v014-hire-document-workbench-10job-20261012-1"
+DOCUMENT_RENDERER_VERSION = "v014-hire-document-workbench-10job-20261017-7-provider-profile"
 
 
 def _optional_coalesce_expr(
@@ -63,6 +73,99 @@ def _optional_coalesce_expr(
     if not expressions:
         return f"'' AS {result_name}"
     return f"COALESCE({', '.join(expressions)}, '') AS {result_name}"
+
+
+def _vehicle_quote_context(conn: Any, vehicle_id: Any) -> dict[str, Any]:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(vehicles)").fetchall()}
+
+    def expression(alias: str, candidates: tuple[str, ...]) -> str:
+        existing = [f"NULLIF({column}, '')" for column in candidates if column in columns]
+        return f"COALESCE({', '.join(existing)}, '') AS {alias}" if existing else f"'' AS {alias}"
+
+    row = conn.execute(
+        f"""
+        SELECT id,
+               {expression('plate_number', ('plate_number', 'plate_no'))},
+               {expression('vehicle_type', ('vehicle_type',))},
+               {expression('vehicle_type_code', ('vehicle_type_code',))},
+               {expression('vehicle_group', ('vehicle_group',))},
+               {expression('vehicle_office', ('document_office_name', 'office', 'office_name', 'branch', 'sales_office'))},
+               {expression('vehicle_permitted_business_area', ('permitted_business_area', 'operations_business_area', 'business_area', 'license_area', 'operating_area', 'permit_area'))},
+               {('seat_count' if 'seat_count' in columns else ('seats' if 'seats' in columns else 'NULL'))} AS seat_count
+        FROM vehicles
+        WHERE id = ?
+        """,
+        (int(vehicle_id),),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def _diagnose_order_quote(order: dict[str, Any], vehicle: dict[str, Any]) -> dict[str, Any]:
+    return diagnose_route_fare(
+        order.get("pickup_location"),
+        order.get("dropoff_location"),
+        order.get("order_type"),
+        vehicle.get("vehicle_type"),
+        order.get("remark"),
+        vehicle.get("seat_count"),
+        vehicle_office=vehicle.get("vehicle_office"),
+        plate_number=vehicle.get("plate_number"),
+        vehicle_type_code=vehicle.get("vehicle_type_code"),
+        vehicle_group=vehicle.get("vehicle_group"),
+        permitted_business_area=vehicle.get("vehicle_permitted_business_area"),
+        pickup_source_text=order.get("pickup_source_text"),
+        dropoff_source_text=order.get("dropoff_source_text"),
+        start_time=order.get("start_time"),
+        end_time=order.get("end_time"),
+        business_date=order.get("order_date"),
+    )
+
+
+def _daily_order_check(order: dict[str, Any]) -> dict[str, Any]:
+    assessment = order.get("area_assessment") or {}
+    missing_labels = []
+    for key, label in (
+        ("order_date", "日期"),
+        ("start_time", "配车时间"),
+        ("order_type", "订单类别"),
+        ("pickup_location", "上车地点"),
+        ("dropoff_location", "下车地点"),
+    ):
+        if _missing_confirm_value(key, order.get(key)):
+            missing_labels.append(label)
+    effective_area = order.get("operations_business_area") or order.get("suggested_business_area") or ""
+    stored_price = order.get("price")
+    effective_price = stored_price if not _missing_confirm_value("price", stored_price) else order.get("recommended_price")
+    try:
+        snapshot = json.loads(str(order.get("price_snapshot_json") or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        snapshot = {}
+
+    status = "auto_passed"
+    label = "自动核对通过"
+    issues: list[str] = []
+    if missing_labels or not effective_area:
+        status, label = "missing", "资料缺失"
+        issues = missing_labels + ([] if effective_area else ["营业区域"])
+    elif assessment.get("status") == "risk":
+        status, label = "area_risk", "营业区域风险"
+        issues = [str(assessment.get("label") or "营业区域风险")]
+    elif assessment.get("status") != "passed":
+        status, label = "missing", "营业所／许可待核对"
+        issues = [str(assessment.get("label") or "营业区域待核对")]
+    elif effective_price in (None, "") or _missing_confirm_value("price", effective_price):
+        status, label = "price_pending", "价格待确认"
+        issues = ["没有已保存金额或可用推荐价"]
+    elif snapshot.get("source") == "manual_override" and str(order.get("run_confirmation_status") or "") != "confirmed":
+        status, label = "manual_recheck", "人工修改后待复核"
+        issues = ["人工金额尚未重新确认"]
+    return {
+        "daily_check_status": status,
+        "daily_check_label": label,
+        "daily_check_issues": issues,
+        "daily_effective_price": effective_price,
+        "daily_effective_business_area": effective_area,
+    }
 
 
 def group_key(business_date: Any, driver_id: Any, vehicle_id: Any) -> str:
@@ -93,7 +196,31 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
             "driver_print_name",
         )
         vehicle_office_expr = _optional_coalesce_expr(
-            [("v", vehicle_columns, ("office", "office_name"))], "vehicle_office"
+            [("v", vehicle_columns, ("document_office_name", "office", "office_name", "branch", "sales_office"))],
+            "vehicle_office",
+        )
+        vehicle_permit_area_expr = _optional_coalesce_expr(
+            [
+                (
+                    "v",
+                    vehicle_columns,
+                    (
+                        "permitted_business_area",
+                        "operations_business_area",
+                        "business_area",
+                        "license_area",
+                        "operating_area",
+                        "permit_area",
+                    ),
+                )
+            ],
+            "vehicle_permitted_business_area",
+        )
+        vehicle_type_code_expr = _optional_coalesce_expr(
+            [("v", vehicle_columns, ("vehicle_type_code",))], "vehicle_type_code"
+        )
+        vehicle_group_expr = _optional_coalesce_expr(
+            [("v", vehicle_columns, ("vehicle_group",))], "vehicle_group"
         )
         manager_expr = _optional_coalesce_expr(
             [
@@ -145,7 +272,8 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
                    o.run_confirmation_status, o.run_confirmed_at,
                    o.run_confirmed_by_user_id, o.run_confirmed_by, o.run_revision,
                    d.name AS driver_name, d.driver_code, d.office AS driver_office,
-                   {driver_print_expr}, {vehicle_office_expr}, {manager_expr},
+                   {driver_print_expr}, {vehicle_office_expr}, {vehicle_permit_area_expr},
+                   {vehicle_type_code_expr}, {vehicle_group_expr}, {manager_expr},
                    {garage_expr}, {garage_out_time_expr}, {garage_in_time_expr},
                    v.plate_number, v.vehicle_type, v.seat_count
             FROM assignments a
@@ -212,16 +340,19 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
         item = dict(raw)
         item["printable_stopovers"] = _printable_stopovers_from_route_note(item)
         item["area_warning"], item["area_route"] = _area_review_from_route_note(item)
-        recommendation = recommend_route_fare(
-            item.get("pickup_location"),
-            item.get("dropoff_location"),
-            item.get("order_type"),
-            item.get("vehicle_type"),
-            item.get("remark"),
-            item.get("seat_count"),
-        )
-        item["recommended_price"] = recommendation.get("amount") if recommendation else None
-        item["recommended_price_label"] = recommendation.get("label") if recommendation else ""
+        price_diagnostic = _diagnose_order_quote(item, item)
+        affiliation = price_diagnostic.get("affiliation") or {}
+        item["recommended_price"] = price_diagnostic.get("amount")
+        item["recommended_price_label"] = price_diagnostic.get("label") or ""
+        item["recommended_price_rule_version"] = price_diagnostic.get("rule_version") or ""
+        item["recommended_price_rule_key"] = price_diagnostic.get("key") or ""
+        item["recommended_price_reason"] = price_diagnostic.get("reason") or ""
+        item["recommended_price_match_basis"] = price_diagnostic.get("match_basis") or {}
+        item["recommended_order_category"] = price_diagnostic.get("order_category") or "unknown"
+        item["area_assessment"] = price_diagnostic.get("area_assessment") or {}
+        item["vehicle_affiliation"] = affiliation
+        item["suggested_business_area"] = affiliation.get("suggested_business_area") or ""
+        item.update(_daily_order_check(item))
         key = group_key(item["order_date"], item["driver_id"], item["vehicle_id"])
         group = grouped.setdefault(
             key,
@@ -231,17 +362,22 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
                 "business_date": item["order_date"],
                 "driver_id": item["driver_id"],
                 "vehicle_id": item["vehicle_id"],
-                "driver_name": item.get("driver_name") or "未定司机",
+                "driver_name": item.get("driver_name") or "",
                 "driver_print_name": item.get("driver_print_name") or "",
                 "driver_code": item.get("driver_code") or "",
                 "driver_office": item.get("driver_office") or "",
                 "vehicle_office": item.get("vehicle_office") or "",
+                "vehicle_permitted_business_area": item.get("vehicle_permitted_business_area") or "",
+                "vehicle_affiliation": item.get("vehicle_affiliation") or {},
+                "suggested_business_area": item.get("suggested_business_area") or "",
                 "operations_manager": item.get("operations_manager") or "",
                 "garage_location": item.get("garage_location") or "",
                 "garage_out_time": item.get("garage_out_time") or "",
                 "garage_in_time": item.get("garage_in_time") or "",
                 "plate_number": item.get("plate_number") or "",
                 "vehicle_type": item.get("vehicle_type") or "",
+                "vehicle_type_code": item.get("vehicle_type_code") or "",
+                "vehicle_group": item.get("vehicle_group") or "",
                 "seat_count": item.get("seat_count"),
                 "company": company,
                 "orders": [],
@@ -256,7 +392,15 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
         group["route_node_overrides"] = overrides_by_group.get(run_group_id, [])
         group["document_field_overrides"] = field_overrides_by_group.get(run_group_id, {})
         total = len(group["orders"])
+        office_key = str((group.get("vehicle_affiliation") or {}).get("office_key") or "")
+        if not group.get("operations_manager"):
+            group["operations_manager"] = {"osaka": "胡東鍇", "kyoto": "朱英心"}.get(office_key, "")
+            group["operations_manager_source"] = "office_default" if group["operations_manager"] else "missing"
+        else:
+            group["operations_manager_source"] = "vehicle_or_driver_archive"
         confirmed = sum(1 for order in group["orders"] if order.get("run_confirmation_status") == "confirmed")
+        auto_checked = sum(1 for order in group["orders"] if order.get("daily_check_status") == "auto_passed")
+        pending_checks = total - auto_checked
         state = "confirmed" if confirmed == total and total else ("confirming" if confirmed else "pending")
         doc = latest.get(key)
         current_hash = _source_hash(group)
@@ -279,6 +423,9 @@ def list_run_groups(business_date: str | None = None, tenant_id: int | None = No
                 "order_count": total,
                 "confirmed_count": confirmed,
                 "pending_count": total - confirmed,
+                "auto_checked_count": auto_checked,
+                "pending_check_count": pending_checks,
+                "auto_check_text": f"自动核对 {auto_checked} · 待处理 {pending_checks}",
                 "confirmation_status": state,
                 "confirmation_text": f"{confirmed}/{total} 已确认",
                 "latest_document": _public_document(doc) if doc else None,
@@ -299,6 +446,19 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
     actor_id = int(actor.get("id") or 0) or None
     actor_name = str(actor.get("display_name") or actor.get("username") or "运行管理")
     updates = {key: payload.get(key) for key in EDITABLE_FIELDS if key in payload}
+    location_source_inputs: dict[str, str] = {}
+    for field_name, node_role in (("pickup_location", "pickup"), ("dropoff_location", "dropoff")):
+        if field_name not in updates:
+            continue
+        raw_location = str(updates.get(field_name) or "").strip()
+        normalized_location, was_normalized = normalize_city_place(
+            raw_location,
+            f"daily-order:{order_id_int}:{node_role}",
+            include_supplemental=True,
+        )
+        if was_normalized:
+            location_source_inputs[field_name] = raw_location
+            updates[field_name] = normalized_location
     pdf_edit = bool(payload.get("pdf_edit"))
     required = {
         "order_date": "日付", "start_time": "時刻", "operations_business_area": "営業区域",
@@ -319,14 +479,55 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
         ).fetchone()
         if not assignment:
             raise ValueError("order_not_assigned")
+        vehicle_context = _vehicle_quote_context(conn, assignment["vehicle_id"])
+        effective_order = dict(before)
+        effective_order.update(updates)
+        price_diagnostic = _diagnose_order_quote(effective_order, vehicle_context)
         changed = any(_normalized(before[key]) != _normalized(value) for key, value in updates.items())
+        existing_price_snapshot: dict[str, Any] = {}
+        try:
+            existing_price_snapshot = json.loads(str(before["price_snapshot_json"] or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            existing_price_snapshot = {}
+        quote_context_changed = any(
+            key in updates and _normalized(before[key]) != _normalized(updates[key])
+            for key in (
+                "price",
+                "order_date",
+                "start_time",
+                "order_type",
+                "pickup_location",
+                "dropoff_location",
+            )
+        )
+        refresh_price_snapshot = (
+            "price" in updates
+            and (
+                quote_context_changed
+                or not existing_price_snapshot.get("rule_version")
+            )
+        )
         if updates:
             clauses = [f"{key} = ?" for key in updates]
             values = [_db_value(key, updates[key]) for key in updates]
             if "pickup_location" in updates:
                 clauses.append("pickup_location_confirmed = 1")
+                if _normalized(before["pickup_location"]) != _normalized(updates["pickup_location"]):
+                    clauses.append("pickup_source_text = ?")
+                    values.append(location_source_inputs.get("pickup_location", str(updates["pickup_location"] or "")))
             if "dropoff_location" in updates:
                 clauses.append("dropoff_location_confirmed = 1")
+                if _normalized(before["dropoff_location"]) != _normalized(updates["dropoff_location"]):
+                    clauses.append("dropoff_source_text = ?")
+                    values.append(location_source_inputs.get("dropoff_location", str(updates["dropoff_location"] or "")))
+            if "operations_business_area" in updates and not _missing_confirm_value(
+                "operations_business_area", updates.get("operations_business_area")
+            ):
+                # Selecting the business area in the formal order-confirmation
+                # step is the operator's explicit acknowledgement.  Persist it
+                # separately so an old parser note cannot keep showing a stale
+                # "area needs confirmation" warning forever.
+                clauses.append("area_validation_status = 'confirmed'")
             if "price" in updates and _normalized(before["price"]) != _normalized(updates["price"]):
                 clauses.extend(
                     [
@@ -336,6 +537,19 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
                         "price_confirmed_at = NULL",
                     ]
                 )
+            if refresh_price_snapshot:
+                clauses.append("price_snapshot_json = ?")
+                values.append(
+                    json.dumps(
+                        price_snapshot(
+                            price_diagnostic,
+                            updates.get("price"),
+                            vehicle_id=assignment["vehicle_id"],
+                        ),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
             if (
                 "start_time" in updates
                 and str(before["end_time_source"] or "") == "suggested_60m"
@@ -344,6 +558,8 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
                 shifted = shift_date_time(updates.get("order_date") or before["order_date"], updates["start_time"], 60)
                 clauses.extend(["end_date = ?", "end_time = ?"])
                 values.extend([shifted["date"], shifted["time"]])
+            if "end_time" in updates:
+                clauses.extend(["end_time_source = 'manual'", "end_time_confirmed = 1"])
             if changed:
                 clauses.append("run_revision = COALESCE(run_revision, 1) + 1")
             conn.execute(
@@ -379,6 +595,41 @@ def confirm_order(order_id: Any, payload: dict[str, Any], actor: dict[str, Any])
         conn.commit()
         row = conn.execute("SELECT * FROM orders WHERE tenant_id = ? AND id = ?", (tenant, order_id_int)).fetchone()
     return dict(row)
+
+
+def reassign_daily_group(group_value: Any, payload: dict[str, Any], actor: dict[str, Any]) -> dict[str, Any]:
+    """Change one daily draft group to another real driver/vehicle without publishing it."""
+    _require_operations_actor(actor)
+    date_value, driver_id, vehicle_id = parse_group_key(group_value)
+    tenant = int(actor.get("tenant_id") or get_current_tenant_id())
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
+    new_driver_id = int(payload.get("driver_id") or driver_id)
+    new_vehicle_id = int(payload.get("vehicle_id") or vehicle_id)
+    if new_driver_id == driver_id and new_vehicle_id == vehicle_id:
+        return {"success": True, "reused": True, "group_key": group_value, "updated_order_ids": []}
+    order_ids = [int(item.get("order_id") or 0) for item in group.get("orders") or []]
+    if not order_ids or any(not item for item in order_ids):
+        raise ValueError("daily_group_orders_missing")
+    result = reassign_orders(
+        order_ids,
+        new_driver_id,
+        new_vehicle_id,
+        actor=actor,
+        notify_driver=False,
+        publish_assignment=False,
+    )
+    if not result.get("success"):
+        return result
+    mark_run_group_stale(date_value, driver_id, vehicle_id, tenant)
+    mark_run_group_stale(date_value, new_driver_id, new_vehicle_id, tenant)
+    return {
+        **result,
+        "reused": False,
+        "group_key": group_key(date_value, new_driver_id, new_vehicle_id),
+        "previous_group_key": group_value,
+    }
 
 
 def mark_order_changed(
@@ -912,6 +1163,8 @@ def patch_run_document_draft(group_value: Any, payload: dict[str, Any], actor: d
                     datetime.fromisoformat(value.replace("Z", "+00:00"))
                 except ValueError as exc:
                     raise ValueError(f"invalid_datetime:{field_name}") from exc
+            if field_name == "planned_location" and value:
+                value, _ = normalize_city_place(value, route_node_id, include_supplemental=True)
             current_value = str(node.get(field_name) or "").strip()
             normalized_patches.append({
                 "kind": "node", "field_id": field_id, "route_node_id": route_node_id,
@@ -1396,6 +1649,45 @@ def review_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, An
     return _public_document(dict(reviewed))
 
 
+def _prepare_published_pdf(row: dict[str, Any], published_at: datetime, actor: dict[str, Any]) -> dict[str, Any]:
+    """Render a formal file without overwriting the reviewed preview artifact."""
+    try:
+        source_snapshot = json.loads(str(row.get("snapshot_json") or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("公開対象 PDF の文書スナップショットを読み込めません") from exc
+    if not str((source_snapshot.get("driver") or {}).get("name") or "").strip():
+        raise ValueError("公開前の必須項目が不足しています：運転者の正式文書名が未設定です")
+
+    # Publication metadata changes the visible formal PDF only.  The immutable
+    # business-content snapshot and its source hash remain unchanged.
+    final_snapshot = json.loads(canonical_json(source_snapshot))
+    final_snapshot["publication_status"] = "published"
+    final_snapshot["created_date"] = published_at.date().isoformat()
+    final_snapshot["published_at"] = published_at.isoformat(timespec="seconds")
+    final_snapshot["published_by"] = str(actor.get("display_name") or actor.get("username") or "運行管理者")
+
+    preview_path = Path(str(row.get("file_path") or "")).resolve()
+    final_path = preview_path.with_name(f"{preview_path.stem}-published{preview_path.suffix}")
+    temporary_path = final_path.with_name(f"{final_path.stem}.publishing{final_path.suffix}")
+    temporary_path.unlink(missing_ok=True)
+    try:
+        page_count = _render_pdf(final_snapshot, temporary_path)
+        pdf_sha256 = sha256_file(temporary_path)
+        temporary_path.replace(final_path)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return {
+        "source_snapshot": source_snapshot,
+        "file_name": final_path.name,
+        "file_path": str(final_path),
+        "page_count": page_count,
+        "pdf_sha256": pdf_sha256,
+        "created_date": final_snapshot["created_date"],
+        "published_at": final_snapshot["published_at"],
+    }
+
+
 def publish_run_documents(group_values: list[Any], actor: dict[str, Any]) -> list[dict[str, Any]]:
     _require_operations_actor(actor)
     if not group_values:
@@ -1424,7 +1716,7 @@ def publish_run_documents(group_values: list[Any], actor: dict[str, Any]) -> lis
             ).fetchone()
         if not row or not Path(row["file_path"]).is_file():
             raise ValueError("PDF が未確認です。PDF を開き、運行管理者が確認してから公開してください")
-        documents.append(_public_document(dict(row)))
+        documents.append(dict(row))
     # Validate every selected document first, then validate all driver accounts.
     # Both checks happen before the first write so a batch can never be partly
     # published when one reviewed PDF or account mapping is invalid.
@@ -1432,34 +1724,56 @@ def publish_run_documents(group_values: list[Any], actor: dict[str, Any]) -> lis
     blocked = _driver_account_preflight(tenant, group_driver_ids)
     if blocked:
         raise DriverAccountPreflightError(blocked)
-    with closing(get_connection()) as conn:
+    published_at = datetime.now().astimezone()
+    prepared: list[dict[str, Any]] = []
+    try:
         for doc in documents:
-            conn.execute(
-                """
-                UPDATE driver_run_documents
-                SET status = 'published', published_at = CURRENT_TIMESTAMP,
-                    published_by_user_id = ?, published_by = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE tenant_id = ? AND id = ?
-                """,
-                (int(actor.get("id") or 0) or None, actor_name, tenant, doc["id"]),
-            )
-            conn.execute(
+            prepared.append(_prepare_published_pdf(doc, published_at, actor))
+        with closing(get_connection()) as conn:
+            for doc, formal in zip(documents, prepared):
+                conn.execute(
+                    """
+                    UPDATE driver_run_documents
+                    SET status = 'published', lifecycle_status = 'published', published_at = ?,
+                        published_by_user_id = ?, published_by = ?, file_name = ?, file_path = ?,
+                        page_count = ?, pdf_sha256 = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE tenant_id = ? AND id = ?
+                    """,
+                    (
+                        formal["published_at"], int(actor.get("id") or 0) or None, actor_name,
+                        formal["file_name"], formal["file_path"], formal["page_count"],
+                        formal["pdf_sha256"], tenant, doc["id"],
+                    ),
+                )
+                record_document_event(
+                    conn,
+                    formal["source_snapshot"],
+                    "published",
+                    actor,
+                    {
+                        "published_at": formal["published_at"],
+                        "created_date": formal["created_date"],
+                        "source_sha256": doc.get("source_sha256") or doc.get("source_hash"),
+                        "pdf_sha256": formal["pdf_sha256"],
+                    },
+                )
+                conn.execute(
                 """
                 UPDATE assignments
                 SET execution_status = CASE WHEN execution_status = 'draft' THEN 'assigned' ELSE execution_status END,
                     published_by_user_id = ?, published_by_name = ?,
-                    published_at = COALESCE(published_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+                    published_at = COALESCE(published_at, ?), updated_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = ? AND driver_id = ? AND vehicle_id = ? AND status = 'active'
                   AND order_id IN (
                     SELECT id FROM orders WHERE tenant_id = ? AND order_date = ? AND COALESCE(is_deleted, 0) = 0
                   )
                 """,
                 (
-                    int(actor.get("id") or 0) or None, actor_name, tenant,
+                    int(actor.get("id") or 0) or None, actor_name, formal["published_at"], tenant,
                     doc["driver_id"], doc["vehicle_id"], tenant, doc["business_date"],
                 ),
             )
-            conn.execute(
+                conn.execute(
                 """
                 UPDATE orders SET execution_status = CASE WHEN execution_status = 'draft' THEN 'assigned' ELSE execution_status END,
                     updated_at = CURRENT_TIMESTAMP
@@ -1470,11 +1784,15 @@ def publish_run_documents(group_values: list[Any], actor: dict[str, Any]) -> lis
                 """,
                 (tenant, doc["business_date"], tenant, doc["driver_id"], doc["vehicle_id"]),
             )
-        conn.commit()
-        rows = conn.execute(
-            f"SELECT * FROM driver_run_documents WHERE tenant_id = ? AND id IN ({','.join('?' for _ in documents)}) ORDER BY id",
-            [tenant, *[doc["id"] for doc in documents]],
-        ).fetchall()
+            conn.commit()
+            rows = conn.execute(
+                f"SELECT * FROM driver_run_documents WHERE tenant_id = ? AND id IN ({','.join('?' for _ in documents)}) ORDER BY id",
+                [tenant, *[doc["id"] for doc in documents]],
+            ).fetchall()
+    except Exception:
+        for formal in prepared:
+            Path(formal["file_path"]).unlink(missing_ok=True)
+        raise
     published = [_public_document(dict(row)) for row in rows]
     for doc in published:
         revised = int(doc.get("version") or 1) > 1
@@ -1532,6 +1850,76 @@ def _driver_account_preflight(tenant: int, driver_ids: list[int]) -> list[dict[s
                     }
                 )
     return blocked
+
+
+def confirm_and_publish_daily_group(group_value: Any, actor: dict[str, Any]) -> dict[str, Any]:
+    """Server-side final check for the compact daily-card flow.
+
+    The button is intentionally not a validation bypass: every order must be
+    auto-safe (or an already confirmed manual value), the driver account must
+    be publishable, and the generated PDF must match the final source hash.
+    Existing generate/review/publish services remain the single write path.
+    """
+    _require_operations_actor(actor)
+    date_value, driver_id, vehicle_id = parse_group_key(group_value)
+    tenant = int(actor.get("tenant_id") or get_current_tenant_id())
+    group = _find_group(date_value, driver_id, vehicle_id, tenant)
+    if not group:
+        raise ValueError("run_group_not_found")
+    latest = group.get("latest_document") or {}
+    if (
+        group.get("document_status") == "published"
+        and latest.get("source_hash") == _source_hash(group)
+    ):
+        return {"document": latest, "next_group_key": None, "idempotent": True}
+
+    issues: list[dict[str, Any]] = []
+    for index, order in enumerate(group.get("orders") or [], 1):
+        status = str(order.get("daily_check_status") or "missing")
+        if status not in {"auto_passed", "manual_recheck"}:
+            issues.append(
+                {
+                    "order_id": order.get("order_id"),
+                    "order_index": index,
+                    "oid": order.get("oid") or "",
+                    "status": status,
+                    "label": order.get("daily_check_label") or "待处理",
+                    "fields": order.get("daily_check_issues") or [],
+                }
+            )
+    if issues:
+        raise DailyGroupPreflightError(issues)
+    blocked = _driver_account_preflight(tenant, [driver_id])
+    if blocked:
+        raise DriverAccountPreflightError(blocked)
+
+    for order in group.get("orders") or []:
+        payload = {
+            "order_date": order.get("order_date"),
+            "start_time": order.get("start_time"),
+            "operations_business_area": order.get("daily_effective_business_area"),
+            "order_type": order.get("order_type"),
+            "pickup_location": order.get("pickup_location"),
+            "dropoff_location": order.get("dropoff_location"),
+            "price": order.get("daily_effective_price"),
+            "pdf_edit": False,
+        }
+        if order.get("end_date"):
+            payload["end_date"] = order.get("end_date")
+        if order.get("end_time"):
+            payload["end_time"] = order.get("end_time")
+        confirm_order(order.get("order_id"), payload, actor)
+
+    generated = generate_run_document(group_value, actor)
+    result = review_and_publish_run_document(group_value, actor)
+    result.update(
+        {
+            "generated_document_id": generated.get("id"),
+            "source_hash": generated.get("source_hash"),
+            "idempotent": False,
+        }
+    )
+    return result
 
 
 def review_and_publish_run_document(group_value: Any, actor: dict[str, Any]) -> dict[str, Any]:
@@ -1620,20 +2008,35 @@ def _printable_stopovers_from_route_note(order: dict[str, Any]) -> list[str]:
 
 
 def _area_review_from_route_note(order: dict[str, Any]) -> tuple[bool, str]:
+    if str(order.get("area_validation_status") or "") in {"confirmed", "risk_acknowledged"}:
+        return False, ""
+    if (
+        str(order.get("run_confirmation_status") or "") == "confirmed"
+        and not _missing_confirm_value("operations_business_area", order.get("operations_business_area"))
+    ):
+        return False, ""
     match = re.search(r"区域确认[:：]\s*([^；;\n]+)", str(order.get("fee_remark") or ""))
     return (True, match.group(1).strip()) if match else (False, "")
 
 
 def _validate_group(group: dict[str, Any], require_complete: bool = True) -> list[str]:
     errors = []
-    if not group.get("driver_name"): errors.append("運転者が未設定です")
+    if not (group.get("driver_print_name") or group.get("driver_name")): errors.append("運転者の正式文書名が未設定です")
     if not group.get("plate_number"): errors.append("車両の完全な登録番号がありません")
     company = group.get("company") or {}
     if not company.get("company_name"): errors.append("事業者名が未設定です")
     if not group.get("orders"): errors.append("運行注文がありません")
     if not require_complete:
         return errors
-    if not group.get("driver_office"): errors.append("営業所が未設定です")
+    affiliation = group.get("vehicle_affiliation") or {}
+    affiliation_acknowledged = bool(group.get("orders")) and all(
+        str(item.get("area_validation_status") or "") in {"confirmed", "risk_acknowledged"}
+        for item in group.get("orders") or []
+    )
+    if affiliation.get("status") == "conflict" and not affiliation_acknowledged:
+        errors.append(str(affiliation.get("message") or "車両の所属営業所・許可区域を確認してください"))
+    if not (group.get("vehicle_office") or group.get("driver_office")):
+        errors.append("営業所が未設定です")
     for index, item in enumerate(group.get("orders") or [], 1):
         for key, label in (("order_date", "日付"), ("start_time", "時刻"), ("operations_business_area", "営業区域"), ("order_type", "運送種別"), ("pickup_location", "乗車地"), ("dropoff_location", "降車地"), ("price", "運賃")):
             if _missing_confirm_value(key, item.get(key)): errors.append(f"第{index}件の{label}がありません")

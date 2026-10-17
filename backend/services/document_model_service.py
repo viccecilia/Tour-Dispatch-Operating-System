@@ -316,6 +316,22 @@ def _order_snapshot(order: dict[str, Any]) -> dict[str, Any]:
             str(order.get("end_time") or ""),
         ) == (legacy_plus_120["date"], legacy_plus_120["time"])
     )
+    total_jpy = order.get("price")
+    recommended_preview = False
+    if total_jpy in (None, "") and order.get("daily_check_status") == "auto_passed":
+        total_jpy = order.get("daily_effective_price")
+        recommended_preview = total_jpy not in (None, "")
+    price_snapshot_value = _json_object(order.get("price_snapshot_json"))
+    if recommended_preview and not price_snapshot_value:
+        price_snapshot_value = {
+            "source": "recommended_preview",
+            "rule_version": order.get("recommended_price_rule_version") or "",
+            "rule_key": order.get("recommended_price_rule_key") or "",
+            "match_basis": order.get("recommended_price_match_basis") or {},
+        }
+    fare_jpy = order.get("fare_jpy")
+    if recommended_preview and fare_jpy in (None, ""):
+        fare_jpy = total_jpy
     return {
         "order_id": int(order.get("order_id") or order.get("id") or 0),
         "oid": str(order.get("oid") or ""),
@@ -345,15 +361,15 @@ def _order_snapshot(order: dict[str, Any]) -> dict[str, Any]:
         "arrival_time_confirmed": bool(order.get("end_time_confirmed")),
         "arrival_time_requires_review": ambiguous_legacy_arrival,
         "money": {
-            "fare_jpy": order.get("fare_jpy"),
+            "fare_jpy": fare_jpy,
             "service_fee_jpy": order.get("service_fee_jpy"),
             "advance_jpy": order.get("document_advance_jpy"),
             "toll_fee_jpy": order.get("toll_fee_jpy"),
             "parking_fee_jpy": order.get("parking_fee_jpy"),
-            "total_jpy": order.get("price"),
+            "total_jpy": total_jpy,
             "tax_included_confirmed": bool(order.get("tax_included_confirmed")),
             "price_confirmed": bool(order.get("price_confirmed")),
-            "price_snapshot": _json_object(order.get("price_snapshot_json")),
+            "price_snapshot": price_snapshot_value,
         },
         "area_validation_status": str(order.get("area_validation_status") or "pending"),
         "run_confirmation_status": str(order.get("run_confirmation_status") or "pending"),
@@ -630,13 +646,30 @@ def build_document_snapshot(group: dict[str, Any], document_version_id: str | No
         "document_version_id": version_id,
         "run_group_id": run_group_id,
         "business_date": business_date,
-        "driver": {"id": driver_id, "name": group.get("driver_name") or "", "office": group.get("driver_office") or ""},
-        "vehicle": {"id": vehicle_id, "plate_number": group.get("plate_number") or "", "vehicle_type": group.get("vehicle_type") or ""},
+        "driver": {
+            "id": driver_id,
+            # The formal document name belongs to the assignment's real driver.
+            # Prefer the explicitly maintained print name, then fall back to the
+            # driver archive name.  Never invent a placeholder for a legal PDF.
+            "name": group.get("driver_print_name") or group.get("driver_name") or "",
+            "office": group.get("driver_office") or "",
+        },
+        "vehicle": {
+            "id": vehicle_id,
+            "plate_number": group.get("plate_number") or "",
+            "vehicle_type": group.get("vehicle_type") or "",
+            "vehicle_type_code": group.get("vehicle_type_code") or "",
+            "vehicle_group": group.get("vehicle_group") or "",
+            "office": group.get("vehicle_office") or "",
+            "permitted_business_area": group.get("vehicle_permitted_business_area") or "",
+            "affiliation": group.get("vehicle_affiliation") or {},
+        },
         "company": group.get("company") or {},
         "operations_manager": group.get("operations_manager") or (
             "朱英心" if "京都" in str(group.get("driver_office") or group.get("vehicle_office") or "") else "胡東鍇"
         ),
         "created_date": str(group.get("created_date") or business_date),
+        "publication_status": "preview",
         "operation": {
             "start_location": first_node.get("planned_location") or "",
             "start_at": first_node.get("planned_departure_at") or "",
@@ -673,6 +706,7 @@ def validate_document_snapshot(snapshot: dict[str, Any]) -> list[str]:
             issues.append(code)
 
     require(snapshot.get("driver", {}).get("id"), "driver_required")
+    require(snapshot.get("driver", {}).get("name"), "driver_name_required")
     require(snapshot.get("vehicle", {}).get("id"), "vehicle_required")
     require(snapshot.get("vehicle", {}).get("plate_number"), "full_plate_number_required")
     require(snapshot.get("driver", {}).get("office"), "office_required")

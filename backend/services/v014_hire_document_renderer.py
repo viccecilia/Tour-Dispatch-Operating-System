@@ -17,12 +17,15 @@ AIRPORT_DISPATCH_LIMIT = AIRPORT_ACCEPTANCE_LIMIT
 APPLICANT_MARKS = {1: "①", 2: "②", 3: "③", 4: "④"}
 
 PROVIDER_ROWS = (
-    ("運送引受者", "株式会社大寅（大阪本社　京都営業所）"),
-    ("大阪　本社", "〒551-0013 大阪府大阪市大正区小林西2丁目10-3"),
+    ("運送引受者", "株式会社大富（大阪本社　京都営業所）"),
+    ("大阪　本社", "〒551-0013 大阪府大阪市大正区小林西２丁目10-3"),
     ("京都営業所", "〒612-8448 京都府京都市伏見区竹田東小屋ノ内町95"),
     ("電 話 番 号", "大阪本社　06-6710-9861（代表）"),
     ("その他連絡先", "安全統括　阪本 090-1483-4105"),
-    ("営 業 区 域", "大阪市域交通圏・京都市域交通圏"),
+    # This is the carrier company's licensed scope, not a claim that every
+    # vehicle/order may operate in both areas.  Per-run applicability remains
+    # in the vehicle/order validation data.
+    ("事業者許可営業区域", "大阪市域交通圏・京都市域交通圏"),
 )
 
 
@@ -62,6 +65,13 @@ def _applicant(snapshot: dict[str, Any], slot: Any) -> dict[str, Any]:
         if item.get("slot") == slot:
             return item
     return {"slot": slot, "name": "", "contact": ""}
+
+
+def _document_meta(snapshot: dict[str, Any], *parts: Any) -> str:
+    values = [_text(part) for part in parts if _text(part)]
+    if _text(snapshot.get("publication_status")) != "published":
+        values.insert(0, "確認用・未発行")
+    return " / ".join(values)
 
 
 def _chunks(values: list[Any], size: int) -> list[list[Any]]:
@@ -210,7 +220,7 @@ class Sheet:
         right: str = "",
         *,
         table_top: float = 82.0,
-        company_label: str = "株式会社大寅　/　DAITORA",
+        company_label: str = "株式会社大富　/　DAITORA",
     ) -> float:
         if company_label:
             self.text(company_label, MARGIN, 17, 260, 9.5, bold=True)
@@ -250,6 +260,29 @@ def _register_fonts(jp_font_path: Path) -> dict[str, str]:
         if name not in pdfmetrics.getRegisteredFontNames():
             pdfmetrics.registerFont(TTFont(name, str(paths[key])))
     return fonts
+
+
+def _fixed_text(snapshot: dict[str, Any], key: str, fallback: str) -> str:
+    return _text(((snapshot.get("configuration") or {}).get("fixed_text") or {}).get(key) or fallback)
+
+
+def _fee_detail(snapshot: dict[str, Any], money: dict[str, Any]) -> str:
+    """Keep the accepted three-line fee wording without inventing a split."""
+    fare_value = money.get("fare_jpy")
+    if fare_value in (None, ""):
+        fare_value = money.get("total_jpy")
+    return (
+        f"{_fixed_text(snapshot, 'fare_label', '運賃')}：{_money(fare_value)}\n"
+        f"{_fixed_text(snapshot, 'service_fee_label', '料金')}："
+        f"{_fixed_text(snapshot, 'advance_label', '立替')}\n"
+        f"料金内訳：{_fixed_text(snapshot, 'parking_label', 'P代')}・"
+        f"{_fixed_text(snapshot, 'toll_label', '高速代')}"
+    )
+
+
+def _fare_total(money: dict[str, Any]) -> Any:
+    fare = money.get("fare_jpy")
+    return money.get("total_jpy") if fare in (None, "") else fare
 
 
 def _provider(sheet: Sheet, y: float) -> float:
@@ -294,7 +327,12 @@ def _draw_airport_acceptance(canvas: Any, fonts: dict[str, str], snapshot: dict[
     sheet = Sheet(canvas, fonts)
     driver = snapshot.get("driver") or {}
     vehicle = snapshot.get("vehicle") or {}
-    meta = f"{_text(snapshot.get('business_date'))}　/　{_text(driver.get('name'))}　/　{_text(vehicle.get('plate_number'))}"
+    meta = _document_meta(
+        snapshot,
+        snapshot.get("business_date"),
+        driver.get("name"),
+        vehicle.get("plate_number"),
+    )
     y = sheet.document_header("運送引受書", meta)
     y = _draw_airport_applicants(sheet, y, snapshot)
     start, end = _operation_parts(snapshot)
@@ -307,9 +345,8 @@ def _draw_airport_acceptance(canvas: Any, fonts: dict[str, str], snapshot: dict[
             pickup_date, pickup_time = _dt(order.get("pickup_at"))
             arrival_date, arrival_time = _dt(order.get("arrival_at"))
             money = order.get("money") or {}
-            advances = "・".join(name for name, value in (("P代", money.get("parking_fee_jpy")), ("高速代", money.get("toll_fee_jpy")), ("その他", money.get("advance_jpy"))) if value not in (None, "", 0, 0.0))
-            detail = f"運賃 {_money(money.get('fare_jpy'))}\n料金 {_money(money.get('service_fee_jpy'))}\n立替：{advances}"
-            row = [Cell(26, APPLICANT_MARKS.get(int(order.get("applicant_slot") or 0), str(order.get("applicant_slot") or "")), size=7.2, align="center"), Cell(70, f"{pickup_date}\n{pickup_time}", size=7.2), Cell(100, _location(order, "pickup"), size=7.15), Cell(20, "→", size=7.2, align="center"), Cell(100, _location(order, "dropoff"), size=7.15), Cell(64, f"{arrival_date}\n{arrival_time}", size=7.2), Cell(98, detail, size=6.85), Cell(63, _money(money.get("total_jpy")), size=7.2)]
+            detail = _fee_detail(snapshot, money)
+            row = [Cell(26, APPLICANT_MARKS.get(int(order.get("applicant_slot") or 0), str(order.get("applicant_slot") or "")), size=7.2, align="center"), Cell(70, f"{pickup_date}\n{pickup_time}", size=7.2), Cell(100, _location(order, "pickup"), size=7.15), Cell(20, "→", size=7.2, align="center"), Cell(100, _location(order, "dropoff"), size=7.15), Cell(64, f"{arrival_date}\n{arrival_time}", size=7.2), Cell(98, detail, size=6.85), Cell(63, _money(_fare_total(money)), size=7.2)]
         else:
             row = [Cell(width, "", size=7.0) for width in (26, 70, 100, 20, 100, 64, 98, 63)]
         y = sheet.row(y, row, 30, 7.0)
@@ -323,9 +360,9 @@ def _draw_airport_acceptance(canvas: Any, fonts: dict[str, str], snapshot: dict[
 def _draw_dispatch_header(sheet: Sheet, snapshot: dict[str, Any], count_text: str) -> float:
     driver = snapshot.get("driver") or {}
     vehicle = snapshot.get("vehicle") or {}
-    meta = " / ".join(part for part in (_text(snapshot.get("business_date")), _text(driver.get("name")), _text(snapshot.get("route_code"))) if part)
-    y = sheet.document_header("運 行 指 示 書", meta, count_text, table_top=87.0, company_label="株式会社大寅")
-    y = sheet.row(y, [Cell(79, "事業者名", "#f2f2ef", True), Cell(206, "株式会社大寅"), Cell(79, "営業所名", "#f2f2ef", True), Cell(175, _text(driver.get("office")))], 24, 8.5)
+    meta = _document_meta(snapshot, snapshot.get("business_date"), driver.get("name"), snapshot.get("route_code"))
+    y = sheet.document_header("運 行 指 示 書", meta, count_text, table_top=87.0, company_label="株式会社大富")
+    y = sheet.row(y, [Cell(79, "事業者名", "#f2f2ef", True), Cell(206, "株式会社大富"), Cell(79, "営業所名", "#f2f2ef", True), Cell(175, _text(driver.get("office")))], 24, 8.5)
     y = sheet.row(y, [Cell(79, "運行管理者", "#f2f2ef", True), Cell(206, _text(snapshot.get("operations_manager"))), Cell(79, "作成年月日", "#f2f2ef", True), Cell(175, _text(snapshot.get("created_date") or snapshot.get("business_date")))], 24, 8.5)
     y = sheet.row(y, [Cell(79, "運転者の氏名", "#f2f2ef", True), Cell(206, _text(driver.get("name"))), Cell(79, "自動車登録番号", "#f2f2ef", True), Cell(175, _text(vehicle.get("plate_number")))], 24, 8.5)
     start, end = _operation_parts(snapshot)
@@ -349,7 +386,7 @@ def _draw_airport_dispatch(canvas: Any, fonts: dict[str, str], snapshot: dict[st
     airport_count = sum(len(items) for items in snapshot.get("airport_acceptance_pages") or [])
     y = _draw_dispatch_header(sheet, snapshot, f"全日 {airport_count} 件 / {dispatch_index}枚目")
     y += 6
-    y = sheet.row(y, [Cell(25, "便", "#eeeeeb", True, 7.5), Cell(70, "乗降時刻", "#eeeeeb", True, 7.5), Cell(222, "乗車・降車・立寄り地", "#eeeeeb", True, 7.5), Cell(142, "契約の相手方・連絡先", "#eeeeeb", True, 7.5), Cell(80, "配車依頼方法", "#eeeeeb", True, 7.5)], 24, 7.5)
+    y = sheet.row(y, [Cell(25, "便", "#eeeeeb", True, 7.5), Cell(70, "乗降時刻", "#eeeeeb", True, 7.5), Cell(222, "乗車・降車・立寄り地", "#eeeeeb", True, 7.5), Cell(142, "契約の相手方", "#eeeeeb", True, 7.5), Cell(80, "配車依頼方法", "#eeeeeb", True, 7.5)], 24, 7.5)
     for index, order in enumerate(orders, 1 + (dispatch_index - 1) * AIRPORT_DISPATCH_LIMIT):
         _, pickup_time = _dt(order.get("pickup_at"))
         _, arrival_time = _dt(order.get("arrival_at"))
@@ -358,15 +395,12 @@ def _draw_airport_dispatch(canvas: Any, fonts: dict[str, str], snapshot: dict[st
             route += "\n立寄：" + " → ".join(_text(item) for item in order["stopovers"])
         applicant = _applicant(snapshot, order.get("applicant_slot"))
         counterparty = _text(order.get("contract_party_name") or order.get("applicant_name") or applicant.get("name"))
-        contact = _text(order.get("applicant_contact") or applicant.get("contact"))
-        y = sheet.row(y, [Cell(25, str(index), size=7.5), Cell(70, f"乗 {pickup_time}\n降 {arrival_time}", size=7.5), Cell(222, route, size=7.35), Cell(142, f"氏名：{counterparty}\n連絡：{contact}", size=7.2), Cell(80, "ウェブサイト", size=7.2)], 40, 7.2)
+        # Contact data remains in the source snapshot and the acceptance flow,
+        # but the per-job operation instruction does not print an empty contact
+        # row or test telephone number.
+        y = sheet.row(y, [Cell(25, str(index), size=7.5), Cell(70, f"乗 {pickup_time}\n降 {arrival_time}", size=7.5), Cell(222, route, size=7.35), Cell(142, f"氏名：{counterparty}", size=7.2), Cell(80, "ウェブサイト", size=7.2)], 40, 7.2)
     y += 5
     _draw_safety_and_signatures(sheet, snapshot, y, dates=True)
-    driver = snapshot.get("driver") or {}
-    vehicle = snapshot.get("vehicle") or {}
-    footer = " / ".join(part for part in ("予定版", _text(snapshot.get("route_code") or "V0.14"), _text(snapshot.get("business_date")), _text(driver.get("name")), _text(vehicle.get("plate_number"))) if part)
-    sheet.text(footer, MARGIN, 800, 470, 7.6)
-    sheet.text("自動選定ホテルを含む計画案。実際の乗降地を要照合。・本機作成／押印・実際の交付は別途", MARGIN, 818, 500, 7.0, color="#555555")
     sheet.text(f"指示書 {dispatch_index}/{dispatch_total} · 全{page}/{total}", 450, 800, 117, 7.1, align="right")
 
 
@@ -381,7 +415,7 @@ def _draw_charter_acceptance(canvas: Any, fonts: dict[str, str], snapshot: dict[
     sheet = Sheet(canvas, fonts)
     order = _charter_order(snapshot, contract)
     title = "運送引受書" if continuation == 1 else "運送引受書（続）"
-    meta = " / ".join(part for part in (_text(snapshot.get("business_date")), _contract_end_date(contract)) if part)
+    meta = _document_meta(snapshot, snapshot.get("business_date"), _contract_end_date(contract))
     y = sheet.document_header(title, meta)
     applicant_name = _text(order.get("contract_party_name") or order.get("applicant_name") or order.get("agency_name"))
     y = sheet.label(y, "運送申込者", f"氏名・名称：{applicant_name}\n申込方法：ウェブサイト", 43, 8.7)
@@ -402,11 +436,6 @@ def _draw_charter_acceptance(canvas: Any, fonts: dict[str, str], snapshot: dict[
         sheet.text(f"作成日：{_text(snapshot.get('created_date') or snapshot.get('business_date'))}", 390, y, 177, 8.8, align="right")
         y += 25
         _provider(sheet, y)
-    driver = snapshot.get("driver") or {}
-    vehicle = snapshot.get("vehicle") or {}
-    footer = " / ".join(part for part in ("予定版", _text(snapshot.get("route_code") or "V0.14"), _text(snapshot.get("business_date")), _text(driver.get("name")), _text(vehicle.get("plate_number"))) if part)
-    sheet.text(footer, MARGIN, 800, 470, 7.6)
-    sheet.text("貸切・観光・一般・本機作成／押印・実際の交付は別途", MARGIN, 818, 500, 7.0, color="#555555")
     sheet.text(f"{continuation} / {continuation_total}", 510, 800, 57, 7.6, align="right")
 
 
@@ -416,7 +445,7 @@ def _draw_charter_dispatch(canvas: Any, fonts: dict[str, str], snapshot: dict[st
     driver = snapshot.get("driver") or {}
     vehicle = snapshot.get("vehicle") or {}
     title = "運 行 指 示 書" if continuation == 1 else "運 行 指 示 書（続）"
-    meta = " / ".join(part for part in (_text(driver.get("name")), _text(vehicle.get("plate_number")), _text(snapshot.get("business_date")), _contract_end_date(contract)) if part)
+    meta = _document_meta(snapshot, driver.get("name"), vehicle.get("plate_number"), snapshot.get("business_date"), _contract_end_date(contract))
     y = sheet.document_header(title, meta)
     y = sheet.row(y, [Cell(107, "営業所", "#f2f2ef", True, 8.8), Cell(163, _text(driver.get("office")), size=8.8), Cell(107, "運行管理者", "#f2f2ef", True, 8.8), Cell(162, _text(snapshot.get("operations_manager")), size=8.8)], 25, 8.8)
     y = sheet.row(y, [Cell(107, "運転者", "#f2f2ef", True, 8.8), Cell(163, _text(driver.get("name")), size=8.8), Cell(107, "車両番号", "#f2f2ef", True, 8.8), Cell(162, _text(vehicle.get("plate_number")), size=8.8)], 25, 8.8)
@@ -428,9 +457,6 @@ def _draw_charter_dispatch(canvas: Any, fonts: dict[str, str], snapshot: dict[st
     if continuation == continuation_total:
         y += 7
         _draw_safety_and_signatures(sheet, snapshot, y, dates=False)
-    footer = " / ".join(part for part in ("予定版", _text(snapshot.get("route_code") or "V0.14"), _text(snapshot.get("business_date")), _text(driver.get("name")), _text(vehicle.get("plate_number"))) if part)
-    sheet.text(footer, MARGIN, 800, 470, 7.6)
-    sheet.text("貸切・観光・一般・本機作成／押印・実際の交付は別途", MARGIN, 818, 500, 7.0, color="#555555")
     sheet.text(f"{continuation} / {continuation_total}", 510, 800, 57, 7.6, align="right")
 
 
@@ -472,7 +498,7 @@ def render_hire_packet(snapshot: dict[str, Any], path: Path, *, jp_font_path: Pa
     path.parent.mkdir(parents=True, exist_ok=True)
     canvas = pdfcanvas.Canvas(str(path), pagesize=(A4_WIDTH, A4_HEIGHT), pageCompression=1)
     canvas.setTitle(path.stem)
-    canvas.setAuthor("株式会社大寅 / Tour Dispatch V0.14")
+    canvas.setAuthor("株式会社大富 / Tour Dispatch V0.14")
     total = len(jobs)
     for page, job in enumerate(jobs, 1):
         job(canvas, fonts, page, total)

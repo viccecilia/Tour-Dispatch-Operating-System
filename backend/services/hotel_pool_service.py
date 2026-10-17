@@ -68,7 +68,12 @@ def hotel_pool(city: str) -> list[dict[str, Any]]:
     ]
 
 
-def normalize_city_place(value: Any, stable_key: str) -> tuple[str, bool]:
+def normalize_city_place(
+    value: Any,
+    stable_key: str,
+    *,
+    include_supplemental: bool = False,
+) -> tuple[str, bool]:
     """Replace only an exact city alias with one enabled pool hotel.
 
     Selection is random-looking but stable for the same order key. The selected
@@ -78,6 +83,8 @@ def normalize_city_place(value: Any, stable_key: str) -> tuple[str, bool]:
     text = str(value or "").strip()
     city = CITY_ALIASES.get(text)
     if not city:
+        return text, False
+    if city in {"奈良", "神戸"} and not include_supplemental:
         return text, False
     candidates = hotel_pool(city)
     if not candidates:

@@ -34,6 +34,37 @@ def test_hire_sample_packet_uses_phase2a_snapshot_and_has_two_airport_pages(tmp_
     assert "SPI" in text
     for forbidden in ("貸切バス", "別記1", "別記2", "DRAFT", "ツアーコード", "未入力"):
         assert forbidden not in text
+    assert "確認用・未発行" in text
+    assert "事業者許可営業区域" in text
+    for fixed_value in (
+        "株式会社大富（大阪本社　京都営業所）",
+        "〒551-0013 大阪府大阪市大正区小林西２丁目10-3",
+        "〒612-8448 京都府京都市伏見区竹田東小屋ノ内町95",
+        "大阪本社　06-6710-9861（代表）",
+        "安全統括　阪本 090-1483-4105",
+        "大阪市域交通圏・京都市域交通圏",
+    ):
+        assert fixed_value in text
+
+
+def test_dispatch_does_not_print_contact_row_or_test_phone_but_source_keeps_it(tmp_path: Path) -> None:
+    import fitz
+
+    group = sample_group()
+    group["orders"][0]["guest_contact"] = "06-0000-0000"
+    snapshot = build_document_snapshot(group, "docv-contact-source-test")
+    assert snapshot["orders"][0]["applicant_contact"] == "06-0000-0000"
+    output = tmp_path / "contact-source.pdf"
+    render_hire_sample_packet(
+        snapshot,
+        output,
+        jp_font_path=ROOT / "backend" / "assets" / "fonts" / "NotoSansJP-VF.ttf",
+    )
+    pages = [page.get_text() for page in fitz.open(output)]
+    dispatch_text = next(text for text in pages if "運 行 指 示 書" in text)
+    assert "契約の相手方・連絡先" not in dispatch_text
+    assert "連絡：" not in dispatch_text
+    assert "06-0000-0000" not in dispatch_text
 
 
 def test_airport_acceptance_is_split_at_ten_orders(tmp_path: Path) -> None:
@@ -90,7 +121,7 @@ def test_four_target_page_layout_geometry(tmp_path: Path) -> None:
     )
     expected_y_edges = [
         [82.0, 190.0, 230.0, 250.0, 550.0, 575.0, 737.0],
-        [87.0, 165.0, 231.0, 239.0, 271.0, 555.0, 563.0, 623.0, 633.0, 677.0, 703.0],
+        [87.0, 159.0, 209.8, 215.8, 239.8, 399.8, 404.8, 448.8, 453.8, 489.8, 511.8],
         [82.0, 125.0, 168.0, 250.0, 299.0, 329.0, 491.0],
         [82.0, 107.0, 132.0, 157.0, 200.0, 288.0, 295.0, 355.0, 362.0, 402.0],
     ]

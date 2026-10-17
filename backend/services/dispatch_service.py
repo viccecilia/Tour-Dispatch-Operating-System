@@ -810,10 +810,51 @@ def cancel_assignment(assignment_id: Any = None, order_id: Any = None) -> dict[s
     }
 
 
-def reassign_orders(order_ids: list[Any], new_driver_id: Any, new_vehicle_id: Any, actor: dict[str, Any] | None = None) -> dict[str, Any]:
+def reassign_orders(
+    order_ids: list[Any],
+    new_driver_id: Any,
+    new_vehicle_id: Any,
+    actor: dict[str, Any] | None = None,
+    *,
+    notify_driver: bool = True,
+    publish_assignment: bool = True,
+) -> dict[str, Any]:
     normalized_order_ids = _normalize_ids(order_ids)
+    driver_id_int = _to_int(new_driver_id)
+    vehicle_id_int = _to_int(new_vehicle_id)
+    if not normalized_order_ids or not driver_id_int or not vehicle_id_int:
+        raise ValueError("missing_order_driver_or_vehicle")
     cancelled_ids: list[int] = []
+    assignment_ids: list[int] = []
     with get_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        orders = _fetch_orders(conn, normalized_order_ids)
+        if len(orders) != len(normalized_order_ids):
+            conn.rollback()
+            raise ValueError("order_not_found")
+        driver = _fetch_driver(conn, driver_id_int)
+        vehicle = _fetch_vehicle(conn, vehicle_id_int)
+        if not driver or not vehicle:
+            conn.rollback()
+            raise ValueError("driver_or_vehicle_not_found")
+        conflict_orders = [{**order, "dispatch_status": "unassigned"} for order in orders]
+        conflicts = _find_conflicts(
+            conn,
+            conflict_orders,
+            driver_id_int,
+            vehicle_id_int,
+            ignored_order_ids=set(normalized_order_ids),
+            check_selected_overlap=False,
+        )
+        if conflicts:
+            conn.rollback()
+            return {
+                "success": False,
+                "new_assignment_ids": [],
+                "cancelled_old_assignment_ids": [],
+                "updated_order_ids": [],
+                "conflicts": conflicts,
+            }
         for order_id in normalized_order_ids:
             rows = conn.execute(
                 """
@@ -847,15 +888,65 @@ def reassign_orders(order_ids: list[Any], new_driver_id: Any, new_vehicle_id: An
                 """,
                 (order_id, get_current_tenant_id()),
             )
+        publisher_id = _actor_user_id(actor) if publish_assignment else None
+        publisher_name = _actor_name(actor) if publish_assignment else None
+        execution_status = "assigned" if publish_assignment else "draft"
+        for order in orders:
+            cursor = conn.execute(
+                """
+                INSERT INTO assignments (
+                    tenant_id, order_id, driver_id, vehicle_id, status, execution_status,
+                    assigned_at, published_by_user_id, published_by_name, published_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP, ?, ?,
+                          CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP)
+                """,
+                (
+                    get_current_tenant_id(), order["id"], driver_id_int, vehicle_id_int,
+                    execution_status, publisher_id, publisher_name, 1 if publish_assignment else 0,
+                ),
+            )
+            assignment_ids.append(int(cursor.lastrowid))
+            assigned_oid = _build_assigned_oid(conn, order, vehicle, driver)
+            conn.execute(
+                """
+                UPDATE orders
+                SET oid = ?, plate_short_code = ?, driver_code = ?, vehicle_type_code = ?,
+                    dispatch_status = 'assigned', execution_status = ?,
+                    run_confirmation_status = 'pending', run_confirmed_at = NULL,
+                    run_confirmed_by_user_id = NULL, run_confirmed_by = NULL,
+                    run_revision = COALESCE(run_revision, 1) + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND tenant_id = ?
+                """,
+                (
+                    assigned_oid,
+                    vehicle.get("plate_short_code") or plate_short_code(vehicle["plate_number"]),
+                    driver.get("driver_code") or _driver_code(driver.get("name")),
+                    vehicle.get("vehicle_type_code") or normalize_vehicle_type_code(order.get("vehicle_type"), vehicle.get("vehicle_type")),
+                    execution_status,
+                    order["id"],
+                    get_current_tenant_id(),
+                ),
+            )
         conn.commit()
+    if notify_driver:
+        from backend.services.notification_service import notify_dispatch_assigned
 
-    assigned = assign_orders(normalized_order_ids, new_driver_id, new_vehicle_id, actor=actor)
+        notify_dispatch_assigned(
+            assignment_ids,
+            normalized_order_ids,
+            driver_id=driver_id_int,
+            driver_name=driver.get("name"),
+            plate_number=vehicle.get("plate_number"),
+        )
     return {
-        "success": assigned["success"],
-        "new_assignment_ids": assigned["assignment_ids"],
+        "success": True,
+        "new_assignment_ids": assignment_ids,
         "cancelled_old_assignment_ids": cancelled_ids,
-        "updated_order_ids": assigned["updated_order_ids"],
-        "conflicts": assigned["conflicts"],
+        "updated_order_ids": normalized_order_ids,
+        "conflicts": [],
+        "published": publish_assignment,
+        "driver_notified": bool(notify_driver),
     }
 
 
@@ -1034,14 +1125,23 @@ def _fetch_orders(conn, order_ids: list[int]) -> list[dict[str, Any]]:
     return [by_id[order_id] for order_id in order_ids if order_id in by_id]
 
 
-def _find_conflicts(conn, orders: list[dict[str, Any]], driver_id: int, vehicle_id: int) -> list[dict[str, Any]]:
+def _find_conflicts(
+    conn,
+    orders: list[dict[str, Any]],
+    driver_id: int,
+    vehicle_id: int,
+    *,
+    ignored_order_ids: set[int] | None = None,
+    check_selected_overlap: bool = True,
+) -> list[dict[str, Any]]:
+    ignored = ignored_order_ids or set()
     conflicts: list[dict[str, Any]] = []
     for index, order in enumerate(orders):
         if order.get("dispatch_status") == "assigned":
             conflicts.append({"order_id": order["id"], "type": "order_already_assigned"})
 
         for other in orders[index + 1:]:
-            if _orders_overlap(order, other):
+            if check_selected_overlap and _orders_overlap(order, other):
                 conflicts.append(
                     {
                         "order_id": order["id"],
@@ -1066,6 +1166,8 @@ def _find_conflicts(conn, orders: list[dict[str, Any]], driver_id: int, vehicle_
         ).fetchall()
         for row in rows:
             active_order = dict(row)
+            if int(active_order.get("id") or 0) in ignored:
+                continue
             if not _orders_overlap(order, active_order):
                 continue
             if active_order["driver_id"] == driver_id:

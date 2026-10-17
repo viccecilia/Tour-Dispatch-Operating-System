@@ -135,7 +135,7 @@ class DocumentModelServiceTest(unittest.TestCase):
         self.assertEqual(normalize_airport_location("関西大学正門"), "関西大学正門")
         self.assertEqual(normalize_airport_location("大阪市内ホテル"), "大阪市内ホテル")
 
-    def test_city_hotel_prefill_is_stable_and_never_fabricates_missing_pools(self):
+    def test_city_hotel_prefill_is_stable_and_supplemental_pools_are_editor_only(self):
         first, first_changed = normalize_city_place("大阪市内", "order:77:pickup")
         second, second_changed = normalize_city_place("大阪市内", "order:77:pickup")
         self.assertTrue(first_changed)
@@ -145,6 +145,18 @@ class DocumentModelServiceTest(unittest.TestCase):
         self.assertEqual(normalize_city_place("大阪市内ホテル", "order:77:pickup"), (first, True))
         self.assertEqual(normalize_city_place("奈良市内", "order:77:dropoff"), ("奈良市内", False))
         self.assertEqual(normalize_city_place("神戸市内", "order:77:dropoff"), ("神戸市内", False))
+        nara, nara_changed = normalize_city_place(
+            "奈良市内", "order:77:dropoff", include_supplemental=True
+        )
+        kobe, kobe_changed = normalize_city_place(
+            "神戸市内", "order:77:dropoff", include_supplemental=True
+        )
+        self.assertTrue(nara_changed)
+        self.assertTrue(kobe_changed)
+        self.assertNotEqual(nara, "奈良市内")
+        self.assertNotEqual(kobe, "神戸市内")
+        for exact in ("大阪站", "大阪駅", "KIX"):
+            self.assertEqual(normalize_city_place(exact, "order:77:dropoff"), (exact, False))
 
     def test_channel_annotations_are_separated_from_location_text(self):
         self.assertEqual(strip_contact_channels("大阪市内ホテル / WeChat:abc123"), "大阪市内ホテル")
@@ -194,6 +206,20 @@ class DocumentModelServiceTest(unittest.TestCase):
         self.assertEqual(snapshot["route_nodes"][0]["planned_departure_at"], "2026-10-09T23:30:00")
         self.assertEqual(snapshot["route_nodes"][-1]["business_date"], "2026-10-11")
         self.assertEqual(snapshot["route_nodes"][-1]["planned_arrival_at"], "2026-10-11T00:30:00")
+
+    def test_driver_print_name_is_preferred_with_archive_fallback_and_blank_is_invalid(self):
+        group = self.group()
+        group["driver_print_name"] = "正式文書運転者"
+        snapshot = build_document_snapshot(group)
+        self.assertEqual(snapshot["driver"]["name"], "正式文書運転者")
+
+        group["driver_print_name"] = ""
+        snapshot = build_document_snapshot(group)
+        self.assertEqual(snapshot["driver"]["name"], "試験運転者")
+
+        group["driver_name"] = ""
+        snapshot = build_document_snapshot(group)
+        self.assertIn("driver_name_required", validate_document_snapshot(snapshot))
 
     def test_missing_airport_end_time_is_persisted_as_unconfirmed_plus_60_minutes(self):
         with closing(database.get_connection()) as conn:

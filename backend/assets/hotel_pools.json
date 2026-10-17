@@ -1846,6 +1846,96 @@
       "name": "星野リゾート 界 京都",
       "enabled": true,
       "pool": true
+    },
+    {
+      "city": "奈良",
+      "name": "奈良ホテル",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://jrwest-hotels.jp/narahotel/access/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "奈良",
+      "name": "ホテル日航奈良",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.nikkonara.jp/access/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "奈良",
+      "name": "ピアッツァホテル奈良",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://piazzahotel.co.jp/access.html",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "奈良",
+      "name": "いろはグランホテル近鉄奈良駅前",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://nara.168hotel.jp/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "奈良",
+      "name": "ダイワロイネットホテル奈良",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.daiwaroynet.jp/nara/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "神戸",
+      "name": "ホテルオークラ神戸",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.kobe.hotelokura.co.jp/access/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "神戸",
+      "name": "神戸メリケンパークオリエンタルホテル",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.kobe-orientalhotel.co.jp/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "神戸",
+      "name": "神戸ポートピアホテル",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.portopia.co.jp/access/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "神戸",
+      "name": "ホテル ラ・スイート神戸ハーバーランド",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.l-s.jp/access/",
+      "checked_date": "2026-10-02"
+    },
+    {
+      "city": "神戸",
+      "name": "ホテル モンテ エルマーナ神戸 アマリー",
+      "enabled": true,
+      "pool": true,
+      "source": "V0.13公式ホテル補充",
+      "source_url": "https://www.monte-hermana.jp/kobe/",
+      "checked_date": "2026-10-02"
     }
   ]
 }
